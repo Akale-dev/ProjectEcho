@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "ProjectEcho Export v1",
+  "required": [
+    "schemaVersion",
+    "isSynthetic",
+    "exportId",
+    "meetingId",
+    "renderId",
+    "mixMode",
+    "maxFileBytes",
+    "parts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "isSynthetic": {
+      "type": "boolean"
+    },
+    "exportId": {
+      "type": "string"
+    },
+    "meetingId": {
+      "type": "string"
+    },
+    "renderId": {
+      "type": "string"
+    },
+    "mixMode": {
+      "enum": [
+        "mono_mix",
+        "stereo_mix",
+        "source_split_stereo"
+      ]
+    },
+    "maxFileBytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "parts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "partId",
+          "file",
+          "status",
+          "startUs",
+          "endUs",
+          "overlapPreviousUs",
+          "byteLength",
+          "sha256",
+          "spans"
+        ],
+        "properties": {
+          "partId": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "encoding",
+              "complete",
+              "failed"
+            ]
+          },
+          "startUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "overlapPreviousUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "byteLength": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spans": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fileStartMs",
+                "fileEndMs",
+                "sessionStartMs",
+                "sessionEndMs"
+              ],
+              "properties": {
+                "fileStartMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fileEndMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sessionStartMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sessionEndMs": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "byteLength": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

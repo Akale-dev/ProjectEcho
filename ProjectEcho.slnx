@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ProjectEcho.App/ProjectEcho.App.csproj" />
+    <Project Path="src/ProjectEcho.Core/ProjectEcho.Core.csproj" />
+    <Project Path="src/ProjectEcho.Capture.Windows/ProjectEcho.Capture.Windows.csproj" />
+    <Project Path="src/ProjectEcho.CaptureHost/ProjectEcho.CaptureHost.csproj" />
+    <Project Path="src/ProjectEcho.Export/ProjectEcho.Export.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ProjectEcho.Tests/ProjectEcho.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Explicit WPF playback child only; keep this harness a console executable. -->
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+    <Compile Include="../../src/ProjectEcho.App/CaptureHostClient.cs" Link="CaptureHostClient.cs" />
+    <ProjectReference Include="../../src/ProjectEcho.Core/ProjectEcho.Core.csproj" />
+    <ProjectReference Include="../../src/ProjectEcho.Export/ProjectEcho.Export.csproj" />
+    <ProjectReference Include="../../src/ProjectEcho.Capture.Windows/ProjectEcho.Capture.Windows.csproj" />
+    <ProjectReference Include="../../src/ProjectEcho.CaptureHost/ProjectEcho.CaptureHost.csproj" />
+  </ItemGroup>
+  <Target Name="CopyCaptureHostForProbe" AfterTargets="Build">
+    <ItemGroup>
+      <ProbeHostFiles Include="../../src/ProjectEcho.CaptureHost/bin/$(Configuration)/$(TargetFramework)/*" Exclude="../../src/ProjectEcho.CaptureHost/bin/$(Configuration)/$(TargetFramework)/*.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ProbeHostFiles)" DestinationFolder="$(OutDir)CaptureHost" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

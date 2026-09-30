@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "isSynthetic": true,
+  "meetingId": "demo-meeting-001",
+  "revisionId": "demo-original-001",
+  "parentRevisionId": null,
+  "provider": "synthetic-example-no-audio",
+  "inputExportId": "demo-export-001",
+  "segments": [
+    {
+      "segmentId": "seg-001",
+      "startMs": 5000,
+      "endMs": 7000,
+      "speakerLabel": "Speaker A",
+      "sourceKind": "remote",
+      "text": "我们先试两种录音方式。",
+      "timestampQuality": "approximate"
+    },
+    {
+      "segmentId": "seg-002",
+      "startMs": 24000,
+      "endMs": 26000,
+      "speakerLabel": "Speaker A",
+      "sourceKind": "remote",
+      "text": "建议下周再试，先不定负责人。",
+      "timestampQuality": "approximate"
+    }
+  ]
+}

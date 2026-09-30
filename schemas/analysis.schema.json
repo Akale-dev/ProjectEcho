@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "ProjectEcho Analysis v1",
+  "required": [
+    "schemaVersion",
+    "isSynthetic",
+    "analysisId",
+    "projectId",
+    "reviewState",
+    "items"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "isSynthetic": {
+      "type": "boolean"
+    },
+    "analysisId": {
+      "type": "string"
+    },
+    "projectId": {
+      "type": "string"
+    },
+    "reviewState": {
+      "enum": [
+        "draft",
+        "reviewed"
+      ]
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "type",
+          "status",
+          "text",
+          "owner",
+          "dueDate",
+          "supersedesId",
+          "evidence"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "decision",
+              "action",
+              "question",
+              "risk",
+              "alternative"
+            ]
+          },
+          "status": {
+            "enum": [
+              "proposed",
+              "agreed",
+              "superseded",
+              "rejected",
+              "unresolved"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supersedesId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "meetingId",
+                "revisionId",
+                "segmentId",
+                "startMs",
+                "endMs",
+                "quote"
+              ],
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "revisionId": {
+                  "type": "string"
+                },
+                "segmentId": {
+                  "type": "string"
+                },
+                "startMs": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "endMs": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "quote": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

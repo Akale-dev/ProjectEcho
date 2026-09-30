@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "note": "Design defaults only; application not implemented.",
+  "dataRoot": null,
+  "uiLanguage": "zh-CN",
+  "capture": {
+    "preferredMode": "process_tree",
+    "microphoneDefaultEnabled": false,
+    "chunkSeconds": 30,
+    "silentFallbackAllowed": false,
+    "allowAutomaticMicDeviceSwitch": false
+  },
+  "export": {
+    "autoCreateFullMixOnStop": true,
+    "fullMixProfile": "verified_default",
+    "maxFileBytes": 20000000,
+    "maxDurationSeconds": 1800,
+    "overlapSeconds": 5,
+    "keepOriginals": true
+  },
+  "network": {
+    "automaticUploadEnabled": false,
+    "telemetryEnabled": false,
+    "automaticModelDownload": false
+  },
+  "asr": {
+    "enabled": false,
+    "engine": "whisper.cpp",
+    "modelPath": null
+  },
+  "workflow": {
+    "defaultProject": "unclassified",
+    "titleMode": "local_timestamp",
+    "testRecording": "user_triggered_optional",
+    "bookmarkKinds": [
+      "marker"
+    ],
+    "playbackDisabledUntilSaved": true
+  }
+}

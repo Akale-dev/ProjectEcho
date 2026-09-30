@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "isSynthetic": true,
+  "exportId": "demo-export-001",
+  "meetingId": "demo-meeting-001",
+  "renderId": "demo-render-full",
+  "mixMode": "mono_mix",
+  "maxFileBytes": 20000000,
+  "parts": [
+    {
+      "partId": "part-001",
+      "file": "part-001.mp3",
+      "status": "planned",
+      "startUs": 0,
+      "endUs": 25000000,
+      "overlapPreviousUs": 0,
+      "byteLength": null,
+      "sha256": null,
+      "spans": [
+        {
+          "fileStartMs": 0,
+          "fileEndMs": 25000,
+          "sessionStartMs": 0,
+          "sessionEndMs": 25000
+        }
+      ]
+    },
+    {
+      "partId": "part-002",
+      "file": "part-002.mp3",
+      "status": "planned",
+      "startUs": 20000000,
+      "endUs": 40000000,
+      "overlapPreviousUs": 5000000,
+      "byteLength": null,
+      "sha256": null,
+      "spans": [
+        {
+          "fileStartMs": 0,
+          "fileEndMs": 20000,
+          "sessionStartMs": 20000,
+          "sessionEndMs": 40000
+        }
+      ]
+    }
+  ]
+}

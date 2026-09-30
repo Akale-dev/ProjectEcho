@@ -1,0 +1,17 @@
+# Convenience scripts
+`Test-MicrophoneIntegration.ps1`: `-List`或无ID仅枚举；显式`-MicrophoneId`启动约20秒真实mic短测（mic累计约10秒、录音上限30秒），远端限自建测试进程，不回放/转写/上传。默认Release。设备和mix采样率须匹配；跨速率时钟映射尚未验证。详情见docs/36。
+`Test-M1Integration.ps1`: 默认Release，显式选择Recording（40秒）、Disconnect（2秒失联）、Crash（32秒Host故障）或Silence（真实15分钟数字静音）。只录本次新建测试进程、mic固定关闭，全部探针共享项目内互斥锁。错误返回非零并保留原件；数据保存与设备时钟限制分别报告。先构建对应配置，普通Dev Test不执行实采。
+环境准备在Windows PowerShell 7.6.5实跑；其他宿主版本未验证。普通构建/测试不录音；显式 `Test-AudioIntegration.ps1` 会录制其自己创建的合成音进程，mic固定关闭。脚本不修改全局PATH/代理/执行策略、不安装驱动、不上传文件。实际证据见STATUS、docs/21及docs/33。
+`Test-AudioIntegration.ps1`: 无参数、无GUI的固定受控实机录音检查，先等待Host started再播放6秒测试音；原件与JSON结果保存在.local/AudioIntegration。仅自建进程树，不接受外部PID/mic/端点fallback；任何时钟/信号失败返回非零。普通Dev Test仍不录放音。
+`Dotnet.ps1`: 使用global.json指定的SDK，优先项目.tools；所有CLI缓存和临时目录留在.local，仅设置当前进程环境并在退出恢复。直接参数使用 `-Arguments @('--info')`。不自动安装SDK。
+`Inspect-Environment.ps1`: 已实跑；记录build/UBR/架构/SDK，仍不代表激活或录音成功。
+`Dev.ps1`: 已接入M0–M2实际解决方案。Test运行有显式断言的可执行套件，失败返回非零码；默认不录放音。Run启动WPF但不开始采集。Publish调用`Publish-Portable.ps1`生成完整App+Host+运行时+许可/哈希文件夹，仍不等于干净Windows验收。
+`Publish-Portable.ps1` / `Test-Portable.ps1`: 分别在新的artifacts子目录发布完整win-x64包、验证包哈希及本机WPF/Host无采集运行时；拒绝路径越界/重解析点，不覆盖或删除旧包。实际结果见docs/39。
+`Test-LongRunSynchronization.ps1`: 固定mic、测试进程及局部输出端点；先短声学资格测试，成功后才允许两小时双轨同步测试。另有测试运行器`--m2-endurance-probe`进行mic始终关闭的远端长录/导出检查；不替代双设备同步。
+`Test-M0Host.ps1`: 构建后验证同用户named pipe握手、空闲Stop和心跳超时退出；从不发送Start，不创建音频采集客户端。不能替代真实录音中失联停采验收。
+`Start-AudioProbeServer.ps1`: 开发诊断专用，复用已有 PowerShell 7，随机端口仅监听 127.0.0.1；只提供内存中的 tests/audio_probe.html。默认 15 分钟自动退出，可用 -DurationMinutes 1..60。启动输出 URL 和 .local/diagnostics 下的 ready JSON；不打开浏览器、不自动播放、不采集。用于 file URL 识别失败时的地址形式对照，不是工具权限替代方案，也不是录音运行依赖。其他文件/路径/方法及非本机 Host 会拒绝，禁止 mic/camera 和页面联网。
+`Verify-Planning.ps1`: PowerShell 7下校验需求引用、提示词一致、JSON/Schema样例及脚本语法，只写.local诊断；不运行产品测试。
+`Update-Guide.ps1`: PowerShell 7下从当前docs和FIRST_PROMPT重建离线指南，避免旧HTML仍显示过期需求。
+`Open-MeetingBrowser.ps1`: explicitly user-invoked dedicated user-data-dir launcher. Creates a profile only on actual launch; -WhatIf previews. Does not identify a proven audio process root or prove tab isolation. Logs no meeting URL, although URLs necessarily exist in the browser launch command and should not be included in process diagnostic dumps.
+`Verify-Handoff.ps1`: validates original delivered hashes only. Files change during development; that is expected. It is not a build/integration test.
+Follow organization policies if scripts or profiles are restricted. Do not change execution policy to make them run.

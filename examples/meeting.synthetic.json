@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 2,
+  "isSynthetic": true,
+  "meetingId": "demo-meeting-001",
+  "projectId": "demo-project",
+  "status": "planned",
+  "createdAtUtc": "2026-09-28T01:00:00Z",
+  "durationUs": 40000000,
+  "captureMode": "dedicated_browser",
+  "captureIndexPath": "journal/capture-index.jsonl",
+  "microphoneEnabledAtStart": false,
+  "sources": [
+    {
+      "sourceId": "remote-1",
+      "kind": "remote",
+      "chunks": [
+        {
+          "chunkId": "remote-chunk-1",
+          "segmentId": "remote-segment-1",
+          "path": "sources/remote-1/000001.wav",
+          "startUs": 0,
+          "durationUs": 15000000,
+          "frameCount": 720000,
+          "byteLength": null,
+          "sha256": null
+        },
+        {
+          "chunkId": "remote-chunk-2",
+          "segmentId": "remote-segment-2",
+          "path": "sources/remote-1/000002.wav",
+          "startUs": 20000000,
+          "durationUs": 20000000,
+          "frameCount": 960000,
+          "byteLength": null,
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "sourceId": "mic-1",
+      "kind": "microphone",
+      "chunks": [
+        {
+          "chunkId": "mic-chunk-1",
+          "segmentId": "mic-segment-1",
+          "path": "sources/mic-1/000001.wav",
+          "startUs": 5000000,
+          "durationUs": 10000000,
+          "frameCount": 480000,
+          "byteLength": null,
+          "sha256": null
+        },
+        {
+          "chunkId": "mic-chunk-2",
+          "segmentId": "mic-segment-2",
+          "path": "sources/mic-1/000002.wav",
+          "startUs": 20000000,
+          "durationUs": 15000000,
+          "frameCount": 720000,
+          "byteLength": null,
+          "sha256": null
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "startUs": 15000000,
+      "endUs": 20000000,
+      "sourceId": null,
+      "reason": "paused"
+    },
+    {
+      "startUs": 0,
+      "endUs": 5000000,
+      "sourceId": "mic-1",
+      "reason": "mic_disabled"
+    },
+    {
+      "startUs": 35000000,
+      "endUs": 40000000,
+      "sourceId": "mic-1",
+      "reason": "mic_disabled"
+    }
+  ]
+}

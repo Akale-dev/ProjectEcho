@@ -1,0 +1,324 @@
+{
+  "schemaVersion": "1.0",
+  "package": "ProjectEcho ChatGPT Desktop/Codex Development Handoff",
+  "version": "1.0",
+  "preparedDate": "2026-09-28",
+  "note": "Initial handoff integrity only; excludes this manifest itself. Does not imply implemented software or passed Windows tests.",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 125,
+      "sha256": "eaf97ec4b7e2110bc6b8ae69c3e0093393eec8001b4926b327176bc12065546c"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 564,
+      "sha256": "07da7d5f5c0392bfc9271ece88bfbb31dd3309d32b7c73fb8122f18c3b35db89"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 4878,
+      "sha256": "6bee2cb5414b36e7166aed9335e7ae6a7c1e9d2dc6af00e3118d20c6cf96d013"
+    },
+    {
+      "path": "FIRST_PROMPT.txt",
+      "bytes": 1830,
+      "sha256": "6299eb828f00068291624aab16a7c7abcc94a77f6826a73d40bd40ba0af450bf"
+    },
+    {
+      "path": "Open-Guide.cmd",
+      "bytes": 42,
+      "sha256": "789fbad32482abe8180050acad5758c3d7bd73264f1236cdb4d4aeef9f4bf47d"
+    },
+    {
+      "path": "PACKAGE_CHECKS.md",
+      "bytes": 2008,
+      "sha256": "d2208f0adc7579f2c8c1d86a6ae6bacc918a49a357715fd594dc23f26de7c3bf"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1920,
+      "sha256": "7d008d37636753f073e759d72399d08319912f2147d0e67ac40e1ce7ae74bfdf"
+    },
+    {
+      "path": "REQUIREMENTS.csv",
+      "bytes": 1347,
+      "sha256": "90dcb648793d225b5977e8d659d589173f98761a8ee25f7b33a01b0372926501"
+    },
+    {
+      "path": "START_HERE.html",
+      "bytes": 74960,
+      "sha256": "c4211c8540dd8adc4d7dae3a4413aef3d1474d945e7093114e712d70dbfe0e54"
+    },
+    {
+      "path": "STATUS.md",
+      "bytes": 1289,
+      "sha256": "9d84819a6cb0178d8a7a3d37c7edc660cbe035cd2923367ebeb7d51ea30d9008"
+    },
+    {
+      "path": "docs/00_HANDOFF.md",
+      "bytes": 2342,
+      "sha256": "0d325e9e9a8236f6e38ff47abd2d754da270c9cdb29a9e2be4925242acd74866"
+    },
+    {
+      "path": "docs/01_PRODUCT_REQUIREMENTS.md",
+      "bytes": 2229,
+      "sha256": "1cecff7126f7254e9f1fec6e282d091c244ce2375e1b982023481acc525af5b3"
+    },
+    {
+      "path": "docs/02_CAPTURE_PLATFORM_MATRIX.md",
+      "bytes": 3051,
+      "sha256": "9c695700c9af6476d997de6ec891a4a653bdfd4eeceb9ba44d9c92a240888637"
+    },
+    {
+      "path": "docs/03_ARCHITECTURE.md",
+      "bytes": 2879,
+      "sha256": "87a7be0f111f0a5dc63c6c25cd4634c88d91a21c5e1dd7bf0ca98d6225ca8558"
+    },
+    {
+      "path": "docs/04_AUDIO_ENGINE.md",
+      "bytes": 3883,
+      "sha256": "54ba4cc8557af09c0690c6e59339c75b1b4f02787563f6d16197677d5c2cfa28"
+    },
+    {
+      "path": "docs/05_BROWSER_CAPTURE.md",
+      "bytes": 3101,
+      "sha256": "98a5c369e12aff7278ec2fe20db2f5fd92a413a99495c90ed001f0c90c5400b6"
+    },
+    {
+      "path": "docs/06_MIX_EXPORT.md",
+      "bytes": 4338,
+      "sha256": "41ac538c17943d6314cee974e1bdcbf89d51120c33ac135a61d334363b1c0126"
+    },
+    {
+      "path": "docs/07_LOCAL_ASR_EXTERNAL_WORKFLOW.md",
+      "bytes": 2993,
+      "sha256": "1feb543522be8a4703176f0452a72d61254d3fbf10ed436621689eb3004764c9"
+    },
+    {
+      "path": "docs/08_PROJECT_ANALYSIS.md",
+      "bytes": 2040,
+      "sha256": "89c175fd817c6fd1fe88f75bd6f91b8d3d8413491830eebcf490c214fefa8d38"
+    },
+    {
+      "path": "docs/09_UI_UX.md",
+      "bytes": 2562,
+      "sha256": "ca876b82c42538547c34369161820aff94338c315dc1661cf1d99655ad5e91ea"
+    },
+    {
+      "path": "docs/10_PRIVACY_SECURITY.md",
+      "bytes": 2594,
+      "sha256": "919a326971869deadf0bfa14fbcfa87d4b3d55c79d8b1b235c0b8c7a45431f78"
+    },
+    {
+      "path": "docs/11_STORAGE_SCHEMA.md",
+      "bytes": 2360,
+      "sha256": "2f3d6ca0812d584b4d8a249cb862bae3674b7fe82298c76b3145ce323a3a866c"
+    },
+    {
+      "path": "docs/12_MILESTONES.md",
+      "bytes": 2571,
+      "sha256": "6085ac7b50b227b22f08ab18895cd45deb1c871f7b4d7aac21dcd138628319e4"
+    },
+    {
+      "path": "docs/13_ACCEPTANCE_TESTS.md",
+      "bytes": 2276,
+      "sha256": "9dcc7ff22d9d5e45ef7b6c6f55cc7fa1339367d6813d7f87933ba130865922f4"
+    },
+    {
+      "path": "docs/14_WINDOWS_SETUP.md",
+      "bytes": 3304,
+      "sha256": "6a8eb20bf64ad9d856b9ab9647f6c1de5af79fafa62a708c8935eec515a61b6a"
+    },
+    {
+      "path": "docs/15_GIT_WORKFLOW.md",
+      "bytes": 1553,
+      "sha256": "abc9d7bcfad299092d0a0bf2a115885dccf7addfe8f442e51396b4f2698059ac"
+    },
+    {
+      "path": "docs/16_RISKS_DECISIONS.md",
+      "bytes": 1922,
+      "sha256": "ecbd7bbf3dda7921aa198d514d72097bf7feaa6738cd501d8547d3dd083ccb2e"
+    },
+    {
+      "path": "docs/17_SOURCES.md",
+      "bytes": 3810,
+      "sha256": "d07f3ad0d86c8f8b4c79c4fb2bbbcf670d47d45fb21f5ed6fd1f25798d330ac7"
+    },
+    {
+      "path": "docs/18_RELEASE_DEPENDENCIES.md",
+      "bytes": 2079,
+      "sha256": "ed2738f5b022b9bb554f6bf7a26752d85c75c8b77c52995ec21269c3fb75ec63"
+    },
+    {
+      "path": "docs/19_EDGE_CASES.md",
+      "bytes": 1712,
+      "sha256": "a902a4c79dc6e7c22dbd5b15486e90497b11a226ef2b2ae6e742853ec05585fe"
+    },
+    {
+      "path": "examples/README.md",
+      "bytes": 399,
+      "sha256": "a606e8d98b822f3cdf3f9481d23491c081055152637ac73f9b771ad54c86ad49"
+    },
+    {
+      "path": "examples/analysis.synthetic.json",
+      "bytes": 684,
+      "sha256": "11b7cdb1aa7ec29e02ccba73ad1358672300f376f6cd82495574af7f4f6521d2"
+    },
+    {
+      "path": "examples/export-profiles.json",
+      "bytes": 675,
+      "sha256": "0d476dd82eadebb39a13d03022e684ddc0c2298e52813921de4735f13ea0ae4d"
+    },
+    {
+      "path": "examples/export.synthetic.json",
+      "bytes": 1011,
+      "sha256": "df88b82180e84eb6392127bd0c2381d933e28f7edc0ffd49e2e6b5d48fe066c6"
+    },
+    {
+      "path": "examples/meeting.synthetic.json",
+      "bytes": 1828,
+      "sha256": "92b0dbe611bd7129ecf754d6ecee1f739649be7957c399c3442f6d5c4da27293"
+    },
+    {
+      "path": "examples/settings.sample.json",
+      "bytes": 754,
+      "sha256": "dfa95203565868f66ca45e4a425ab3b3966148aacfb1a2f61bb94e410802badb"
+    },
+    {
+      "path": "examples/transcript.synthetic.json",
+      "bytes": 747,
+      "sha256": "a0398f3a87ff70d9b4a6852b013ee50189eb842f233cae2104fadbb4feaf0df5"
+    },
+    {
+      "path": "prompts/01_START_M0.txt",
+      "bytes": 1830,
+      "sha256": "6299eb828f00068291624aab16a7c7abcc94a77f6826a73d40bd40ba0af450bf"
+    },
+    {
+      "path": "prompts/02_M1_RECORDING.txt",
+      "bytes": 511,
+      "sha256": "48eddcc2da66b0fd63afbaeed1f9f3cd006a3ab82e6f780a08a351c4c986daf4"
+    },
+    {
+      "path": "prompts/03_M2_MIX_EXPORT.txt",
+      "bytes": 705,
+      "sha256": "8e3109d9ddfc5ffd912f4cf2acc331a79836f7345f63aea164fa51420fa502d1"
+    },
+    {
+      "path": "prompts/04_M3_TRANSCRIPTION.txt",
+      "bytes": 488,
+      "sha256": "8a64d79be8ab9f4c16bd33cbe4e9da7efcc4bfcbcf60c4b075dcffdc6438d43b"
+    },
+    {
+      "path": "prompts/05_M4_PROJECT_ANALYSIS.txt",
+      "bytes": 507,
+      "sha256": "8b51905dd9edf0861acff231669b93f87895f5bf512511b633066f0e4aeb85b8"
+    },
+    {
+      "path": "prompts/06_M5_OPTIONAL_TAB.txt",
+      "bytes": 577,
+      "sha256": "a33f588273c6f2c06238832adfeb6c3d39dc93ef694b8b4c99e38161118edb65"
+    },
+    {
+      "path": "prompts/07_M6_RELEASE.txt",
+      "bytes": 595,
+      "sha256": "dd6ec94c3030134c7c0d3def2cb122c518877d41c1fbeed481afce6241c759ff"
+    },
+    {
+      "path": "prompts/08_RESUME_AND_FIX.txt",
+      "bytes": 416,
+      "sha256": "c7e6dc4eaecceab973de1bd725ab70f27ee2fe57eb375eaff8453b3ac2fc6bf1"
+    },
+    {
+      "path": "prompts/EXTERNAL_TRANSCRIPTION_ZH.txt",
+      "bytes": 1348,
+      "sha256": "c41084b71af0387efdf2e4bb238fb15b9fe13032677d6a7ff94b0cfa1bf8ed14"
+    },
+    {
+      "path": "reference/AudioContracts.cs",
+      "bytes": 2720,
+      "sha256": "05a8938acc4a8432ee230bf09ed986e390aefb9572bbcc1416010b098e00cd0a"
+    },
+    {
+      "path": "reference/ExportAlgorithm.md",
+      "bytes": 1511,
+      "sha256": "f34cb8bb1a334a2f1ed2c632d7a63ddd7c0d6f98be89b83f3af8f746a285d987"
+    },
+    {
+      "path": "schemas/analysis.schema.json",
+      "bytes": 3344,
+      "sha256": "6daa7aa17fb00243a2f89cc823ddefabffaf38f4f8b20b35f3bd026fd4ff7198"
+    },
+    {
+      "path": "schemas/export-manifest.schema.json",
+      "bytes": 3673,
+      "sha256": "f7007a09c6374f45e6675a50a5409617c947ba51111c55227365dca8f493279e"
+    },
+    {
+      "path": "schemas/meeting.schema.json",
+      "bytes": 4347,
+      "sha256": "d4dafb01ec07d084ee7c8ffb1d3319b0d659e0ffc59971c9b5aeefb993317544"
+    },
+    {
+      "path": "schemas/transcript.schema.json",
+      "bytes": 2187,
+      "sha256": "eda54c04a370f6f2efcc9770f2d892a22363692efcc17ab9da78453090b50e3d"
+    },
+    {
+      "path": "scripts/Dev.ps1",
+      "bytes": 3400,
+      "sha256": "b5c513f7fff4edfce1067657261b074f849774f5b4de3ff17ce42ee702a53ce0"
+    },
+    {
+      "path": "scripts/Inspect-Environment.ps1",
+      "bytes": 2607,
+      "sha256": "7bd8b571b6e0bfa5cc02e435e1ab6ed1a73364355894f0b174bb3aa6a9614b79"
+    },
+    {
+      "path": "scripts/Open-MeetingBrowser.ps1",
+      "bytes": 2524,
+      "sha256": "8111dfbca5e8b789eb4ff679bf989415c520852e6a2bd177d3d81d9d72cc3a08"
+    },
+    {
+      "path": "scripts/README.md",
+      "bytes": 1195,
+      "sha256": "6e2b8d0c5360b9bd821a090b4df5194714cb2b109f9fba14ed50b655a7860ec3"
+    },
+    {
+      "path": "scripts/Verify-Handoff.ps1",
+      "bytes": 1174,
+      "sha256": "a0b37a3b5350d48c9cec0add2af0b8e74acd9806a03d10ceef14d813acecd69b"
+    },
+    {
+      "path": "src/README.md",
+      "bytes": 233,
+      "sha256": "1927941cd41d59c539b9f331b3cefc863c1c38549e0bb6be2ba1976f4aaeeb97"
+    },
+    {
+      "path": "tests/README.md",
+      "bytes": 444,
+      "sha256": "ab05e1087fa6af9abcc515618d33d5bd329d2bcb418dec900629523b0567709a"
+    },
+    {
+      "path": "tests/acceptance.csv",
+      "bytes": 6061,
+      "sha256": "03072ea95648ee945df6703ddb05b08184cbdc2226ef77fdadbe0dcd410e3c91"
+    },
+    {
+      "path": "tests/algorithm-vectors.json",
+      "bytes": 1942,
+      "sha256": "18878aabf5c62aadceb51daeb95462cb9e1f7ceddc0ee23df89fd0b25ab417c9"
+    },
+    {
+      "path": "tests/audio_probe.html",
+      "bytes": 2879,
+      "sha256": "d9dd6ad1f5e9ad28e21afe4bc26f9e38cf1961300ec051a51e3e8443bb0d5907"
+    },
+    {
+      "path": "tools/README.md",
+      "bytes": 265,
+      "sha256": "0b712a82d3085f573d4de81ab9c5cd0f1073d6315527656893fca39fab799fdc"
+    }
+  ]
+}

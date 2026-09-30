@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "ProjectEcho Transcript v1",
+  "required": [
+    "schemaVersion",
+    "isSynthetic",
+    "meetingId",
+    "revisionId",
+    "parentRevisionId",
+    "provider",
+    "inputExportId",
+    "segments"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "isSynthetic": {
+      "type": "boolean"
+    },
+    "meetingId": {
+      "type": "string"
+    },
+    "revisionId": {
+      "type": "string"
+    },
+    "parentRevisionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provider": {
+      "type": "string"
+    },
+    "inputExportId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "segmentId",
+          "startMs",
+          "endMs",
+          "speakerLabel",
+          "sourceKind",
+          "text",
+          "timestampQuality"
+        ],
+        "properties": {
+          "segmentId": {
+            "type": "string"
+          },
+          "startMs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endMs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speakerLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceKind": {
+            "enum": [
+              "remote",
+              "microphone",
+              "mixed",
+              "unknown"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "timestampQuality": {
+            "enum": [
+              "verified",
+              "approximate",
+              "untimed"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "listening_m4a",
+      "format": "m4a",
+      "codec": "aac",
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitrate": 96000
+    },
+    {
+      "id": "upload_mp3",
+      "format": "mp3",
+      "codec": "mp3",
+      "sampleRate": 32000,
+      "channels": 1,
+      "bitrate": 64000
+    },
+    {
+      "id": "upload_m4a",
+      "format": "m4a",
+      "codec": "aac",
+      "sampleRate": 32000,
+      "channels": 1,
+      "bitrate": 64000
+    },
+    {
+      "id": "lossless_wav",
+      "format": "wav",
+      "codec": "pcm_s16le",
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitrate": null
+    }
+  ],
+  "note": "Design candidates only. M2 requires WAV and one verified compressed format. verified_default resolves to the encoder/profile that actually passes T28; no format is currently certified."
+}

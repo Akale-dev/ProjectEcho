@@ -1,0 +1,334 @@
+{
+  "description": "Synthetic expected algorithm behavior, not executed application tests",
+  "timeline": [
+    {
+      "name": "different_start_end",
+      "sessionDurationMs": 40000,
+      "remoteRangeMs": [
+        0,
+        40000
+      ],
+      "micRangeMs": [
+        5000,
+        35000
+      ],
+      "pauseRangeMs": [
+        15000,
+        20000
+      ],
+      "expectedFullMixDurationMs": 40000
+    },
+    {
+      "name": "constant_offset",
+      "fileLocalMs": 4000,
+      "partStartMs": 20000,
+      "expectedSessionMs": 24000
+    },
+    {
+      "name": "compact_after_pause",
+      "fileLocalMs": 18000,
+      "spans": [
+        {
+          "fileStartMs": 0,
+          "fileEndMs": 15000,
+          "sessionStartMs": 0,
+          "sessionEndMs": 15000
+        },
+        {
+          "fileStartMs": 15000,
+          "fileEndMs": 35000,
+          "sessionStartMs": 20000,
+          "sessionEndMs": 40000
+        }
+      ],
+      "expectedSessionMs": 23000,
+      "stage": "future_only_after_M2",
+      "note": "M2 preserves the full elapsed timeline; this is a deferred edited-export mapping example, not an M2 acceptance gate."
+    }
+  ],
+  "splits": [
+    {
+      "durationMs": 40000,
+      "maxPartMs": 25000,
+      "overlapMs": 5000,
+      "expectedRangesMs": [
+        [
+          0,
+          25000
+        ],
+        [
+          20000,
+          40000
+        ]
+      ]
+    },
+    {
+      "durationMs": 51000,
+      "maxPartMs": 25000,
+      "overlapMs": 5000,
+      "expectedRangesMs": [
+        [
+          0,
+          25000
+        ],
+        [
+          20000,
+          45000
+        ],
+        [
+          40000,
+          51000
+        ]
+      ]
+    },
+    {
+      "durationMs": 40000,
+      "maxPartMs": 25000,
+      "overlapMs": 0,
+      "expectedRangesMs": [
+        [
+          0,
+          25000
+        ],
+        [
+          25000,
+          40000
+        ]
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "maxPartMs": 5000,
+      "overlapMs": 5000,
+      "expected": "validation_error"
+    },
+    {
+      "maxFileBytes": 1,
+      "expected": "cannot_encode_under_limit"
+    }
+  ],
+  "captureBoundaries": [
+    {
+      "name": "stop_preserves_last_complete_frame",
+      "tests": [
+        "T51"
+      ],
+      "sampleRate": 1000,
+      "alreadySavedFrames": 95,
+      "rawPacketStartFrame": 95,
+      "rawFrameCount": 10,
+      "firstForbiddenDeviceFrame": 100,
+      "expectedRetainedFrames": 5,
+      "expectedTotalSavedFrames": 100,
+      "expectedLastSavedFrame": 99
+    },
+    {
+      "name": "stop_one_frame_after_30_second_chunk",
+      "tests": [
+        "T13",
+        "T51"
+      ],
+      "sampleRate": 48000,
+      "chunkTargetFrames": 1440000,
+      "alreadySavedFrames": 1439520,
+      "queuedPackets": [
+        {
+          "startFrame": 1439520,
+          "frameCount": 480
+        },
+        {
+          "startFrame": 1440000,
+          "frameCount": 480
+        }
+      ],
+      "firstForbiddenDeviceFrame": 1440001,
+      "expectedChunkFrames": [
+        1440000,
+        1
+      ],
+      "expectedLastSavedFrame": 1440000
+    },
+    {
+      "name": "mic_off_with_writer_backlog",
+      "tests": [
+        "T11",
+        "T52"
+      ],
+      "sampleRate": 1000,
+      "alreadySavedFrames": 90,
+      "queuedPackets": [
+        {
+          "startFrame": 90,
+          "frameCount": 5
+        },
+        {
+          "startFrame": 95,
+          "frameCount": 10
+        },
+        {
+          "startFrame": 105,
+          "frameCount": 5
+        }
+      ],
+      "firstForbiddenDeviceFrame": 100,
+      "expectedAdditionalStoredFrames": 10,
+      "expectedForbiddenFramesStored": 0,
+      "ackRequires": [
+        "client_stopped_and_released",
+        "callbacks_settled",
+        "forbidden_owned_pcm_discarded"
+      ],
+      "savedRequires": [
+        "authorized_queue_drained",
+        "pcm_and_index_flushed",
+        "checkpoint_flushed",
+        "chunk_finalized",
+        "manifest_replaced"
+      ]
+    },
+    {
+      "name": "boundary_crosses_one_frame",
+      "tests": [
+        "T15",
+        "T52"
+      ],
+      "sampleRate": 1000,
+      "rawPacketStartFrame": 95,
+      "rawFrameCount": 10,
+      "effectiveSessionUs": 100500,
+      "firstForbiddenDeviceFrame": 100,
+      "expectedRetainedFrames": 5,
+      "expectedStraddlingFramesDiscarded": 1,
+      "expectedAllDiscardedFrames": 5
+    },
+    {
+      "name": "ambiguous_timestamp_at_mic_boundary",
+      "tests": [
+        "T22",
+        "T52"
+      ],
+      "flags": [
+        "timestamp_error"
+      ],
+      "rawFrameCount": 480,
+      "expectedRetainedFrames": 0,
+      "expectedGapReason": "boundary_uncertain",
+      "expectedStatus": "degraded"
+    },
+    {
+      "name": "duplicate_stop",
+      "tests": [
+        "T51"
+      ],
+      "requests": [
+        "same-stop-id",
+        "same-stop-id"
+      ],
+      "expectedFinalizeCount": 1,
+      "expectedSameResult": true,
+      "expectedAdditionalFrames": 0
+    }
+  ],
+  "recovery": [
+    {
+      "name": "truncated_index_tail",
+      "tests": [
+        "T20",
+        "T53"
+      ],
+      "lastVerifiedCheckpointSequence": 7,
+      "checkpointCommittedFrames": 720000,
+      "indexAfterCheckpointHasTruncatedLine": true,
+      "physicalPcmFrames": 720480,
+      "expectedRecoveredFrames": 720000,
+      "expectedStatus": "recovered",
+      "newProcessMustUseDiskOnly": true
+    },
+    {
+      "name": "pcm_shorter_than_checkpoint",
+      "tests": [
+        "T20",
+        "T53"
+      ],
+      "checkpointCommittedFrames": 720000,
+      "physicalPcmFrames": 719999,
+      "expectedMaximumRecoverableFrames": 719999,
+      "expectedReportedLostFrames": 1,
+      "expectedStatus": "degraded",
+      "mustNotClaimCompleteRecovery": true
+    },
+    {
+      "name": "source_format_changes_between_segments",
+      "tests": [
+        "T22",
+        "T53"
+      ],
+      "segments": [
+        {
+          "sampleRate": 48000,
+          "frames": 48000,
+          "startUs": 0
+        },
+        {
+          "sampleRate": 44100,
+          "frames": 44100,
+          "startUs": 1000000
+        }
+      ],
+      "expectedDurationUs": 2000000,
+      "newProcessMustUseDiskOnly": true
+    }
+  ],
+  "plannedRandomizedChecks": [
+    {
+      "name": "normal_stop_across_packet_and_chunk_edges",
+      "tests": [
+        "T13",
+        "T51"
+      ],
+      "status": "NOT_RUN",
+      "seed": 20260928,
+      "sampleRate": 48000,
+      "caseCount": 1000,
+      "includeCutoffFrames": [
+        1439999,
+        1440000,
+        1440001
+      ],
+      "invariant": "For valid timestamps, concatenated stored chunk frames equal every authorized complete source frame before the recorded firstForbiddenDeviceFrame, exactly once; no frame after the boundary is stored."
+    },
+    {
+      "name": "mic_off_backlog_and_callback_race",
+      "tests": [
+        "T11",
+        "T52"
+      ],
+      "status": "NOT_RUN",
+      "seed": 20260929,
+      "caseCount": 1000,
+      "invariant": "After the capture-thread mic-off acknowledgement, no new mic PCM is acquired or stored; queued pre-boundary authorized frames may still flush, while forbidden and ambiguous frames are discarded with a recorded reason."
+    }
+  ],
+  "storageBudget": [
+    {
+      "name": "raw_float32_remote_stereo_mic_mono_one_hour",
+      "tests": [
+        "T57"
+      ],
+      "sampleRate": 48000,
+      "remoteChannels": 2,
+      "micChannels": 1,
+      "bytesPerSample": 4,
+      "durationSeconds": 3600,
+      "expectedRawPcmBytes": 2073600000,
+      "excludes": [
+        "WAV_headers",
+        "capture_index",
+        "full_mix",
+        "encoding_temporaries",
+        "filesystem_overhead"
+      ]
+    }
+  ]
+}

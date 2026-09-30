@@ -1,0 +1,468 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProjectEcho capture-index JSONL record v1",
+  "description": "Validate each JSONL line. Requires additional sequence, exact-byte hash, reference, frame, boundary and checkpoint validation described in docs/11_STORAGE_SCHEMA.md. Synthetic examples are not executed captures.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "isSynthetic",
+    "sequence",
+    "data",
+    "sha256"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "isSynthetic": {
+      "type": "boolean"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "data": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "meetingId",
+            "epochQpc100ns",
+            "startedAtUtc",
+            "displayTimeZone"
+          ],
+          "properties": {
+            "type": {
+              "const": "session"
+            },
+            "meetingId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "epochQpc100ns": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            "startedAtUtc": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "displayTimeZone": {
+              "type": "string",
+              "minLength": 1
+            },
+            "storageVersion": {
+              "const": "m1-recording-1",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "segmentId",
+            "sourceId",
+            "format",
+            "anchor"
+          ],
+          "properties": {
+            "type": {
+              "const": "segment"
+            },
+            "segmentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "format": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sampleRate",
+                "channels",
+                "encoding",
+                "blockAlign",
+                "channelMask"
+              ],
+              "properties": {
+                "sampleRate": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "channels": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 32
+                },
+                "encoding": {
+                  "enum": [
+                    "pcm_s16le",
+                    "pcm_s24le",
+                    "pcm_s32le",
+                    "float32le"
+                  ]
+                },
+                "blockAlign": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "channelMask": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "validBitsPerSample": {
+                  "maximum": 32,
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "anchor": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "deviceFramePosition",
+                "qpcPosition100ns",
+                "sessionStartUs",
+                "timestampQuality"
+              ],
+              "properties": {
+                "deviceFramePosition": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "qpcPosition100ns": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sessionStartUs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "timestampQuality": {
+                  "enum": [
+                    "device_referenced",
+                    "qpc_referenced",
+                    "estimated",
+                    "invalid"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "segmentId",
+            "chunkId",
+            "path",
+            "deviceFramePosition",
+            "qpcPosition100ns",
+            "rawFrameCount",
+            "flags",
+            "retainedFrameOffset",
+            "frameCount",
+            "chunkFrameOffset",
+            "sessionStartUs",
+            "timestampQuality"
+          ],
+          "properties": {
+            "type": {
+              "const": "packet"
+            },
+            "segmentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "chunkId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "deviceFramePosition": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "qpcPosition100ns": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rawFrameCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "devicePositionValid": {
+              "type": "boolean"
+            },
+            "flags": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "silent",
+                  "data_discontinuity",
+                  "timestamp_error"
+                ]
+              }
+            },
+            "retainedFrameOffset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "frameCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "chunkFrameOffset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sessionStartUs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "timestampQuality": {
+              "enum": [
+                "device_referenced",
+                "qpc_referenced",
+                "estimated",
+                "invalid"
+              ]
+            },
+            "gapBefore100ns": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            "gapReason": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "unobserved_audio_interval",
+                null
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "requestId",
+            "operation",
+            "segmentId",
+            "effectiveSessionUs",
+            "firstForbiddenDeviceFrame",
+            "acceptedThroughSequence",
+            "discardedFrameCount",
+            "discardReason"
+          ],
+          "properties": {
+            "type": {
+              "const": "boundary"
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "operation": {
+              "enum": [
+                "stop",
+                "pause",
+                "mic_off"
+              ]
+            },
+            "segmentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "effectiveSessionUs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "firstForbiddenDeviceFrame": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "acceptedThroughSequence": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "discardedFrameCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "discardReason": {
+              "enum": [
+                null,
+                "crossing_frame",
+                "after_boundary",
+                "timestamp_ambiguous"
+              ]
+            },
+            "effectiveQpc100ns": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "coveredThroughSequence",
+            "chunks"
+          ],
+          "properties": {
+            "type": {
+              "const": "checkpoint"
+            },
+            "coveredThroughSequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "chunks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "chunkId",
+                  "path",
+                  "committedFrameCount",
+                  "committedPcmBytes",
+                  "dataOffsetBytes"
+                ],
+                "properties": {
+                  "chunkId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "committedFrameCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "committedPcmBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "dataOffsetBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "segmentId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "pcmSha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            },
+            "observedSessionUs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "isSynthetic": {
+            "const": false
+          }
+        },
+        "required": [
+          "isSynthetic"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    }
+  ]
+}

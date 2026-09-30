@@ -1,0 +1,280 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Text.Json;
+using System.Windows;
+using Microsoft.Win32;
+using ProjectEcho.Core;
+using ProjectEcho.Export;
+
+namespace ProjectEcho.App;
+
+public partial class MainWindow
+{
+    private readonly Queue<string> pendingMixes = new();
+    private readonly Dictionary<string, FullMixResult> renderedMeetings = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? exportCancellation;
+    private Task backgroundWork = Task.CompletedTask;
+    // These delegates keep the actual file pipelines injectable for no-device shutdown tests.
+    private Func<string, CancellationToken, FullMixResult> renderOperation = M2ExportService.RenderMeeting;
+    private Func<FullMixResult, ExportOptions, string, CancellationToken, ExportResult> exportOperation = M2ExportService.ExportParts;
+    private bool exportBusy;
+    private string? selectedMeetingDirectory;
+    private FullMixResult? currentMix;
+    private string? lastExportDirectory;
+
+    private void UpdateExportControls()
+    {
+        bool idle = SessionRules.CanStart(state) && !WindowCloseRequested;
+        DataRootButton.IsEnabled = idle && !exportBusy && !transcriptBusy && pendingMixes.Count == 0 && !recoveryBusy && !refreshing;
+        RetryMixButton.IsEnabled = idle && !exportBusy && selectedMeetingDirectory is not null;
+        ExportButton.IsEnabled = !WindowCloseRequested && !exportBusy && currentMix is not null;
+        CancelExportButton.IsEnabled = !WindowCloseRequested && exportBusy;
+        OpenExportButton.IsEnabled = !WindowCloseRequested && lastExportDirectory is not null;
+        FileMeetingButton.IsEnabled = idle && !recoveryBusy && selectedMeetingDirectory is not null;
+    }
+
+    private void DataRoot_Click(object sender, RoutedEventArgs e)
+    {
+        if (!DataRootButton.IsEnabled) return;
+        var picker = new OpenFolderDialog { Title = "选择 ProjectEcho 本地数据目录", Multiselect = false };
+        if (picker.ShowDialog(this) != true) return;
+        try
+        {
+            var chosen = ValidateLocalDataRoot(picker.FolderName);
+            Directory.CreateDirectory(chosen);
+            // Probe only a uniquely owned file; never modify existing user files.
+            var probe = Path.Combine(chosen, ".projectecho-write-" + Guid.NewGuid().ToString("N"));
+            using (var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                       1, FileOptions.DeleteOnClose)) stream.WriteByte(0);
+            player.Stop(); player.Close();
+            dataRoot = chosen;
+            LoadWhisperConfiguration();
+            DataRootText.Text = chosen;
+            selectedMeetingDirectory = null; currentMix = null; mixedPath = null; lastExportDirectory = null;
+            RecoveryBox.ItemsSource = null;
+            SelectedMeetingText.Text = "数据目录已更改；原有文件保留在原位置。";
+            SetStatus("后续录音写入所选数据目录；没有移动或删除历史原件。");
+        }
+        catch (Exception ex) { SetStatus("数据目录不可用：" + ex.Message); }
+        UpdateControls();
+    }
+
+    private static string ValidateLocalDataRoot(string path)
+    {
+        var full = Path.GetFullPath(path);
+        string root = Path.GetPathRoot(full)!;
+        if (root.StartsWith("\\\\", StringComparison.Ordinal) || new DriveInfo(root).DriveType == DriveType.Network ||
+            full.AsSpan(root.Length).Contains(':'))
+            throw new InvalidDataException("请选择本地磁盘目录；录音与浏览器资料不写入网络目录或备用数据流。");
+        RejectReparseAncestors(full);
+        return full;
+    }
+
+    private void SelectMeeting(string directory)
+    {
+        try
+        {
+            selectedMeetingDirectory = ValidateRecordingDirectory(directory);
+            renderedMeetings.TryGetValue(selectedMeetingDirectory, out currentMix);
+            // Reopening historical meetings requires validation/rendering before playback.
+            mixedPath = SelectListeningPath(currentMix);
+            SelectedMeetingText.Text = MeetingDisplayName(selectedMeetingDirectory);
+            var filing = ReadFiling(selectedMeetingDirectory);
+            FiledTitleBox.Text = filing.Title;
+            FiledProjectBox.Text = filing.Project;
+        }
+        catch (Exception ex)
+        {
+            selectedMeetingDirectory = null; currentMix = null; mixedPath = null;
+            ExportStatus.Text = "无法选择录音：" + ex.Message;
+        }
+        UpdateControls();
+    }
+
+    private void QueueMix(string directory)
+    {
+        if (WindowCloseRequested) return;
+        if (!pendingMixes.Contains(directory, StringComparer.OrdinalIgnoreCase)) pendingMixes.Enqueue(directory);
+        if (!exportBusy) backgroundWork = DrainMixQueueAsync();
+    }
+
+    private async Task DrainMixQueueAsync()
+    {
+        if (exportBusy || WindowCloseRequested) return;
+        while (pendingMixes.Count > 0 && !WindowCloseRequested)
+        {
+            string directory = pendingMixes.Dequeue();
+            exportBusy = true;
+            using var cancellation = new CancellationTokenSource();
+            exportCancellation = cancellation;
+            ExportStatus.Text = "正在校验原件并生成完整混音…可取消，也可开始下一场录音。";
+            UpdateControls();
+            try
+            {
+                var result = await Task.Run(() => renderOperation(directory, cancellation.Token));
+                renderedMeetings[directory] = result;
+                if (string.Equals(selectedMeetingDirectory, directory, StringComparison.OrdinalIgnoreCase))
+                {
+                    currentMix = result;
+                    mixedPath = SelectListeningPath(result);
+                }
+                ExportStatus.Text = $"{(result.SourceStorageComplete ? "完整 WAV 已生成" : "全时段 WAV 已生成（来源有完整性警告）")}：{result.DurationUs / 1_000_000d:F3} 秒。" +
+                    (result.CompressedPath is null ? "压缩混音未完成；可重试，WAV 与原轨保留。" : "M4A 已生成并完成解码检查。") +
+                    "\n" + string.Join(Environment.NewLine, result.Warnings);
+            }
+            catch (OperationCanceledException) { ExportStatus.Text = "混音已取消；原轨保留，可重新生成。"; }
+            catch (Exception ex) { ExportStatus.Text = "混音失败；原轨保留，可重试：" + ex.Message; }
+            finally
+            {
+                exportCancellation = null; exportBusy = false;
+                UpdateControls();
+            }
+        }
+    }
+
+    private void RetryMix_Click(object sender, RoutedEventArgs e)
+    {
+        if (RetryMixButton.IsEnabled && selectedMeetingDirectory is { } directory) QueueMix(directory);
+    }
+
+    private static string? SelectListeningPath(FullMixResult? mix)
+    {
+        if (mix is null) return null;
+        using var wave = new M2WaveReader(mix.WavePath);
+        if (!wave.IsRf64) return mix.WavePath;
+        // RF64 is the lossless large-file export. Its existence does not establish
+        // WPF compatibility; use the already decoded/validated full M4A to listen.
+        if (mix.CompressedPath is not { } compressed || mix.CompressedSha256?.Length != 64 || !File.Exists(compressed)) return null;
+        RejectReparseAncestors(compressed);
+        if (!string.Equals(Path.GetFullPath(Path.GetDirectoryName(compressed)!), Path.GetFullPath(mix.Directory), StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(Path.GetExtension(compressed), ".m4a", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("回听副本不在所选混音目录内。");
+        return compressed;
+    }
+
+    private void CancelExport_Click(object sender, RoutedEventArgs e)
+    {
+        exportCancellation?.Cancel();
+        ExportStatus.Text = "正在取消当前任务；等待文件收尾。";
+    }
+
+    private void Export_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ExportButton.IsEnabled || currentMix is not { } mix) return;
+        ExportOptions options;
+        try
+        {
+            options = new ExportOptions(ExportFormatBox.SelectedIndex switch { 0 => M2ExportFormat.M4a, 1 => M2ExportFormat.Wave, 2 => M2ExportFormat.Mp3, _ => throw new InvalidOperationException("请选择导出格式。") },
+                long.Parse(MaxBytesBox.Text, NumberStyles.None, CultureInfo.InvariantCulture),
+                double.Parse(MaxSecondsBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture),
+                double.Parse(OverlapBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture), IncludeManifestBox.IsChecked == true);
+        }
+        catch (Exception ex) when (ex is FormatException or OverflowException)
+        {
+            ExportStatus.Text = "请填写有效数字：大小为整数字节，时长和重叠为秒。";
+            return;
+        }
+        backgroundWork = ExportCurrentMixAsync(mix, options, Path.Combine(dataRoot, "Exports"));
+    }
+
+    private async Task ExportCurrentMixAsync(FullMixResult mix, ExportOptions options, string destination)
+    {
+        exportBusy = true;
+        using var cancellation = new CancellationTokenSource();
+        exportCancellation = cancellation;
+        UpdateControls();
+        ExportStatus.Text = "正在生成所选混音分段，并逐片检查实际字节与解码长度…";
+        try
+        {
+            var result = await Task.Run(() => exportOperation(mix, options, destination, cancellation.Token));
+            lastExportDirectory = result.Directory;
+            ExportStatus.Text = $"本地导出完成：{result.Parts.Count} 片，共 {result.TotalBytes:N0} 字节。\n" +
+                (mix.SourceStorageComplete ? "" : "来源有完整性警告；分片保留经过时间和静音缺口，不代表声音全部录到。\n") +
+                string.Join(Environment.NewLine, result.Parts.Select(p => $"{Path.GetFileName(p.Path)} · {p.ByteLength:N0} 字节 · {p.StartUs / 1_000_000d:F3}–{p.EndUs / 1_000_000d:F3} 秒")) +
+                (result.ManifestPath is null ? "\n未附清单。" : "\n已附所选时间映射清单。") + "\n可打开目录后自行上传。";
+        }
+        catch (OperationCanceledException) { ExportStatus.Text = "导出已取消；没有发布完整导出，原件保留。"; }
+        catch (Exception ex) { ExportStatus.Text = "导出失败；原件保留，可重试：" + ex.Message; }
+        finally
+        {
+            exportCancellation = null; exportBusy = false;
+            UpdateControls();
+            // The one tracked task includes any queued mixes. Closing clears this
+            // queue before cancellation, so a finally block cannot start more work.
+            if (!WindowCloseRequested) await DrainMixQueueAsync();
+        }
+    }
+
+    private void CancelBackgroundForClose()
+    {
+        transcriptCancellation?.Cancel();
+        pendingMixes.Clear();
+        exportCancellation?.Cancel();
+        if (!backgroundWork.IsCompleted)
+            ExportStatus.Text = "正在取消后台任务并等待文件收尾；完成后关闭窗口。";
+    }
+
+    private void OpenExport_Click(object sender, RoutedEventArgs e)
+    {
+        if (lastExportDirectory is null) return;
+        try
+        {
+            RejectReparseAncestors(lastExportDirectory);
+            if (!Directory.Exists(lastExportDirectory)) throw new DirectoryNotFoundException();
+            Process.Start(new ProcessStartInfo(lastExportDirectory) { UseShellExecute = true });
+        }
+        catch (Exception ex) { ExportStatus.Text = "无法打开导出目录：" + ex.Message; }
+    }
+
+    private sealed record Filing(string Title, string Project);
+
+    private static Filing ReadFiling(string directory)
+    {
+        foreach (string name in new[] { "filing.json", "meeting.json" })
+        {
+            string path = Path.Combine(directory, name);
+            RejectReparseAncestors(path);
+            if (!File.Exists(path)) continue;
+            if (new FileInfo(path).Length > 2_000_000) throw new InvalidDataException("会议信息超过读取上限。");
+            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            var node = json.RootElement;
+            string title = node.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+            string project = node.TryGetProperty("project", out var p) ? p.GetString() ?? "未分类" : "未分类";
+            return new(title.Length > 200 ? title[..200] : title, project.Length > 100 ? project[..100] : project);
+        }
+        return new(Path.GetFileName(directory), "未分类");
+    }
+
+    private static string MeetingDisplayName(string directory)
+    {
+        try { var item = ReadFiling(directory); return $"{item.Title} · {item.Project} · {Path.GetFileName(directory)}"; }
+        catch { return Path.GetFileName(directory) + " · 信息待检查"; }
+    }
+
+    private void FileMeeting_Click(object sender, RoutedEventArgs e)
+    {
+        if (!FileMeetingButton.IsEnabled || selectedMeetingDirectory is not { } selectedDirectory) return;
+        try
+        {
+            // The visible meeting can be the newly saved session while the history
+            // picker still highlights an older meeting. File exactly what is shown.
+            string directory = ValidateRecordingDirectory(selectedDirectory);
+            string title = FiledTitleBox.Text.Trim(), project = FiledProjectBox.Text.Trim();
+            if (title.Length is < 1 or > 200 || project.Length > 100) throw new InvalidDataException("标题须为 1–200 字；项目最多 100 字。");
+            string path = Path.Combine(directory, "filing.json");
+            RejectReparseAncestors(path);
+            string temporary = Path.Combine(directory, "filing-" + Guid.NewGuid().ToString("N") + ".tmp");
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(stream, new { title, project = project.Length == 0 ? "未分类" : project });
+                stream.Flush(true);
+            }
+            RejectReparseAncestors(path);
+            File.Move(temporary, path, true);
+            SelectedMeetingText.Text = MeetingDisplayName(directory);
+            RecoveryStatus.Text = "归档信息已保存；原始清单、音轨和时间索引未修改。";
+        }
+        catch (Exception ex) { RecoveryStatus.Text = "归档失败：" + ex.Message; }
+    }
+}

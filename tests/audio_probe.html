@@ -1,0 +1,39 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ProjectEcho｜合成音源测试</title>
+<style>body{font-family:system-ui,"Microsoft YaHei",sans-serif;max-width:780px;margin:52px auto;padding:0 24px;line-height:1.8;background:#f4f7fb;color:#1c2c43}main{background:white;padding:32px;border:1px solid #d7e0ec;border-radius:16px}h1{font-size:28px;line-height:1.3}button,select{font-size:17px;padding:10px 15px;margin:6px;border-radius:8px;border:1px solid #8595ac}button{cursor:pointer}#state{font-weight:bold}.note{font-size:14px;color:#546477}</style></head>
+<body><main><p>PROJECTECHO / SYNTHETIC TEST ONLY</p><h1>浏览器音源隔离测试</h1><p>只在你点击后播放低音量合成音，所选时长后停止。不会访问麦克风、录音、联网或读取文件。先调低系统音量，不要在真实会议中播放。</p>
+<label>频率 <select id="frequency"><option value="440">440Hz · 普通浏览器</option><option value="660">660Hz · 专用会议实例</option><option value="880">880Hz · 同实例第二标签页</option></select></label>
+<label>时长 <select id="duration"><option value="10">10秒</option><option value="60">60秒（范围对照）</option></select></label>
+<p><button id="play">播放所选时长</button><button id="stop">立即停止</button></p><p id="state" role="status">尚未播放</p>
+<p class="note">隔离测试时关闭录音器麦克风，避免扬声器声音回灌。不同浏览器实例分别打开本页，验证捕获范围。此页面不能证明真实Zoom/Webex兼容性；该测试需另行执行。</p></main>
+<script>
+let context = null, active = null, timer = null, generation = 0;
+const statusNode = document.getElementById('state');
+function stopTone() {
+  generation++;
+  if (timer) { clearTimeout(timer); timer = null; }
+  if (active) { try { active.stop(); } catch (_) {} active.disconnect(); active = null; }
+  statusNode.textContent = '已停止';
+}
+document.getElementById('play').addEventListener('click', async () => {
+  stopTone();
+  const requestedGeneration = generation;
+  try {
+    if (!context) context = new AudioContext();
+    await context.resume();
+    if (requestedGeneration !== generation) return;
+    const hz = Number(document.getElementById('frequency').value);
+    const duration = document.getElementById('duration').value === '60' ? 60 : 10;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    gain.gain.value = 0.025;
+    oscillator.type = 'sine'; oscillator.frequency.value = hz;
+    oscillator.connect(gain); gain.connect(context.destination);
+    oscillator.onended = () => gain.disconnect();
+    active = oscillator; oscillator.start();
+    statusNode.textContent = `正在播放 ${hz}Hz（${duration}秒）`;
+    timer = setTimeout(stopTone, duration * 1000);
+  } catch (error) { stopTone(); statusNode.textContent = '无法播放：' + error.message; }
+});
+document.getElementById('stop').addEventListener('click', stopTone);
+window.addEventListener('pagehide', stopTone);
+</script></body></html>

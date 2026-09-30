@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "isSynthetic": true,
+  "analysisId": "demo-analysis-001",
+  "projectId": "demo-project",
+  "reviewState": "draft",
+  "items": [
+    {
+      "itemId": "item-001",
+      "type": "action",
+      "status": "proposed",
+      "text": "再次测试录音方式；尚未形成明确分工。",
+      "owner": null,
+      "dueDate": null,
+      "supersedesId": null,
+      "evidence": [
+        {
+          "meetingId": "demo-meeting-001",
+          "revisionId": "demo-original-001",
+          "segmentId": "seg-002",
+          "startMs": 24000,
+          "endMs": 26000,
+          "quote": "建议下周再试，先不定负责人。"
+        }
+      ]
+    }
+  ]
+}

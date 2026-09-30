@@ -1,0 +1,47 @@
+# Generated / local state
+.codex/
+.local/
+.tools/
+artifacts/
+bin/
+obj/
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+*.log
+*.dmp
+# Private meeting data and browser profiles (keep real data outside repo)
+Data/
+Recordings/
+MeetingRecords/
+Projects/
+BrowserProfiles/
+**/BrowserProfiles/
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.opus
+*.webm
+*.mp4
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+# Models and local binaries
+models/
+*.gguf
+*.ggml
+*.bin
+*.exe
+*.dll
+# Secrets
+.env
+.env.*
+!.env.example
+*secrets*.json
+credentials*.json
+# Documents intentionally tracked: examples contain synthetic JSON only

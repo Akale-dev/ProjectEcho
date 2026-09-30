@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProjectEcho Meeting v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "isSynthetic",
+    "meetingId",
+    "projectId",
+    "status",
+    "createdAtUtc",
+    "durationUs",
+    "captureMode",
+    "captureIndexPath",
+    "microphoneEnabledAtStart",
+    "sources",
+    "gaps"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "isSynthetic": {
+      "type": "boolean"
+    },
+    "meetingId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "recording",
+        "paused",
+        "stopping",
+        "saved",
+        "recovered",
+        "degraded"
+      ]
+    },
+    "createdAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "durationUs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "captureMode": {
+      "enum": [
+        "process_tree",
+        "dedicated_browser",
+        "existing_browser",
+        "endpoint",
+        "browser_tab"
+      ]
+    },
+    "captureIndexPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "microphoneEnabledAtStart": {
+      "type": "boolean"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceId",
+          "kind",
+          "chunks"
+        ],
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "remote",
+              "microphone"
+            ]
+          },
+          "chunks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "chunkId",
+                "segmentId",
+                "path",
+                "startUs",
+                "durationUs",
+                "frameCount",
+                "byteLength",
+                "sha256"
+              ],
+              "properties": {
+                "chunkId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "segmentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "startUs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "durationUs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "frameCount": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "byteLength": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                },
+                "sha256": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "startUs",
+          "endUs",
+          "sourceId",
+          "reason"
+        ],
+        "properties": {
+          "startUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "enum": [
+              "paused",
+              "source_lost",
+              "mic_disabled",
+              "storage_failure",
+              "boundary_uncertain",
+              "unknown"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "isSynthetic": {
+            "const": false
+          },
+          "status": {
+            "const": "saved"
+          }
+        },
+        "required": [
+          "isSynthetic",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "items": {
+              "properties": {
+                "chunks": {
+                  "items": {
+                    "properties": {
+                      "byteLength": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
