@@ -18,6 +18,9 @@ if (args.Length > 0 && args[0] == "--m3c-microphone-endurance-probe")
 if (args.Length > 0 && args[0] == "--m3c-synthetic-speech-probe")
     return await M3cSyntheticSpeechProbe.RunAsync(args);
 
+if (args.Length > 0 && args[0] == "--m3c-revalidate-mic-long")
+    return M3cLongAudioExportProbe.Run(args);
+
 if (args.Length > 0 && args[0] == "--list-audio-devices")
     return AudioDeviceDiagnostics.Run(args);
 

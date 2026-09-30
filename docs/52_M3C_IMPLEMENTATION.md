@@ -89,7 +89,7 @@ SQLite 只保存可重建索引。原始来源轨、capture index、checkpoint�
 
 目录移动成功就是删除的权威状态，SQLite 行删除随后尽力执行。即使程序在两者之间结束，旧根路径已不存在，查询不会展示它；重建只扫描 `M1Recordings`，不会扫描 `DeletedMeetings`，因此不会复活。恢复时把最内层原会议目录移回 `M1Recordings`，避免覆盖同名目录后刷新即可。
 
-UI 删除工作须先阻止该会议新增导入、ASR、修订、混音/导出、回听和字幕加载，等待已启动的相关读取结束；关窗等待删除任务。录音期间不能从菜单发起删除，当前数据根不能在删除期间改变。初轮审查发现并修补了新增任务竞态、刷新触发重复选会覆盖未保存归档文字、删除结果被刷新状态覆盖和过期目录异常越过 UI 兜底的问题；最新代码回归证据待最终汇总，不以代码审查替代实际 WPF 验证。
+UI 删除工作须先阻止该会议新增导入、ASR、修订、混音/导出、回听和字幕加载，等待已启动的相关读取结束；关窗等待删除任务。录音期间不能从菜单发起删除，当前数据根不能在删除期间改变。初轮审查发现并修补了新增任务竞态、刷新触发重复选会覆盖未保存归档文字、删除结果被刷新状态覆盖和过期目录异常越过 UI 兜底的问题；对应实际WPF删除取消/接受、草稿保留与并发门禁已通过，见下方及最终包证据；不以代码审查替代界面验证。
 
 ## 依赖、原生文件与许可
 
@@ -108,9 +108,9 @@ UI 删除工作须先阻止该会议新增导入、ASR、修订、混音/导出�
 
 许可文本保存于 `tools/licenses/Microsoft.Data.Sqlite-MIT.txt`、`SQLitePCLRaw-Apache-2.0.txt` 和 `SQLite-Public-Domain.html`；具体下载地址见该目录 README。Microsoft 包 nuspec 声明源码 commit `95017c711e6afc1085133d440e42b4bd78155701`；SQLitePCLRaw 包未声明 commit，因此发布清单明确 `sourceCommitAvailable=false`，不补造源码哈希。
 
-`scripts/Publish-Portable.ps1` 已加入这六包的来源、版本、包 SHA-256/SHA-512、NuGet content hash/锁文件比对和实际许可类型；不再把全部依赖标为 MIT。发布检查要求 App 根和 `CaptureHost` 均包含 `Microsoft.Data.Sqlite.dll`、`SQLitePCLRaw.core.dll`、`SQLitePCLRaw.provider.e_sqlite3.dll`、`SQLitePCLRaw.batteries_v2.dll` 与 `e_sqlite3.dll`，并比对两处原生 DLL 与官方缓存包内 win-x64 文件的 SHA-256。实际最终包检查结果待填写。
+`scripts/Publish-Portable.ps1` 已加入这六包的来源、版本、包 SHA-256/SHA-512、NuGet content hash/锁文件比对和实际许可类型；不再把全部依赖标为 MIT。发布检查要求 App 根和 `CaptureHost` 均包含 `Microsoft.Data.Sqlite.dll`、`SQLitePCLRaw.core.dll`、`SQLitePCLRaw.provider.e_sqlite3.dll`、`SQLitePCLRaw.batteries_v2.dll` 与 `e_sqlite3.dll`，并比对两处原生 DLL 与官方缓存包内 win-x64 文件的 SHA-256。已在两次完整发布包检查中通过；最终组件复用与证据见本页末节。
 
-初轮默认回归的 `sqlite-native-version.txt` 记录 `SELECT sqlite_version()` 为 **3.53.3**；这是项目实际加载的引擎返回值，不能用 SQLitePCLRaw 包版本代替引擎版本。最终发布后还需保留相应实际加载与包完整性证据。离线 publish 明确关闭 NuGet 在线审计，不能把发布零警告当作漏洞审计通过，也不能把开发机 self-contained 运行当作干净 Windows 验收。
+初轮默认回归的 `sqlite-native-version.txt` 记录 `SELECT sqlite_version()` 为 **3.53.3**；这是项目实际加载的引擎返回值，不能用 SQLitePCLRaw 包版本代替引擎版本。最终包保留相同已加载原生库并核对哈希，实际SQLite会库WPF流程与完整性证据见末节。离线 publish 明确关闭 NuGet 在线审计，不能把发布零警告当作漏洞审计通过，也不能把开发机 self-contained 运行当作干净 Windows 验收。
 
 ## M3C 界面和转写改动
 
@@ -120,9 +120,9 @@ UI 删除工作须先阻止该会议新增导入、ASR、修订、混音/导出�
 - 回听与校订两处提供全文 UTF-8 TXT 导出，保留所选修订原文/重复句，不带时间戳。字幕选择后可通过复制按钮或 Ctrl+C 复制句子原文；编辑框自己的复制行为不被截获。
 - 播放更新使用轻量16ms调度，字幕仅跨实际时间边界时重算。UI单调时钟容错最多外推350ms，停止/暂停/定位/倍速/换源时重置；字幕仍使用实际媒体时间，不改录音时钟。首轮Rendering实现仅4.8次/秒有效更新，不能据此断言Windows媒体位置固定低频。修后实际WPF采样约39次/秒有效更新；这不是所有机器固定帧率承诺。
 - whisper.cpp启用真实`-pp`回报，有界stderr解析只接收引擎格式百分比。准备/未知进度用不确定状态；引擎100%不替代文字保存完成。真实公开JFK样本的UI和引擎均回报100%，原稿/修订不受进度显示影响。
-- 左下语言菜单即时切换简中/繁中/英文；533条界面模板内嵌，无运行时联网。用户标题、项目、转写、路径作为动态参数保留原文。偏好仅写该便携包的Data/settings或开发.local/settings；原始技术异常可能保留来源文字。
+- 左下语言菜单即时切换简中/繁中/英文；534条界面模板内嵌，无运行时联网。用户标题、项目、转写、路径作为动态参数保留原文。偏好仅写该便携包的Data/settings或开发.local/settings；原始技术异常可能保留来源文字。最后补齐已筛选状态的英文提示，并用实际WPF断言验证。
 
-简繁转换使用[Windows NLS LCMapStringEx](https://learn.microsoft.com/en-us/windows/win32/api/winnls/nf-winnls-lcmapstringex)，只在开发时生成静态资源；正常产品无需该脚本。修复了首轮开发生成器错误依赖NUL终止而带出尾字符的问题，改为精确使用API返回字符数，533条源/繁体长度及资源覆盖复核通过。没有把用户原文交给转换器。
+简繁转换使用[Windows NLS LCMapStringEx](https://learn.microsoft.com/en-us/windows/win32/api/winnls/nf-winnls-lcmapstringex)，只在开发时生成静态资源；正常产品无需该脚本。修复了首轮开发生成器错误依赖NUL终止而带出尾字符的问题，改为精确使用API返回字符数，源/繁体长度及资源覆盖复核通过。没有把用户原文交给转换器。
 
 ## 自动回归范围与证据状态
 
@@ -137,6 +137,75 @@ UI 删除工作须先阻止该会议新增导入、ASR、修订、混音/导出�
 | 实际 WPF 筛选/删除确认/草稿保持/多语言/字幕功能 | `.local/M3C/wpf-final-01.json`：7流程全PASS，包括两个新M3C入口、历史转写、真实Whisper、字幕回听、导出关窗、布局；测试接口/路由事件，非物理键鼠或读屏 |
 | 完整 self-contained 发布与依赖/原生文件检查 | `artifacts/ProjectEcho-win-x64-20261001-M3C`；`.local/diagnostics/portable-20261001-004239/portable-smoke.json`：630文件、App隐私启动/包内Host IPC/运行时PASS；不是干净Windows |
 | 最终包直接运行 | `.local/M3C/bundled-wpf-final-01.json`：会库与三语言、平滑回放与字幕编辑、真实Whisper、字幕回听、导出关窗五流程exit0；本机Whisper配置在哈希验包后另存可变Data/settings，不随发行源包分发 |
-| 获授权两小时带 mic 实录与离线核验 | 待独立汇总实际选源、设备、时长、时钟/边界、混音/压缩全长及证据；不得用合成测试或历史 mic-off 长录替代 |
+| 获授权两小时带 mic 实录与离线核验 | 已实际7201.170118秒；连续性FAIL保留，磁盘/原件可验证；独立有警告完整混音/MP3五片通过，详见本页实测章节及`.local/M3C/final-audio-summary.json` |
 
-操作系统 build、SDK/runtime、实际来源模式、最终包路径与未完成现场闸门由主任务依据本轮真实环境报告填入。SQLite 回归不证明 Zoom/Webex/浏览器现场隔离、硬件时钟长期同步、中文识别质量、物理可听回放或干净 Windows 已通过；既有未测项保留到取得对应证据为止。
+本轮环境为Windows25H2 26200.9457/x64、SDK10.0.401/runtime10.0.12/NAudio3.1.0；实际来源模式和最终包路径见下方，环境证据`.local/M3C/environment.json`。SQLite 回归不证明 Zoom/Webex/浏览器现场隔离、硬件时钟长期同步、中文识别质量、物理可听回放或干净 Windows 已通过；既有未测项保留到取得对应证据为止。
+
+## 真实本地模型补测：保留失败与质量问题
+
+最终证据 `.local/M3cSyntheticSpeech/20260930-170226-efe039fa58784ac1b95059fb7b6c3504/asr-report.json`；首次报告 `20260930-164610-cd569fd1cc8443c0b629941f09a447b8` 同样保留。调用已安装的 Windows SAPI Huihui / 英文声音对固定自写语料生成文件，调用既有 whisper.cpp b5130 / 多语言 base / 两CPU线程。只生成WAV，不播放、不启麦、不访问会议、不上传；原文件和引擎/模型哈希不变。三个样本均取得实际引擎百分比。
+
+| 样本 | 实际结果 |
+|---|---|
+| 普通话，39.715秒 | 引擎原SRT最后一段终点39.840秒，超过已验证音频125ms；现有严格时间校验拒绝发布规范化版本，原SRT/JSON/TXT保留。没有裁剪、补时间或把失败包装成完成。首轮报告对空规范化结果计算1.0编辑率，不能解释为模型文字100%错误；已修正测试报告，二次运行相同失败时`HasValidatedTranscript=false`、CER/WER均为空。本例记录为链路拒绝/时间质量未通过 |
+| 英文，36.630秒 | 识别与SRT/TXT导出完成；本固定样本英文词编辑率4/82≈4.88%，包括数字写法差异；不外推为自然会议准确率 |
+| 中英交替，46.740秒 | 生产识别/导出链路完成，但明显漏掉英文并生成错句；字母/汉字逐字符归一化编辑率约67.47%，不等于统一跨语言准确率；混合语言质量未通过 |
+
+归一化去标点和空白、统一字母大小写；不把英文数字词与阿拉伯数字等价、不自动转换简繁或翻译。固定合成音不能替代真实发言、噪声、专业词或长会议验收。没有为通过测试自动更换模型、下载模型、修改用户音频或放宽转写时间合同。
+
+首次沙箱SAPI生成在`Speak`返回0x80045040，按[微软SAPI错误定义](https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/sperror.h)为无效注册键。正常用户权限的相同本地文件测试随后成功；没有修改注册表/语音安装/系统策略。首轮失败保存在`.local/M3C/sapi-failure-01.txt`，不作为产品ASR失败或成功的替代证据。
+
+## 获授权真实麦克风与两小时结果
+
+2026-10-01用户明确授权必要mic与两小时实测，并要求仅使用测试接口、不使用computer-use。固定唯一当前Jabra LINK 860麦克风（实际16 kHz / mono / PCM16）和局部Jabra输出；远端只捕获新建合成进程树，48 kHz / stereo / float32。没有打开会议、系统端点混录、换设备、改系统音量/格式/电源策略，也没有播放或识别mic内容。
+
+测试使用`.local/M3C/validation-driver-20260930-165054`：测试驱动独立依赖开发运行时，12个生产DLL/原生文件与完整202个CaptureHost文件逐项匹配最终发布包。实际采集Host为自包含包内组件；这不是干净Windows验证。原始数据与完整日志留在`.local`，不进入Git。
+
+| 阶段 | 实际结果 |
+|---|---|
+| 20秒晚开mic/关mic/再开/暂停恢复/停止 | 正常用户权限执行全部5个控制ACK、实际停采边界、原件哈希与退出正常；初始未选择mic，第一次开启才固定所选ID。4处已声明启动缺口使严格探针FAIL，不能把它称作连续性通过。沙箱首次尝试因0x80070005拒绝mic而FAIL，保留该记录，未改系统隐私策略 |
+| 首个40秒跨块 | 两轨跨块、帧数/实际时钟可读，仅mic启动2.2447ms已声明缺口；严格FAIL，旧探针在质量错误后跳过编码。这不算编码已验 |
+| 40秒完整资格复测 | 原件/边界/WAV/完整MP3/3分片EOF、字节、覆盖、13个内容窗及哈希通过；mic启动2.2568ms缺口保持`QualityStatus=NOT_PASSED`。`EligibleForLongRun=true`只说明可以运行后续实测，状态为`PARTIAL_STARTUP_GAP_STORAGE_CODEC_VALIDATED`，没有改成连续性PASS |
+| 两小时固定mic | 香港 **00:53:01–02:53:02**，实际完整经过时间 **7201.170118秒**。两轨各241块；remote **345,651,360帧**、mic **115,216,000帧**。mic720,119包QPC/device有效，保留129,313个满足既定条件的小幅QPC抖动标记；remote仍为QPC-only。五处远端标记均检出，原件哈希不变，Host/source正常退出 |
+
+**两小时严格结果为FAIL，不能报告完整采集通过。** 第一处mic启动缺口2.2489ms；第二处在 **545.499804秒** 的mic原包仅36帧并带`data_discontinuity`，下一包160帧、设备位置跨160、QPC跨9.9978ms，明确有 **7.7478ms / 124帧** 未观察区间。它不在MicOff/Pause隐私边界附近。程序保存原始flags/device/QPC/帧数并在终态警告音频不连续，未用静音包伪造缺失采集。
+
+磁盘读取`HasCheckpoint`有效、`Issues=[]`、所有原件哈希相符；`StorageComplete=false`、`IsCleanEnd=false`保留来源不连续的原状态。**这些字段不能被解释成磁盘文件损坏，也不能被提升为完整录音。** 两条最终Stop边界存在，482块均被最后checkpoint覆盖，无残留`.partial`；见`.local/M3C/long-mic-storage-vs-quality.json`。
+
+主要证据：`.local/M1MicrophoneIntegration/20260930-164605-79ed7ac046254a39b1dde8ed17baa148/probe-report.json`；`.local/M3cMicrophoneEndurance/short-20260930-165119-a549f1e948a64e9aa85a11a7b6a399d5/probe-report.json`；`.local/M3cMicrophoneEndurance/long-20260930-165300-08409f93ebbf4dfca63d08f7b4a426d8/probe-report.json`；`.local/M3C/long-microphone-summary.json`、`long-mic-gap-raw-context.txt`。设备ID和PID仅留本地技术证据，此处不列。
+
+## 有警告两小时原件的完整混音与MP3
+
+在采集进程退出后，另开独立离线接口`--m3c-revalidate-mic-long`。先比对原两小时报告SHA-256及全部原件哈希，再核对磁盘检查点/索引/原轨；允许来源连续性有警告，但不允许磁盘`Issues`、缺块或坏哈希。调用未修改的生产`M2ExportService`生成真实全时段混音、完整MP3及大小受限分片，最后再次核对原件与原FAIL报告。
+
+实际结果 **PASS_WARNING_SOURCE_TIMELINE_EXPORT**：完整时间 **7201.170118秒 / 345,656,166帧（48k）**；WAV为691,312,376字节，完整MP3为86,415,552字节。完整MP3实际解码 **345,661,680帧**，差额按清单登记为编码延迟和尾部填充，不丢原时间轴。原件和原采集FAIL报告均不变。
+
+| 分片 | 会话起始帧 | 会话结束帧（不含） | 实际字节 |
+|---|---:|---:|---:|
+| 1 | 0 | 76,000,000 | 19,001,664 |
+| 2 | 75,760,000 | 151,760,000 | 19,001,664 |
+| 3 | 151,520,000 | 227,520,000 | 19,001,664 |
+| 4 | 227,280,000 | 303,280,000 | 19,001,664 |
+| 5 | 303,040,000 | 345,656,166 | 10,655,712 |
+
+五片分别解码至EOF，均低于20,000,000字节/1800秒限制，相邻准确重叠240,000帧（5秒），末片覆盖完整末尾。首/中/尾及源标记处的派生WAV与延迟校正后的实际MP3解码PCM进行内容窗比较；mic可能遮住远端标记，不能把混音里标记难以检出直接当成原轨丢失，因此同时保留原remote严格标记检查和实际混音/压缩内容比较。
+
+**此PASS仅表示派生文件保留全部已确认时间轴和来源警告。** `Mix.SourceStorageComplete=false`、原`OriginalCaptureStatus=FAIL`、`OriginalCaptureQuality=NOT_PASSED`均明确保留；缺失采集区间以派生静音表示，不伪造原始PCM、不宣称双设备声学同步或人耳听验通过。
+
+证据：两小时目录下`offline-export-20260930-185906-d516dc9e14034cfda828e3d4c3e8dfb8/report.json`；摘要`.local/M3C/long-export-summary.json`。离线复核包含约1.257GB捕获索引，实际有多分钟读取成本，不能把此结果宣传为打开任意长会都瞬时完成。
+
+六个文件组（完整MP3及五片）共 **28个内容窗** 全部通过；有声窗最低相关性 **0.9998105957**，匹配延迟偏差最大0帧，无额外观察问题。独立补验实际耗时约 **7分54秒**（香港02:59:06–03:07:00，包含重复原件/索引核验、渲染、编码及解码内容检查）。
+
+## 其余实际Windows接口测试
+
+- **15分钟数字静音：PASS_WITH_CLOCK_LIMITATIONS**。实际经过900.661791秒，31块/43,227,360帧，345,818,880个PCM字节全部为零；未因安静提前结束，mic关闭且不存在mic轨，原件哈希不变，Host/source正常退出。remote仍QPC-only；没有把此项称为独立设备同步。证据`.local/M1SilenceIntegration/20260930-190901-1ddb661391204eec87b406e7a96e1466/probe-report.json`。
+- **控制连接断开：PASS_WITH_CLOCK_LIMITATIONS**。仅断开测试创建的IPC连接，Host约66.37ms后正常退出、原件保留；不是物理拔插测试。证据`.local/M1FailureIntegration/disconnect-20260930-192435-aeebf8d4d1574873b2964088d7b9f87e/probe-report.json`。
+- **自有Host崩溃：PASS_WITH_CLOCK_LIMITATIONS**。约32秒后终止测试自建Host，按磁盘checkpoint创建恢复副本，原件保持不变；mic关闭。证据`.local/M1FailureIntegration/crash-20260930-192447-8584af7590124773af93a4041dac95be/probe-report.json`。
+
+## 最终交付包与证据对应
+
+最终目录为 **`artifacts/ProjectEcho-win-x64-20261001-M3C-Final`**，**630文件 / 235,996,865字节**，清单SHA-256 **`076240d526252c62e571046bc27995a6465fcdef60bdf2265245c5bf42d9af04`**。必须保留完整文件夹。实际入口为其中`ProjectEcho.exe`。
+
+最后仅修正已筛选状态的界面翻译和测试断言，重建App。为保持两小时证据与交付组件精确对应，最终包逐文件复用已实测M3C包的 **Core、Capture.Windows、Export、完整CaptureHost、SQLite与运行时**；只替换App.exe/App.dll及两份说明文档，626个其余payload文件哈希相同。原因是Git提交后的常规重建会改变程序集informational-version元数据，即使生产源代码未改；不把新哈希冒充做过两小时。比对证据`.local/M3C/final-package-component-reuse.json`。
+
+最终包完整性、默认隐私启动及包内Host IPC/runtime通过：`.local/diagnostics/portable-20261001-032548/portable-smoke.json`。真实录音/导出证据对应上述哈希相同的生产组件；最终App的会库/语言、字幕播放器/全文/复制、真实Whisper、历史字幕回听、导出关窗另由`.local/M3C/delivery-wpf-final.json`记录。最终本机Whisper配置在验包后复制到可变Data/settings，未包含模型、会议、profile或开发SDK。

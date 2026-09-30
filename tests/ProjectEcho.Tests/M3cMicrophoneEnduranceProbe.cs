@@ -37,7 +37,7 @@ internal static partial class M2LongRunProbe
                 p.GetProperty("IsLongRun").GetBoolean() ||
                 p.GetProperty("MicrophoneId").GetString() != args[1] ||
                 DateTimeOffset.UtcNow - p.GetProperty("FinishedAtUtc").GetDateTimeOffset() > TimeSpan.FromHours(12))
-                throw new InvalidDataException("Long microphone endurance requires a recent successful short report for this exact microphone.");
+                throw new InvalidDataException("Long microphone endurance requires a recent eligible short readiness report for this exact microphone; source quality remains separate.");
             shortOutput = p.GetProperty("ProducerOutput").GetProperty("OutputDeviceId").GetString();
             outputDevice ??= shortOutput;
         }

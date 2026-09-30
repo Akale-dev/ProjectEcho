@@ -62,9 +62,11 @@ internal static class M3cSyntheticSpeechProbe
                 if (!pipelinePass) errors.Add(id + ":production_pipeline_or_subtitle_range_failed:" + result.Message);
                 string actual = result.Revision is null ? "" : string.Join(" ", result.Revision.Segments.Select(segment => segment.Text));
                 string normalizedReference = Normalize(expected), normalizedHypothesis = Normalize(actual);
-                var characterScore = Score(normalizedReference.Select(character => character.ToString()).ToArray(),
+                // A rejected timestamp contract means no validated hypothesis was published.
+                // Do not turn that pipeline failure into a claimed 100% model word error.
+                var characterScore = result.Revision is null ? null : Score(normalizedReference.Select(character => character.ToString()).ToArray(),
                     normalizedHypothesis.Select(character => character.ToString()).ToArray());
-                var wordScore = id == "english" ? Score(Words(expected), Words(actual)) : null;
+                var wordScore = id == "english" && result.Revision is not null ? Score(Words(expected), Words(actual)) : null;
                 int[] percents = progress.Where(value => value.Percent.HasValue).Select(value => value.Percent!.Value).ToArray();
                 bool progressValid = percents.All(value => value is >= 0 and <= 100) && percents.Zip(percents.Skip(1)).All(pair => pair.First < pair.Second);
                 if (!progressValid) errors.Add(id + ":invalid_reported_progress");
@@ -75,7 +77,7 @@ internal static class M3cSyntheticSpeechProbe
                 }
                 evidence.Add(new { Id = id, Language = config.Language, DurationMilliseconds = milliseconds, PipelinePassed = pipelinePass,
                     Reference = expected, Hypothesis = actual, NormalizedReference = normalizedReference, NormalizedHypothesis = normalizedHypothesis,
-                    CharacterErrorRate = characterScore, EnglishWordErrorRate = wordScore,
+                    HasValidatedTranscript = result.Revision is not null, CharacterErrorRate = characterScore, EnglishWordErrorRate = wordScore,
                     result.Status, result.ElapsedMilliseconds, result.AttemptDirectory, result.Message,
                     SegmentCount = result.Revision?.Segments.Count, Segments = result.Revision?.Segments,
                     EngineProgress = progress.ToArray(), EngineReportedPercent = percents.Length > 0, ProgressValid = progressValid });

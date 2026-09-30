@@ -52,6 +52,7 @@ public partial class MainWindow
         if (FiledTitleBox.Text != "未保存编辑") throw new InvalidDataException("Refreshing the library discarded unsaved filing edits.");
         FiledTitleBox.Text = "原文不随界面语言改变";
         var images = new List<string>();
+        libraryQuery = new(Project: "Mixed 项目"); RefreshRecovery_Click(this, new RoutedEventArgs());
         Width = MinWidth; Height = MinHeight;
         foreach (string language in new[] { "en", "zh-Hant", "zh-CN" })
         {
@@ -63,6 +64,8 @@ public partial class MainWindow
             string status = SessionStateText.Text;
             if (language == "en" && (status != UiText.T("尚未录音") || status.Any(c => c is >= '\u4e00' and <= '\u9fff')))
                 throw new InvalidDataException("Dynamic recording state was not localized: " + status);
+            if (language == "en" && LibraryFilterButton.ToolTip?.ToString() != "Filter and sort meetings (filtered)")
+                throw new InvalidDataException("Active filter tooltip was not localized.");
             if (!stored.SequenceEqual(File.ReadAllBytes(Path.Combine(first, "filing.json"))) || FiledTitleBox.Text != "原文不随界面语言改变")
                 throw new InvalidDataException("Language switching mutated meeting content.");
             SaveLayoutImage(evidence, "minimum-settings-" + language + ".png", 1, images);
@@ -74,6 +77,7 @@ public partial class MainWindow
             filter.Show(); filter.UpdateLayout(); filter.Close();
         }
         NavigateTo(1);
+        libraryQuery = new(); RefreshRecovery_Click(this, new RoutedEventArgs());
         await transcriptWork; await replayLoadWork; await savedMixWork;
         var entry = RecoveryBox.Items.Cast<RecordingDirectory>().Single(x => x.Path == first);
         var button = new Button { DataContext = entry };

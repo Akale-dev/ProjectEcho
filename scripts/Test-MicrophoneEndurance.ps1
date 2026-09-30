@@ -10,11 +10,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 if ($Mode -eq 'long' -and [string]::IsNullOrWhiteSpace($QualificationReport)) {
-    throw 'Long endurance requires the successful 40-second report for the exact microphone.'
+    throw 'Long endurance requires a 40-second report with EligibleForLongRun=true for the exact microphone. Audio continuity may still be marked failed.'
 }
 Write-Host 'Explicit fixed microphone + newly created synthetic process endurance. Local evidence only.'
 Write-Host '40-second short precheck or two real hours, followed by full WAV/MP3 and split MP3 EOF validation.'
 Write-Host 'No system volume/routing change, microphone replay, transcript or upload. This is NOT acoustic synchronization acceptance.'
+Write-Host 'Readiness and source quality are separate. Declared gaps retain PARTIAL/FAIL and nonzero exit status; they are never converted to a continuity pass.'
 $probeArguments = @('--m3c-microphone-endurance-probe', $MicrophoneId, $Mode)
 if ($Mode -eq 'long') { $probeArguments += $QualificationReport }
 if (-not [string]::IsNullOrWhiteSpace($OutputDeviceId)) { $probeArguments += $OutputDeviceId }

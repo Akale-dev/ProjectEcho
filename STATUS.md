@@ -1,21 +1,23 @@
 # Development status
 Updated: 2026-10-01
 
-## 最新结论：M3C 功能完成，获授权两小时带 mic 验证进行中
+## 最新结论：M3C 功能与可自动测试完成，真实 mic 断续和识别质量限制保留
 
-**已实现：**SQLite 会库与 FTS5 搜索、日期/项目/长度筛选排序、确认后可恢复删除、打开数据目录、平滑回听、真实引擎百分比、紧凑转写页和固定字幕底栏、两处全文 TXT 导出/所选句子复制、简中/繁中/英文界面。原轨/时间索引/转写原稿继续为权威文件。旧禁 SQLite 决定已由本次用户指令覆盖。
+**已实现：**用户要求的12项M3C功能已落地：SQLite会库/FTS5、日期项目长度筛选排序、可恢复确认删除、打开数据目录、平滑回听、真实引擎百分比、紧凑转写页/导入末页/固定字幕底栏、两处全文TXT与句子复制、简中/繁中/英文。原轨/时间索引/不可覆盖转写版本继续为权威文件；2026-10-01用户决定覆盖旧禁SQLite约束。
 
-**已测试：**Windows25H2 **26200.9457/x64**，SDK10.0.401/runtime10.0.12/NAudio3.1.0；Release **0错误0警告，154组默认回归PASS**。实际WPF七流程PASS，最终便携包五流程exit0；三语言533模板覆盖及原文不变、删除取消/接受与并发门禁、字幕固定底栏和约39次/秒有效滑块更新、全文与复制通过。真实公开JFK的引擎/UI百分比一致。完整包630文件及SQLite原生来源哈希、默认隐私启动、包内Host IPC/runtime通过。
+**已测试：**Windows25H2 **26200.9457/x64**、SDK10.0.401/runtime10.0.12/NAudio3.1.0，Release **0错误0警告，154组默认回归PASS**。实际WPF七流程、最终包五流程均通过；534模板覆盖、三语言不改用户原文、筛选/删除取消与接受/文件任务互斥、固定字幕底栏、约39次/秒有效播放条更新、全文与复制、真实JFK引擎/UI百分比一致。最终包630文件和包内Host/SQLite原生/运行时验证通过。全部通过测试接口执行，未使用computer-use。
 
-**正在执行：**用户已授权必要mic与两小时测试，并明确只用测试接口、完成后正常关机。固定16k Jabra +新建合成进程在香港时间 **00:53** 开始两小时录制，尚未完成，不计PASS。先前20秒/40秒真实短检保存和边界正确，但mic启动约2.3ms已声明缺口导致连续性未通过。新40秒完整资格的WAV/MP3/分片EOF/内容窗/哈希通过，质量缺口原样保留，才进入长测。原始测试资料仅本地，不播放或识别mic、不上传。
+**两小时实测已执行，严格连续性FAIL：**固定16k Jabra mic+新建合成进程，香港00:53:01–02:53:02实际 **7201.170118秒**。两轨各241块；原件哈希/磁盘索引/最终Stop边界/482块checkpoint可验证。mic启动有2.2489ms缺口，545.499804秒处设备报告不连续并产生 **7.7478ms / 124帧** 未观察区间；保留`StorageComplete=false`及原FAIL报告，不冒称完整录音通过。远端仍QPC-only，双设备声学同步没有通过声明。
 
-**模型补测：**本地生成SAPI英文、中文、中英交替样本，不发声、不采集。英文与混合语料的识别/导出链路完成；中文样本引擎末时间39.840秒超过实际39.715秒，被现有严格校验拒绝，原始模型输出保留。混合样本明显漏掉英文并产生错句，不能宣称中英质量已通过。合成样本不代表自然会议准确率。
+**派生文件与补测：**同一真实两小时有警告原件已生成完整WAV/MP3与5个20MB以内分片；345,656,166帧全时间轴、实际解码EOF、覆盖/重叠/28内容窗/哈希通过，`SourceStorageComplete=false`原样保留。15分钟全零静音（mic关）、控制连接断开停采、32秒自有Host崩溃恢复均通过各自范围，所有测试进程已退出。没有回放/识别mic或上传任何音频。
 
-**交付候选：**`artifacts/ProjectEcho-win-x64-20261001-M3C/ProjectEcho.exe`，保留整个文件夹。指南 [53](docs/53_M3C_USER_GUIDE_ZH.md)，实现/验证 [52](docs/52_M3C_IMPLEMENTATION.md)。本机旧Whisper配置在验包后另存Data/settings，不属于发行payload。基线`9e4df2a`已推送用户确认的origin/main；M3C最终提交等待验证收尾。
+**模型限制：**固定SAPI合成英文/中文/交替三样本已测试。英文链路与导出通过；中文模型末时间39.840秒超过实际39.715秒被严格拒绝，原输出保留；混合样本漏掉英文并有错句。真实引擎进度正常，但不能据此宣称中文/中英质量通过；不以合成样本代表自然会议准确率。
 
-**仍未验/限制：**两小时双设备声学同步、干净Windows、44.1k真实硬件、私有会议/浏览器隔离、物理拔插/锁屏睡眠仍保持原状态；不进行系统策略/设备格式变更。全部工作完成后才执行用户授权的正常关机。当前状态 `IMPLEMENTED / WINDOWS_AUTOMATED_VALIDATED / MIC_ENDURANCE_RUNNING`。
+**最终交付：**`artifacts/ProjectEcho-win-x64-20261001-M3C-Final/ProjectEcho.exe`，保留整个文件夹；**630文件 / 235,996,865字节**，清单SHA-256 `076240d526252c62e571046bc27995a6465fcdef60bdf2265245c5bf42d9af04`。最后App界面翻译修正单独验证，Core/Capture/Export/完整Host/SQLite等测试过的生产组件逐文件复用、哈希相同；见[52](docs/52_M3C_IMPLEMENTATION.md)。本机Whisper配置在验包后另存可变Data/settings，不包含模型/会议/profile。操作指南[53](docs/53_M3C_USER_GUIDE_ZH.md)。基线`9e4df2a`已推送，M3C实现提交`dbf7bf1`及最终验证记录在本轮收尾推送。
 
-证据：`.local/M3C/environment.json`、`build-final-01.log`、`wpf-final-01.json`、`bundled-wpf-final-01.json`；`.local/TestResults/M3C/default-02/results.json`；`.local/diagnostics/portable-20261001-004239`；长测`.local/M3cMicrophoneEndurance/long-20260930-165300-08409f93ebbf4dfca63d08f7b4a426d8`。以下为历史记录。
+**未测试/阻塞：**真实Zoom/Webex mic场景与浏览器隔离、44.1k硬件、物理拔插/锁屏睡眠、读屏/真实多显示器DPI、干净Windows和双设备声学同步仍保留原状态。无管理员/系统策略/设备格式修改。M3C任务完成不等于M2所有现场退出闸门通过。用户授权全部收尾后正常关机，不强制结束其他未保存应用。
+
+证据：`.local/M3C/environment.json`、`build-final-02.log`、`wpf-final-01.json`、`delivery-wpf-final.json`、`final-package-component-reuse.json`、`final-audio-summary.json`；`.local/TestResults/M3C/default-02/results.json`；`.local/diagnostics/portable-20261001-032548`。当前状态 `IMPLEMENTED / AUTOMATED_TESTING_COMPLETED / DOCUMENTED_MIC_AND_ASR_LIMITATIONS`。以下为历史记录。
 ## 最新结论：M3b 七项反馈已修复，真实 mic 复测待用户主动执行
 
 **已实现：**针对三份 16k mic 失败索引支持的时钟问题，增加连续设备帧证据约束的短时 QPC 偏差处理、磁盘严格复算、完整原包跨块映射及收尾诊断；保留真实关麦/暂停段间隙。支持初始不选 mic 后在录音中明确选择开启，成功后固定设备，预算拒绝不连带中止远端 writer。回听按钮为图标，支持六档倍速和当前版 SRT/VTT 导出；字幕改为标点/token边界分句，校订页自动读取版本，新会议清除旧会库选择。旧音频、失败记录、字幕与人工修订保留。
@@ -125,12 +127,13 @@ Updated: 2026-10-01
 | M2 mixed/export MVP | IMPLEMENTED / FIELD_ACCEPTANCE_PENDING | docs/37–46；原M2回归保留，新增MP3实际编解码通过；20260930-M3完整包；T46干净Windows阻塞 |
 | M3 local ASR/import | IMPLEMENTED / PUBLIC_ENGLISH_MODEL_AND_REPLAY_VALIDATED | docs/45–47；真实base英文/UI识别、取消重试、外部录音、字幕点击回听及SRT/VTT往返通过；中文/混合语言/长会议仍未验；无SQLite |
 | M3b meeting UI / formats / ASR boundary | FIX_IMPLEMENTED / WINDOWS_AUTOMATED_VALIDATED / REAL_MIC_RETEST_PENDING | docs/48–51；141组通过；七项反馈修复与WPF/公开base通过；修复后16k mic+Zoom和44.1k硬件待验，Qwen仅准备 |
+| M3C SQLite / localized workspace | IMPLEMENTED / AUTOMATED_TESTING_COMPLETED / DOCUMENTED_LIMITATIONS | docs/52–53；154默认回归、最终包WPF通过；实际两小时mic连续性FAIL保留；完整有警告导出、静音和故障恢复通过 |
 | M4 project analysis | NOT_STARTED | none |
 | M5 optional tab extension | OPTIONAL_NOT_STARTED | none |
 | M6 release verification | NOT_STARTED | none |
 
 ## Next task
-使用M3b-Fix2完整便携包；在设置选择原Data读取旧会议。下一步由用户主动复测当前16k mic+Zoom启动，以及初始关mic/未选设备后中途开启；核对保存、关麦/暂停边界和回听。旧字幕重新识别后选择新版本检查句级效果。真实44.1k、获授权中文/中英质量、干净Windows与双设备同步保持后续未验项，不改系统格式或扩大音源制造通过。
+使用M3C-Final完整便携包，在设置选择原Data读取旧会议。下一步人工核对Jabra/其他真实设备的断续、Zoom/Webex和专用浏览器范围，评估中文/混合ASR时间边界与质量策略；不要自动修补原始缺口或放宽合同来制造通过。干净Windows、声学同步和物理系统状态保持未验。
 
 ## Per-stage reporting template
 Implemented:
