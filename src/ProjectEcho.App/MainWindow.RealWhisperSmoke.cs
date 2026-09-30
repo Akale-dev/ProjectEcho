@@ -44,6 +44,12 @@ public partial class MainWindow
 
         using var registration = token.Register(() => Dispatcher.BeginInvoke(new Action(() => transcriptCancellation?.Cancel())));
         var elapsed = Stopwatch.StartNew();
+        var displayedPercentages = new List<int>();
+        void ProgressChanged(object sender, RoutedPropertyChangedEventArgs<double> args)
+        {
+            if (!view.RecognitionProgressBar.IsIndeterminate) displayedPercentages.Add((int)args.NewValue);
+        }
+        view.RecognitionProgressBar.ValueChanged += ProgressChanged;
         var previousWork = transcriptWork;
         view.RunWhisperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         if (ReferenceEquals(previousWork, transcriptWork)) throw new InvalidDataException("本地识别按钮没有进入文字任务。");
@@ -51,6 +57,7 @@ public partial class MainWindow
         try { await transcriptWork.WaitAsync(token); }
         finally
         {
+            view.RecognitionProgressBar.ValueChanged -= ProgressChanged;
             if (token.IsCancellationRequested)
             {
                 transcriptCancellation?.Cancel();
@@ -76,6 +83,10 @@ public partial class MainWindow
             throw new InvalidDataException("UI 真实识别结束后按钮状态没有恢复。");
         string attemptPath = Directory.EnumerateFiles(Path.Combine(imported.MeetingDirectory, "transcripts", "asr"),
             "attempt.json", SearchOption.AllDirectories).Single();
+        var enginePercentages = new List<int>(); var progressParser = new WhisperProgressParser(enginePercentages.Add);
+        progressParser.Append(File.ReadAllText(Path.Combine(Path.GetDirectoryName(attemptPath)!, "stderr.txt"))); progressParser.Complete();
+        if (!displayedPercentages.SequenceEqual(enginePercentages.Where(value => value != 0)) || view.ProgressPanel.Visibility != Visibility.Collapsed)
+            throw new InvalidDataException("UI 百分比与本次引擎 stderr 不符，或完成后未清理进度条。");
         using var attempt = JsonDocument.Parse(File.ReadAllText(attemptPath));
         if (attempt.RootElement.GetProperty("status").GetString() != "Succeeded" ||
             attempt.RootElement.GetProperty("revisionId").GetString() != asrRevision.RevisionId ||
@@ -135,6 +146,8 @@ public partial class MainWindow
             UiRecognitionElapsedMilliseconds = elapsed.ElapsedMilliseconds,
             RealTimeFactor = (double)elapsed.ElapsedMilliseconds / durationMs,
             ActualAttempt = attemptPath, ActualAttemptRecord = attempt.RootElement.Clone(),
+            EngineReportedPercentages = enginePercentages, ActualUiPercentages = displayedPercentages,
+            ProgressMatchesEngine = true, NoSyntheticPercentages = true,
             asrRevision.RevisionId, asrRevision.Provider, Segments = asrRevision.Segments,
             SubtitleRoundTrips = roundTrips, ExportEntry = "Production save method after file-picker confirmation; picker not automated",
             OriginalHashesUnchanged = true, ConfigurationUnchanged = true, NoCapture = true, MicrophoneCollected = false,

@@ -7,6 +7,7 @@
     <ApplicationIcon>Assets/ProjectEcho.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Localization/*.json" LogicalName="ProjectEcho.Localization.%(Filename)%(Extension)" />
     <Resource Include="Assets/ProjectEcho.ico" />
     <Resource Include="Assets/ProjectEcho.png" />
     <ProjectReference Include="../ProjectEcho.Core/ProjectEcho.Core.csproj" />

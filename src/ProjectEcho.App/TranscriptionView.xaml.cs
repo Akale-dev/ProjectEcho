@@ -6,9 +6,24 @@ namespace ProjectEcho.App;
 
 public partial class TranscriptionView : UserControl
 {
-    public TranscriptionView() => InitializeComponent();
+    public TranscriptionView()
+    {
+        InitializeComponent();
+        ReviewBodyScroller.SizeChanged += (_, _) => ResizeTranscriptList();
+        ReviewHeaderPanel.SizeChanged += (_, _) => ResizeTranscriptList();
+        ReviewEditorPanel.SizeChanged += (_, _) => ResizeTranscriptList();
+    }
+
+    private void ResizeTranscriptList()
+    {
+        // Constrain the nested list so virtualization remains effective. Small
+        // windows scroll the editing body while transport and status stay fixed.
+        double height = Math.Max(100, ReviewBodyScroller.ActualHeight - ReviewHeaderPanel.ActualHeight - ReviewEditorPanel.ActualHeight - 2);
+        if (Math.Abs(SegmentsBox.Height - height) > 0.5) SegmentsBox.Height = height;
+    }
 
     internal event EventHandler? SegmentInvoked;
+    internal event EventHandler? CopySegmentRequested;
 
     private void Segment_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
@@ -22,6 +37,8 @@ public partial class TranscriptionView : UserControl
 
     private void Segments_KeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && SegmentsBox.SelectedItem is not null)
+        { CopySegmentRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
         if (e.Key != Key.Enter || SegmentsBox.SelectedItem is null) return;
         SegmentInvoked?.Invoke(this, EventArgs.Empty);
         e.Handled = true;

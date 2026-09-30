@@ -2,14 +2,32 @@
 
 2026-09-29 M1已实现的开发版采用`m1-recording-1`清单和本文的capture-index扩展；实际合同、验证及局限见 [35_M1_IMPLEMENTATION_REPORT.md](35_M1_IMPLEMENTATION_REPORT.md)。早期v2示例仍为设计示例，不对旧录音原地迁移。
 
+2026-10-01 M3C 用户决定覆盖旧“不使用 SQLite”：启用 SQLite 会议库和转写检索索引；原轨、capture index、manifest、filing 和不可变转写文件的权威不变。SQLite 合同与当前验证范围见 [52](52_M3C_IMPLEMENTATION.md)。
+
 ## 用户选择的数据根
 建议：`D:\MeetingRecords\ProjectEcho\`（示例，不硬编码盘符）。
 `Projects/<projectId>/Meetings/<meetingId>/meeting.json`；`sources/<sourceId>/*.wav`；`journal/capture-index.jsonl`；`journal/events.jsonl`；`renders/<renderId>/`；`exports/<exportId>/`；后续再有 `transcripts/original/`、`reviewed/`、`notes/`。默认未分类项目和日期时间名，开会前不强制填资料。
 `BrowserProfiles/Meetings/`放在数据根独立分区，不属于任何会议，导出永不遍历此目录。开发例子只在 `examples/`，不含真实音频。
 
+上面的 `Projects/...` 为早期设计路径；当前 M1–M3C 实际会议位于所选数据根的 `M1Recordings/<目录标识>/`。项目为会议元数据，录后归档不移动源音频。M3C 在数据根新增 `library.sqlite3`，在每会 `transcripts/` 新增 `search.sqlite3`；可恢复删除位于 `DeletedMeetings/<UTC时间-GUID>/<原目录标识>/`，不属于会议库扫描范围。
+
 ## 权威与索引
-源文件和 capture index 为录音事实；manifest 是可恢复快照，events 只保存用户操作/非音频事件。按2026-09-30用户决定，不加入 SQLite。会议与转写仍使用本地文件，用户触发搜索时建立内存结果，唯一时间证据不依赖数据库。
+源文件和 capture index 为录音事实；manifest 是可恢复快照，events 只保存用户操作/非音频事件。**当前按2026-10-01用户决定启用 SQLite**，仅承担会议元数据索引、筛选排序和文字检索。2026-09-30 的“不加入 SQLite、搜索临时建立内存结果”保留为历史决定，现已被覆盖；唯一时间证据仍不依赖数据库。
 每次结构迁移保留schemaVersion；加载旧版先备份manifest并做明确迁移，不改源音频。写入临时文件+同卷finalize；不要把两个文件rename当跨文件数据库事务，恢复器须能识别中间状态。
+
+### M3C 可重建数据库合同
+
+- `library.sqlite3` 的 `user_version=1`：从 `M1Recordings` 直接子目录读取 `meeting.json` 和可选 `filing.json`，事务刷新 `meetings` 表。目录标识为主键，复制会议即使 `meetingId` 相同也独立存在。日期/项目/时长可索引检索；无清单或信息异常保留 `incomplete`/`metadata_error` 状态，不能假装验证完好。
+- `transcripts/search.sqlite3` 的 `user_version=1`：`source_state` 保存修订指纹，`segments` 保存修订/段引用及检索文字，`segments_fts` 为 FTS5 external-content trigram 索引。搜索前复核权威修订、缓存内容和词元，结果文本与时间从修订读取。缓存不是原稿替代品。
+- 新数据库由现有文件建立，不给旧音频或转写执行原地迁移。未知数据库版本、已识别的结构/内容损坏会先保留 `*.sqlite3.rebuild-<GUID>` 及存在的 journal/WAL/SHM 文件，再重建一次。忙锁、磁盘不可写等错误显示为该功能失败，不靠删除原件或改采集范围解决。
+- 数据根、会议目录、缓存及旁文件拒绝网络路径、备用数据流和重解析点。读取缓存返回的目录标识时再次限制为当前 `M1Recordings` 的直接子目录；不执行数据库中的绝对路径。索引/坏库备份含会议资料，均按本地会议数据处理，不收入 Git 或音频导出。
+- 录音采集、Stop/Pause/MicOff 边界、原轨/journal/checkpoint 写入均不调用数据库。会议信息先保存到文件再刷新索引；数据库不可用不会将成功写入的原轨改标为数据库事务的一部分。
+
+### M3C 可恢复删除合同
+
+用户在会议菜单确认后，将整会目录同卷移动至 `DeletedMeetings/<UTC时间-GUID>/<原目录标识>/`。源与目标必须留在当前数据根，移动前检查整棵目录树不得含重解析点；不递归删除，不移入系统回收站，不改会议内部文件。目录移动是删除的权威边界，SQLite 清理在移动成功后尽力完成；查询会排除已经不存在的原目录，重建仅扫描 `M1Recordings`，因此数据库清理失败或程序中断不能让已移动会议重新出现。
+
+恢复时把最内层原会议目录移回同一数据根的 `M1Recordings`，保留目录名并避免覆盖已有同名目录，然后刷新会议库。删除过程中应阻止该会议新增导入、识别、修订、导出或回听任务，等待已有文件读取结束；关窗等待该移动工作收尾。当前实现与相应回归的最终状态见 [52](52_M3C_IMPLEMENTATION.md)。
 
 ## 单位
 session 时间 `startUs/effectiveSessionUs/sessionStartUs` 为整数微秒；API `qpcPosition100ns` 与 epoch QPC 为 100ns，不与 raw QPC ticks 混用。device frame position/QPC 的 uint64 原值用十进制字符串保存，避免 JSON 消费者浮点精度损失。epoch 来自单调计数器的同尺度转换。transcript `startMs/endMs` 为毫秒；UTC 为 ISO8601，显示时区不参与对齐。[S13]

@@ -1,58 +1,81 @@
 <UserControl x:Class="ProjectEcho.App.TranscriptionView"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
- <StackPanel>
-  <TextBlock x:Name="MeetingText" Text="先在会议库选择一场已保存录音。" FontWeight="SemiBold" Margin="0,0,0,12"/>
-  <TabControl x:Name="WorkspaceTabs" Padding="16">
-   <TabItem Header="导入文字">
-    <StackPanel Margin="0,12,0,0">
-     <TextBlock Text="将外部转写结果带回这场会议" FontSize="19" FontWeight="SemiBold"/>
-     <TextBlock Text="支持 TXT、Markdown、SRT、VTT 和 ProjectEcho JSON。纯文本保留为无时间文字；原稿和每次校订分别保存。" Margin="0,6,0,16"/>
-     <WrapPanel><Button x:Name="ImportFileButton" Content="选择转写文件…"/><TextBlock x:Name="ImportFileText" Text="尚未选择" VerticalAlignment="Center" MaxWidth="540"/></WrapPanel>
-     <TextBlock Text="来源名称（例如手动转写或服务名称）"/><TextBox x:Name="ProviderBox" Text="手动导入" MaxLength="100" Margin="0,4,0,12"/>
-     <Expander Header="导入的是导出分片：设置时间映射" Margin="0,0,0,12">
-      <StackPanel Margin="0,12,0,0">
-       <TextBlock Text="选择该场已生成混音对应的 export-manifest.json 或本地导出记录，再填写分片文件名。字幕从该分片的 0 秒开始计时；导入时校验所属混音。"/>
-       <WrapPanel><Button x:Name="MappingFileButton" Content="选择映射清单…"/><Button x:Name="ClearMappingButton" Content="清除映射"/></WrapPanel>
-       <TextBlock x:Name="MappingFileText" Text="未使用分片映射：字幕按完整会议时间导入。"/>
-       <TextBlock Text="分片文件名（例：part-0001.mp3）" Margin="0,8,0,0"/><TextBox x:Name="PartBox" MaxLength="200"/>
-      </StackPanel>
-     </Expander>
-     <Button x:Name="ImportButton" Content="导入到当前会议" HorizontalAlignment="Left"/>
-    </StackPanel>
+ <Grid>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <TextBlock x:Name="MeetingText" Text="{DynamicResource Loc517D4FE75F371071}" FontWeight="SemiBold" Margin="0,0,0,12"/>
+  <TabControl x:Name="WorkspaceTabs" Grid.Row="1" Padding="12" SelectedIndex="1">
+   <TabItem Header="{DynamicResource Loc3E6500E922D730FF}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,12,0,0">
+     <TextBlock Text="{DynamicResource LocDA6102899924EA60}" FontSize="19" FontWeight="SemiBold"/>
+     <TextBlock Text="{DynamicResource LocFB7E5BA263A597EC}" Margin="0,6,0,14"/>
+     <WrapPanel><Button x:Name="WhisperExeButton" Content="{DynamicResource Loc280BFFE6F9DED972}"/><TextBlock x:Name="WhisperExeText" Text="{DynamicResource Loc37310B8A853FF4C0}" VerticalAlignment="Center" MaxWidth="500"/></WrapPanel>
+     <WrapPanel><Button x:Name="WhisperModelButton" Content="{DynamicResource Loc4607FBFD0551A50F}"/><TextBlock x:Name="WhisperModelText" Text="{DynamicResource Loc4B50C9FA24DCAFA3}" VerticalAlignment="Center" MaxWidth="500"/></WrapPanel>
+     <TextBlock Text="{DynamicResource Loc1B74BE5576E6704A}"/><TextBox x:Name="ModelHashBox" MaxLength="64" Margin="0,4,0,10"/>
+     <CheckBox x:Name="ModelLicenseBox" Content="{DynamicResource Loc784058B1A566C2AD}" Margin="0,0,0,12"/>
+     <WrapPanel><TextBlock Text="{DynamicResource Loc3E2D73736FAA4C00}" VerticalAlignment="Center"/><ComboBox x:Name="LanguageBox" Width="150" SelectedIndex="0"><ComboBoxItem Content="{DynamicResource Loc7EB336E42CB5076B}" Tag="auto"/><ComboBoxItem Content="{DynamicResource Loc72726D8818F69306}" Tag="zh"/><ComboBoxItem Content="English" Tag="en"/></ComboBox></WrapPanel>
+     <WrapPanel><Button x:Name="SaveConfigurationButton" Content="{DynamicResource LocFB5D666499AA1425}"/><Button x:Name="RunWhisperButton" Content="{DynamicResource Loc1604C67349FD2F04}"/></WrapPanel>
+     <TextBlock Text="{DynamicResource Loc0130625C09E98F25}"/>
+    </StackPanel></ScrollViewer>
    </TabItem>
-   <TabItem Header="字幕回放与校订">
-    <StackPanel Margin="0,12,0,0">
-     <WrapPanel><Button x:Name="RefreshButton" Content="读取转写版本"/><TextBlock Text="选择要查看的版本" VerticalAlignment="Center"/></WrapPanel>
-     <ComboBox x:Name="RevisionBox" DisplayMemberPath="Label"/>
-     <DockPanel Margin="0,6,0,6"><Button x:Name="SearchButton" Content="搜索" DockPanel.Dock="Right"/><TextBox x:Name="SearchBox" ToolTip="输入关键词；搜索只在本地进行"/></DockPanel>
-     <CheckBox x:Name="AllMeetingsBox" Content="搜索当前数据目录的所有会议（点击搜索时读取）" Margin="0,0,0,8"/>
-     <TextBlock Text="单击带时间的字幕，立即跳到对应录音并播放；再次单击可从该句重新听。键盘选中后按 Enter 也可回听。" Margin="0,0,0,8"/>
-     <ListBox x:Name="SegmentsBox" Height="205" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" PreviewKeyDown="Segments_KeyDown">
+   <TabItem Header="{DynamicResource LocA500D66C17CF2736}">
+    <Grid Margin="0,8,0,0">
+     <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <ScrollViewer x:Name="ReviewBodyScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel>
+     <StackPanel x:Name="ReviewHeaderPanel">
+      <DockPanel><Button x:Name="RefreshButton" Content="{DynamicResource LocB54FCCE8D92A39CF}" DockPanel.Dock="Left"/><ComboBox x:Name="RevisionBox" DisplayMemberPath="Label" ToolTip="{DynamicResource Loc20392C4EE9287E9A}"/></DockPanel>
+      <DockPanel Margin="0,4,0,4"><Button x:Name="SearchButton" Content="{DynamicResource Loc44CE7AE909BBB28B}" DockPanel.Dock="Right"/><TextBox x:Name="SearchBox" ToolTip="{DynamicResource LocA8085407611A2C4A}"/></DockPanel>
+      <CheckBox x:Name="AllMeetingsBox" Content="{DynamicResource Loc473292021E58B242}" Margin="0,0,0,6"/>
+     </StackPanel>
+     <ListBox x:Name="SegmentsBox" Height="160" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" PreviewKeyDown="Segments_KeyDown">
       <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><EventSetter Event="PreviewMouseLeftButtonUp" Handler="Segment_MouseLeftButtonUp"/></Style></ListBox.ItemContainerStyle>
       <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" Margin="6"/></DataTemplate></ListBox.ItemTemplate>
      </ListBox>
-     <TextBlock x:Name="SegmentTimeText" Text="单击带时间的字幕可立即回听；纯文字可选择校订。" Margin="0,8,0,6"/>
-     <TextBox x:Name="EditBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" MaxHeight="200" VerticalScrollBarVisibility="Auto" MaxLength="100000"/>
-     <WrapPanel Margin="0,10,0,0"><Button x:Name="SaveRevisionButton" Content="保存为新修订"/><Button x:Name="SeekButton" Content="从此处回听"/><Button x:Name="StopListeningButton" Content="停止回听"/><Button x:Name="ExportSubtitlesButton" Content="导出字幕 SRT / VTT…"/></WrapPanel>
-     <TextBlock Text="重叠内容只提示复核，保留各片原文。人物标签不等于已确认身份。录音和暂停期间不可回听。"/>
-    </StackPanel>
+     <StackPanel x:Name="ReviewEditorPanel">
+      <TextBlock x:Name="SegmentTimeText" Text="{DynamicResource LocA9E4E21CD3D0D003}" Margin="0,5,0,4"/>
+      <TextBox x:Name="EditBox" AcceptsReturn="True" TextWrapping="Wrap" Height="65" VerticalScrollBarVisibility="Auto" MaxLength="100000"/>
+      <WrapPanel Margin="0,6,0,0"><Button x:Name="SaveRevisionButton" Content="{DynamicResource Loc001160AB52A7C2D1}"/><Button x:Name="CopySegmentButton" Content="{DynamicResource Loc63D90D977348AB1F}" ToolTip="{DynamicResource LocFB0C048039205276}"/><Button x:Name="SeekButton" Content="{DynamicResource Loc03C50FD4658C3D91}"/><Button x:Name="ExportSubtitlesButton" Content="{DynamicResource LocB6F9CDCE098B05BC}"/><Button x:Name="ExportTextButton" Content="{DynamicResource LocC427FACC1C43327F}"/></WrapPanel>
+     </StackPanel>
+      </StackPanel>
+     </ScrollViewer>
+     <Border Grid.Row="1" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="0,1,0,0" Padding="0,7,0,0">
+      <StackPanel>
+       <DockPanel><TextBlock x:Name="PlaybackTimeText" Text="00:00:00 / 00:00:00" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0"/><Slider x:Name="PlaybackPositionSlider" Minimum="0" Maximum="1" IsMoveToPointEnabled="True" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource Loc83EF2AD3A861021A}"/></DockPanel>
+       <WrapPanel Margin="0,5,0,0">
+        <Button x:Name="PlayListeningButton" Width="42" ToolTip="{DynamicResource LocB696D803A6D75012}" AutomationProperties.Name="{DynamicResource LocB696D803A6D75012}"><Path Data="M 2 0 L 15 8 L 2 16 Z" Width="14" Height="14" Stretch="Uniform" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
+        <Button x:Name="PauseListeningButton" Width="42" ToolTip="{DynamicResource Loc17CC2D94EDAE7CFD}" AutomationProperties.Name="{DynamicResource Loc17CC2D94EDAE7CFD}"><Path x:Name="PauseListeningIcon" Data="M 1 0 H 6 V 16 H 1 Z M 10 0 H 15 V 16 H 10 Z" Width="14" Height="14" Stretch="Uniform" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
+        <Button x:Name="StopListeningButton" Width="42" ToolTip="{DynamicResource Loc0493B52724BE910D}" AutomationProperties.Name="{DynamicResource Loc0493B52724BE910D}"><Path Data="M 0 0 H 14 V 14 H 0 Z" Width="14" Height="14" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
+        <ComboBox x:Name="PlaybackSpeedBox" Width="85" SelectedIndex="2" ToolTip="{DynamicResource LocF7FBDB84467E7546}"><ComboBoxItem Content="0.5×" Tag="0.5"/><ComboBoxItem Content="0.75×" Tag="0.75"/><ComboBoxItem Content="1×" Tag="1"/><ComboBoxItem Content="1.25×" Tag="1.25"/><ComboBoxItem Content="1.5×" Tag="1.5"/><ComboBoxItem Content="2×" Tag="2"/></ComboBox>
+        <TextBlock Text="{DynamicResource LocD6529CBBD21874E2}" VerticalAlignment="Center" FontSize="11" Margin="8,0,0,0"/>
+       </WrapPanel>
+      </StackPanel>
+     </Border>
+    </Grid>
    </TabItem>
-   <TabItem Header="本地识别（可选）">
+   <TabItem Header="{DynamicResource Loc99EA4EB88E0C48A9}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="0,12,0,0">
-     <TextBlock Text="在本机运行 whisper.cpp" FontSize="19" FontWeight="SemiBold"/>
-     <TextBlock Text="选择自己准备好的 CLI 和模型。无需账号或 API；未配置时仍可正常录音、导出与导入文字。" Margin="0,6,0,14"/>
-     <WrapPanel><Button x:Name="WhisperExeButton" Content="选择 whisper-cli.exe…"/><TextBlock x:Name="WhisperExeText" Text="未配置程序" VerticalAlignment="Center" MaxWidth="500"/></WrapPanel>
-     <WrapPanel><Button x:Name="WhisperModelButton" Content="选择本地模型…"/><TextBlock x:Name="WhisperModelText" Text="未配置模型" VerticalAlignment="Center" MaxWidth="500"/></WrapPanel>
-     <TextBlock Text="模型 SHA-256（可选，用于与可信来源公布的值比对）"/><TextBox x:Name="ModelHashBox" MaxLength="64" Margin="0,4,0,10"/>
-     <CheckBox x:Name="ModelLicenseBox" Content="我已核对该程序和模型来源可信，并确认模型许可允许本次本地使用。" Margin="0,0,0,12"/>
-     <WrapPanel><TextBlock Text="语言 " VerticalAlignment="Center"/><ComboBox x:Name="LanguageBox" Width="150" SelectedIndex="0"><ComboBoxItem Content="自动" Tag="auto"/><ComboBoxItem Content="中文" Tag="zh"/><ComboBoxItem Content="English" Tag="en"/></ComboBox></WrapPanel>
-     <WrapPanel><Button x:Name="SaveConfigurationButton" Content="保存本机配置"/><Button x:Name="RunWhisperButton" Content="开始 / 重试本地识别"/></WrapPanel>
-     <TextBlock Text="识别使用完整混音的会后副本；每次尝试单独保存输出和耗时。识别结果需校对，尚无本机准确率或速度承诺。"/>
-    </StackPanel>
+     <TextBlock Text="{DynamicResource Loc9C1A34D24B82B069}" FontSize="19" FontWeight="SemiBold"/>
+     <TextBlock Text="{DynamicResource Loc8F3DD0BE5C8ABEB3}" Margin="0,6,0,16"/>
+     <WrapPanel><Button x:Name="ImportFileButton" Content="{DynamicResource Loc40E20DB53EA929F5}"/><TextBlock x:Name="ImportFileText" Text="{DynamicResource LocC5768CA9726CD839}" VerticalAlignment="Center" MaxWidth="540"/></WrapPanel>
+     <TextBlock Text="{DynamicResource Loc9C7340A5EA05AD7F}"/><TextBox x:Name="ProviderBox" Text="{DynamicResource Loc529B82F82D41191B}" MaxLength="100" Margin="0,4,0,12"/>
+     <Expander Header="{DynamicResource Loc3E8AA65611E948D0}" Margin="0,0,0,12">
+      <StackPanel Margin="0,12,0,0">
+       <TextBlock Text="{DynamicResource Loc2AAEFC4DF5D9014C}"/>
+       <WrapPanel><Button x:Name="MappingFileButton" Content="{DynamicResource LocC85C754A31EC2628}"/><Button x:Name="ClearMappingButton" Content="{DynamicResource Loc22008BF6F95756A6}"/></WrapPanel>
+       <TextBlock x:Name="MappingFileText" Text="{DynamicResource LocD57AC525CAC68D60}"/>
+       <TextBlock Text="{DynamicResource Loc281FB9E895AD8DB0}" Margin="0,8,0,0"/><TextBox x:Name="PartBox" MaxLength="200"/>
+      </StackPanel>
+     </Expander>
+     <Button x:Name="ImportButton" Content="{DynamicResource Loc26FA44ADE0B35161}" HorizontalAlignment="Left"/>
+    </StackPanel></ScrollViewer>
    </TabItem>
   </TabControl>
-  <WrapPanel Margin="0,12,0,0"><Button x:Name="CancelButton" Content="取消文字任务" IsEnabled="False"/></WrapPanel>
-  <TextBox x:Name="StatusText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" MinHeight="65" MaxHeight="160" Text="尚未读取转写。所有内容仅在本地处理。"/>
- </StackPanel>
+  <Grid Grid.Row="2" Margin="0,8,0,0">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <StackPanel><StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,5"><TextBlock x:Name="ProgressText"/><ProgressBar x:Name="RecognitionProgressBar" Minimum="0" Maximum="100" Height="7" IsIndeterminate="True" Margin="0,3,0,0"/></StackPanel><TextBox x:Name="StatusText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Height="58" Text="{DynamicResource Loc298FB5928CE13BEB}"/></StackPanel>
+   <Button Grid.Column="1" x:Name="CancelButton" Content="{DynamicResource Loc911ABCEFE1EA8CED}" IsEnabled="False" VerticalAlignment="Bottom" Margin="8,0,0,0"/>
+  </Grid>
+ </Grid>
 </UserControl>

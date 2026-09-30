@@ -42,8 +42,8 @@ public partial class MainWindow
     {
         RecordingBar.Visibility = MainTabs.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
         LibraryListPanel.Visibility = libraryExpanded ? Visibility.Visible : Visibility.Collapsed;
-        LibraryNavigationButton.Content = libraryExpanded ? "02   会议库   ▾" : "02   会议库   ▸";
-        PageContextText.Text = MainTabs.SelectedIndex switch { 0 => "新会议录音", 2 => "诊断与设置", _ => "会议库" };
+        LibraryNavigationButton.Content = libraryExpanded ? UiText.T("02   会议库   ▾") : UiText.T("02   会议库   ▸");
+        PageContextText.Text = MainTabs.SelectedIndex switch { 0 => UiText.T("新会议录音"), 2 => UiText.T("诊断与设置"), _ => UiText.T("会议库") };
         RecordNavigationButton.Background = (Brush)FindResource(MainTabs.SelectedIndex == 0 ? "SidebarSelectedBrush" : "SidebarBrush");
         LibraryNavigationButton.Background = (Brush)FindResource(MainTabs.SelectedIndex == 1 ? "SidebarSelectedBrush" : "SidebarBrush");
         SettingsNavigationButton.Background = (Brush)FindResource(MainTabs.SelectedIndex == 2 ? "SidebarSelectedBrush" : "SidebarBrush");
@@ -88,8 +88,8 @@ public partial class MainWindow
         selectedMeetingDirectory = null;
         selectedMeetingImported = false;
         currentMix = null; mixedPath = null; lastExportDirectory = null;
-        SelectedMeetingText.Text = "选择一场会议";
-        MeetingMetadataText.Text = "点击左侧会议选择历史记录。";
+        SelectedMeetingText.Text = UiText.T("选择一场会议");
+        MeetingMetadataText.Text = UiText.T("点击左侧会议选择历史记录。");
         FiledTitleBox.Clear(); FiledProjectBox.Text = "未分类";
         TitleBox.Text = ProjectEcho.Core.SessionDefaults.Title(DateTimeOffset.Now);
         UpdateControls();

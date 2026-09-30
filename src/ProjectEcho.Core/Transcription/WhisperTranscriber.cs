@@ -30,7 +30,8 @@ public static class WhisperTranscriber
         { return new(false, ex.Message); }
     }
 
-    public static async Task<WhisperRunResult> RunAsync(WhisperRequest request, CancellationToken cancellationToken = default)
+    public static async Task<WhisperRunResult> RunAsync(WhisperRequest request, CancellationToken cancellationToken = default,
+        IProgress<LocalTranscriptionProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         string meeting = TranscriptFiles.Meeting(request.MeetingDirectory);
@@ -48,6 +49,7 @@ public static class WhisperTranscriber
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(new(LocalTranscriptionStage.Validating));
             using var model = TranscriptFiles.ReadLock(request.Configuration.ModelPath);
             using var executable = TranscriptFiles.ReadLock(request.Configuration.ExecutablePath);
             using var wave = TranscriptFiles.ReadLock(wavePath);
@@ -69,10 +71,10 @@ public static class WhisperTranscriber
                     UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = attempt,
                     RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
                 };
-                // Verified against upstream examples/cli/cli.cpp on 2026-09-30. No prompt, network URL, shell or arbitrary arguments.
+                // -pp and its stderr callback format verified against b5130 cli.cpp on 2026-10-01.
                 foreach (string argument in new[] { "-m", TranscriptFiles.LocalPath(request.Configuration.ModelPath), "-f", wavePath,
                     "-l", request.Configuration.Language, "-t", request.Configuration.Threads.ToString(CultureInfo.InvariantCulture),
-                    "-ng", "-osrt", "-otxt", "-ojf", "-of", outputBase }) start.ArgumentList.Add(argument);
+                    "-ng", "-pp", "-osrt", "-otxt", "-ojf", "-of", outputBase }) start.ArgumentList.Add(argument);
                 process = new Process { StartInfo = start };
                 if (!process.Start()) throw new IOException("本地转写进程未启动。");
                 try { process.PriorityClass = ProcessPriorityClass.BelowNormal; priorityNote = "BelowNormal"; }
@@ -81,13 +83,16 @@ public static class WhisperTranscriber
                 using var timeout = new CancellationTokenSource(TimeSpan.FromHours(24));
                 using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
                 using var stopRegistration = stop.Token.Register(() => Kill(process));
+                progress?.Report(new(LocalTranscriptionStage.Recognizing));
+                var progressParser = new WhisperProgressParser(value => progress?.Report(new(LocalTranscriptionStage.Recognizing, value)));
                 Task stdout = CaptureOutput(process.StandardOutput, TranscriptFiles.Inside(attempt, "stdout.txt"), process, stop.Token);
-                Task stderr = CaptureOutput(process.StandardError, TranscriptFiles.Inside(attempt, "stderr.txt"), process, stop.Token);
+                Task stderr = CaptureOutput(process.StandardError, TranscriptFiles.Inside(attempt, "stderr.txt"), process, stop.Token, progressParser);
                 try { await Task.WhenAll(process.WaitForExitAsync(stop.Token), stdout, stderr).ConfigureAwait(false); }
                 catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 { throw new TimeoutException("本地转写超过 24 小时，已停止独立进程。可调整配置后重试。"); }
                 cancellationToken.ThrowIfCancellationRequested(); exitCode = process.ExitCode;
                 if (exitCode != 0) throw new InvalidDataException($"whisper.cpp 返回错误码 {exitCode}，原始输出保留；录音与导出不受影响。");
+                progress?.Report(new(LocalTranscriptionStage.Saving));
                 string srt = outputBase + ".srt";
                 if (!File.Exists(srt)) throw new InvalidDataException("转写进程成功退出但缺少 SRT 输出，未伪造转写。");
                 byte[] resultBytes = TranscriptFiles.ReadBounded(srt, cancellationToken);
@@ -124,14 +129,15 @@ public static class WhisperTranscriber
                 request.Configuration.Language, request.Configuration.Threads, cpuOnly = true, maxSegmentLength = 0,
                 fullTokenJson = true, subtitleSegmentation = WhisperSentenceSegmenter.Policy, priorityNote,
                 modelLicenseAcknowledged = request.Configuration.ModelLicenseAcknowledged,
-                cliSource = VerifiedCliSource, cliSourceCheckedAt = "2026-09-30", exitCode,
+                cliSource = VerifiedCliSource, cliSourceCheckedAt = "2026-10-01", printProgress = true, exitCode,
                 revisionId = revision?.RevisionId, message
             });
         }
         return new(status, attempt, timer.ElapsedMilliseconds, revision, message);
     }
 
-    private static async Task CaptureOutput(StreamReader reader, string outputPath, Process process, CancellationToken token)
+    private static async Task CaptureOutput(StreamReader reader, string outputPath, Process process, CancellationToken token,
+        WhisperProgressParser? progressParser = null)
     {
         try
         {
@@ -143,7 +149,9 @@ public static class WhisperTranscriber
                 count += read;
                 if (count > 2 * 1024 * 1024) throw new InvalidDataException("转写进程诊断输出超过 2 Mi 字符，已停止进程并保留此前输出。");
                 await writer.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+                progressParser?.Append(buffer.AsSpan(0, read));
             }
+            progressParser?.Complete();
         }
         catch { Kill(process); throw; }
     }

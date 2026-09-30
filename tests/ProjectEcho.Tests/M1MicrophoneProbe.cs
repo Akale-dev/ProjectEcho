@@ -79,7 +79,7 @@ internal static class M1MicrophoneProbe
             ownedSelection = SyntheticAudioProbe.IsOwnedSelection(selection, producer.Identity);
             if (!ownedSelection) throw new InvalidOperationException("Source is not the newly created owned process.");
             var options = SyntheticAudioProbe.CreateOptions(selection, directory) with
-            { MicrophoneEnabled = false, MicrophoneDeviceId = microphone.Id, Title = "真实麦克风边界自动测试（仅本地）" };
+            { MicrophoneEnabled = false, MicrophoneDeviceId = null, Title = "真实麦克风首次选择与边界自动测试（仅本地）" };
             // Normal Stop is at about 20 s. Production CaptureHost also enforces this 30 s recording limit.
             await client.StartRecordingAsync(new RecordingOptions(options, MaximumSeconds: 30, ExpectedMinutes: 1), root,
                 () => deadline.IsCancellationRequested);
@@ -148,7 +148,7 @@ internal static class M1MicrophoneProbe
             Schema = "m1-real-microphone-probe-1", Status = pass ? "PASS_SHORT_MIC_BOUNDARIES" : "FAIL",
             Os = Environment.OSVersion.Version.ToString(), Architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(),
             CaptureMode = "ProcessTree/test-owned target-m1 + explicitly selected microphone",
-            SelectedMicrophone = microphone, InitiallyEnabled = false, EndpointFallback = false, BrowserOrMeetingOpened = false,
+            SelectedMicrophone = microphone, InitiallyEnabled = false, InitiallySelectedMicrophone = false, EndpointFallback = false, BrowserOrMeetingOpened = false,
             Privacy = new { LocalOnly = true, Replayed = false, Transcribed = false, Uploaded = false,
                 Note = "Physical microphone PCM is retained locally as test evidence; report only contains statistics." },
             Storage = new { ResultComplete = result?.StorageComplete, OfflineCleanEnd = recovered?.IsCleanEnd,

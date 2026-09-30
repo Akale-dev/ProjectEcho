@@ -6,3 +6,5 @@
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
 *.html text eol=lf
+# Preserve the upstream copyright page's original whitespace.
+tools/licenses/SQLite-Public-Domain.html -whitespace

@@ -30,6 +30,11 @@ public sealed record LocalTranscriptionReadiness(bool Ready, string Message);
 
 public enum LocalTranscriptionStatus { NotConfigured, Succeeded, NoSpeech, Cancelled, Failed }
 
+public enum LocalTranscriptionStage { Validating, Recognizing, Saving }
+
+/// <summary>Percent is engine-reported recognition progress, not an estimate of total task time.</summary>
+public sealed record LocalTranscriptionProgress(LocalTranscriptionStage Stage, int? Percent = null);
+
 /// <summary>
 /// A successful result is an immutable TranscriptService revision with retained original model output.
 /// Untimed output must remain untimed; approximate segment times must never be presented as word alignment.
@@ -47,7 +52,8 @@ public interface ILocalTranscriber
 {
     LocalTranscriberDescriptor Descriptor { get; }
     LocalTranscriptionReadiness Inspect(LocalTranscriptionConfiguration? configuration);
-    Task<LocalTranscriptionResult> RunAsync(LocalTranscriptionRequest request, CancellationToken cancellationToken = default);
+    Task<LocalTranscriptionResult> RunAsync(LocalTranscriptionRequest request, CancellationToken cancellationToken = default,
+        IProgress<LocalTranscriptionProgress>? progress = null);
 }
 
 /// <summary>The current verified adapter; the legacy static API remains compatible.</summary>
@@ -67,14 +73,15 @@ public sealed class WhisperCppLocalTranscriber : ILocalTranscriber
         return new(readiness.Ready, readiness.Message);
     }
 
-    public async Task<LocalTranscriptionResult> RunAsync(LocalTranscriptionRequest request, CancellationToken cancellationToken = default)
+    public async Task<LocalTranscriptionResult> RunAsync(LocalTranscriptionRequest request, CancellationToken cancellationToken = default,
+        IProgress<LocalTranscriptionProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         var readiness = Inspect(request.Configuration);
         if (!readiness.Ready) return new(LocalTranscriptionStatus.NotConfigured, "", 0, null, readiness.Message);
         var result = await WhisperTranscriber.RunAsync(new(request.MeetingDirectory, request.MeetingId,
             request.MeetingDurationMs, request.WavePath, request.ExpectedWaveSha256, ToWhisper(request.Configuration),
-            request.IsSynthetic), cancellationToken).ConfigureAwait(false);
+            request.IsSynthetic), cancellationToken, progress).ConfigureAwait(false);
         var status = result.Status switch
         {
             "NotConfigured" => LocalTranscriptionStatus.NotConfigured,

@@ -123,17 +123,7 @@ public static class TranscriptService
     {
         if (string.IsNullOrWhiteSpace(query)) return [];
         if (query.Length > 1000) throw new ArgumentException("搜索词不能超过 1000 字符。", nameof(query));
-        var hits = new List<TranscriptSearchHit>();
-        foreach (var revision in ListRevisions(meetingDirectory, cancellationToken))
-            foreach (var segment in revision.Segments)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (segment.Text.Contains(query, StringComparison.OrdinalIgnoreCase))
-                    hits.Add(new(revision.RevisionId, segment.SegmentId, segment.StartMs, segment.EndMs, segment.Text,
-                        segment.SpeakerLabel, revision.ParentRevisionId is not null));
-                if (hits.Count == 5000) return hits;
-            }
-        return hits;
+        return Library.SqliteTranscriptSearch.Search(meetingDirectory, query, cancellationToken);
     }
 
     public static IReadOnlyList<TranscriptOverlapCandidate> FindOverlapCandidates(string meetingDirectory,

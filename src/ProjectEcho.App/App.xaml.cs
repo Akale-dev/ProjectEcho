@@ -15,8 +15,27 @@ public partial class App : Application
         bool transcriptionSmoke = e.Args.Contains("--transcription-smoke");
         bool m3ReplaySmoke = e.Args.Contains("--m3-replay-smoke");
         bool realWhisperSmoke = e.Args.Contains("--m3-whisper-smoke");
+        bool m3cTranscriptSmoke = e.Args.Contains("--m3c-transcript-smoke");
+        bool m3cLibrarySmoke = e.Args.Contains("--m3c-library-smoke");
         try
         {
+            if (m3cTranscriptSmoke || m3cLibrarySmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics",
+                    (m3cTranscriptSmoke ? "m3c-transcript-" : "m3c-library-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                var result = m3cTranscriptSmoke
+                    ? await testWindow.M3cTranscriptSmokeAsync(folder, deadline.Token)
+                    : await testWindow.M3cLibrarySmokeAsync(folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(), Result = result },
+                    new JsonSerializerOptions { WriteIndented = true }));
+                Shutdown(0); return;
+            }
             if (m3ReplaySmoke || realWhisperSmoke)
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -112,13 +131,13 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            if (exportCloseSmoke || playbackSmoke || layoutSmoke || transcriptionSmoke || m3ReplaySmoke || realWhisperSmoke)
+            if (exportCloseSmoke || playbackSmoke || layoutSmoke || transcriptionSmoke || m3ReplaySmoke || realWhisperSmoke || m3cTranscriptSmoke || m3cLibrarySmoke)
             {
-                var evidence = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics", (realWhisperSmoke ? "m3-whisper-ui-failure-" : m3ReplaySmoke ? "m3-replay-failure-" : layoutSmoke || transcriptionSmoke ? "m3-ui-failure-" : playbackSmoke ? "m2-wpf-playback-failure-" : "m2-wpf-export-close-failure-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".txt");
+                var evidence = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics", (m3cTranscriptSmoke || m3cLibrarySmoke ? "m3c-ui-failure-" : realWhisperSmoke ? "m3-whisper-ui-failure-" : m3ReplaySmoke ? "m3-replay-failure-" : layoutSmoke || transcriptionSmoke ? "m3-ui-failure-" : playbackSmoke ? "m2-wpf-playback-failure-" : "m2-wpf-export-close-failure-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(evidence)!);
                 File.WriteAllText(evidence, ex.ToString());
             }
-            else if (!e.Args.Contains("--smoke-test")) MessageBox.Show(ex.Message, "ProjectEcho 启动失败");
+            else if (!e.Args.Contains("--smoke-test")) MessageBox.Show(ex.Message, UiText.T("ProjectEcho 启动失败"));
             Shutdown(1);
         }
     }

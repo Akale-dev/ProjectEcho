@@ -1,4 +1,8 @@
 # Convenience scripts
+M3C：`--m3c-library-smoke` 和 `--m3c-transcript-smoke` 是 App 内的实际 WPF 测试入口，覆盖 SQLite 会库/筛选/删除确认和互斥、三语言、真实静音播放器更新频率、固定底栏、全文导出和复制；不用 computer-use。发布版可直接 `ProjectEcho.exe <测试开关>`；开发版经 `Dotnet.ps1 -Arguments @('exec',<App DLL>,<测试开关>)`。证据在 `.local/diagnostics/m3c-*`，只使用合成文件。
+`Test-MicrophoneEndurance.ps1`：用户显式授权后，固定 `-MicrophoneId`、可选固定 `-OutputDeviceId`；`-Mode short` 运行40秒跨块检查，`-Mode long -QualificationReport <报告>` 运行真实7200秒并校验完整WAV/MP3和分片。mic原轨只留本地，不回放、不转写、不上传。设备保存/编解码资格与连续性质量分开报告，声明的缺口不能被当作同步或连续性通过。
+`Test-SyntheticSpeech.ps1`：用已安装的 Windows SAPI 中文/英文声音生成固定本地合成语料，再调用明确提供的本地 CLI/model；只写 WAV 文件，不发声、不录音、不联网。报告生产识别链路、真实百分比和有限样本差错，不代表自然会议准确率。沙箱可能限制读取语音注册项，失败必须保留，不能修改注册表来绕过。
+`Update-TraditionalUi.ps1`：仅开发维护时，把 `Localization/zh-CN.json` 的界面模板通过 Windows NLS 转为繁体资源；不会处理用户会议内容。运行产品只读取嵌入资源，不依赖此脚本。
 `Install-WhisperLocal.ps1`: 仅供用户显式授权的本地环境配置，固定写入 `H:\AI\Whisper`；下载官方 b5130 CPU x64、多语言 base、公开 JFK 测试样本及许可，核对官方 ZIP SHA-256 与固定模型 SHA-256，生成来源和配置清单。产品不调用此脚本；不自动改 PATH/代理/运行时/应用数据目录，不上传内容。本轮已获用户授权并执行，见 docs/47。
 M3 文件检查：默认 `Dev.ps1 -Action Test` 包含录音导入与 SRT/VTT 导出边界测试。显式真实模型 probe 为 `scripts/Dotnet.ps1 -Arguments @('tests/ProjectEcho.Tests/bin/Release/net10.0-windows/ProjectEcho.Tests.dll','--m3-real-whisper-probe','H:\AI\Whisper\whisper-b5130\Release\whisper-cli.exe','H:\AI\Whisper\models\ggml-base.bin','H:\AI\Whisper\samples\jfk.wav','--output','.local/TestResults/M3Whisper/new-run')`，输出目录须为新的项目内目录。没有录音/上传。
 M3 WPF 集成：通过项目本地 Dotnet 包装器启动 App DLL，`--m3-whisper-smoke --audio <公开样本WAV>` 使用已保存配置执行真实UI识别；`--m3-replay-smoke --audio <公开样本WAV> --subtitles <对应SRT/VTT>` 导入文件并用实际WPF路由事件测试字幕定位，播放器静音，不改变系统音量，不采集。结果写 `.local/diagnostics/m3-*`。开发版直接 exe 需要可定位的.NET；便携版自带运行时。

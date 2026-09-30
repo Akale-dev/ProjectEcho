@@ -12,6 +12,12 @@ if (args.Length > 0 && args[0] == "-m" && args.Contains("-osrt"))
 if (args.Length > 0 && args[0] == "--m3-real-whisper-probe")
     return await M3RealWhisperProbe.RunAsync(args);
 
+if (args.Length > 0 && args[0] == "--m3c-microphone-endurance-probe")
+    return await M3cMicrophoneEnduranceProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m3c-synthetic-speech-probe")
+    return await M3cSyntheticSpeechProbe.RunAsync(args);
+
 if (args.Length > 0 && args[0] == "--list-audio-devices")
     return AudioDeviceDiagnostics.Run(args);
 
@@ -99,6 +105,8 @@ M3AudioImportTests.Register(Run, output);
 M3SubtitleExportTests.Register(Run, output);
 M3SentenceSegmentationTests.Register(Run, output);
 M3TranscriptTests.Register(Run, output);
+M3cSqliteTests.Register(Run, output);
+M3cTranscriptTests.Register(Run, output);
 M3WhisperTests.Register(Run, output);
 M3LocalTranscriberTests.Register(Run, output);
 M4aTimelineTests.Register(Run, output);

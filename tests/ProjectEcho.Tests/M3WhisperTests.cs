@@ -68,6 +68,17 @@ internal static class M3WhisperTests
         if (behavior == "synthetic-fail") { Console.Error.WriteLine("synthetic failure"); return 7; }
         if (behavior == "synthetic-wait")
         { File.WriteAllText(Path.Combine(Path.GetDirectoryName(output)!, "fixture-ready.txt"), "ready"); await Task.Delay(TimeSpan.FromMinutes(5)); return 8; }
+        if (behavior == "synthetic-progress")
+        {
+            if (!args.Contains("-pp")) return 92;
+            await Console.Error.WriteAsync("whisper_print_progress_callback: prog");
+            await Console.Error.FlushAsync();
+            await Task.Delay(30);
+            await Console.Error.WriteAsync("ress =   5%\r\n");
+            await Console.Error.WriteAsync("whisper_print_progress_callback: progress =  45%\n");
+            await Console.Error.WriteAsync("unrelated model text 100%\n");
+            await Console.Error.WriteAsync("whisper_print_progress_callback: progress = 100%");
+        }
         if (behavior.StartsWith("synthetic-sentence-", StringComparison.Ordinal))
             return M3SentenceSegmentationTests.WriteFixture(output, behavior);
         File.WriteAllText(output + ".srt", "1\n00:00:00,100 --> 00:00:00,900\n合成夹具结果，非真实 ASR\n", new UTF8Encoding(false));

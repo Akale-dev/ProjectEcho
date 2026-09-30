@@ -16,6 +16,9 @@ obj/
 Data/
 Recordings/
 MeetingRecords/
+M0Recordings/
+M1Recordings/
+DeletedMeetings/
 Projects/
 BrowserProfiles/
 **/BrowserProfiles/
@@ -30,6 +33,11 @@ BrowserProfiles/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.sqlite3-journal
+*.sqlite3.rebuild-*
 *.db
 # Models and local binaries
 models/
