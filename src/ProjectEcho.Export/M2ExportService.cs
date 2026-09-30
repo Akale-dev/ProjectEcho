@@ -96,6 +96,8 @@ public static class M2ExportService
             M2FileSafety.AtomicJson(renderManifest, new
             {
                 schemaVersion = "m2-render-1", renderVersion = RenderVersion,
+                sourceManifestSha256 = M2FileSafety.Hash(locks[0], cancellationToken),
+                sourceIndexSha256 = M2FileSafety.Hash(locks[1], cancellationToken),
                 sourceStorageComplete = recovery.IsCleanEnd,
                 sampleRate = MixFormat.SampleRate, channels = 1, frameCount = frames, duration100ns = capture.Duration100ns,
                 sourceGain = M2TimelineRenderer.SourceGain, peakCeiling = M2TimelineRenderer.PeakCeiling,

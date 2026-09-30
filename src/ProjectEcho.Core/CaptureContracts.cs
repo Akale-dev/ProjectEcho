@@ -28,7 +28,8 @@ public sealed record CapturedPacket(
     int Flags,
     bool TimestampValid,
     bool DevicePositionValid = true,
-    int RetainedFrameOffset = 0)
+    int RetainedFrameOffset = 0,
+    long ClockJitter100ns = 0)
 {
     // QPC can remain usable even when a process-loopback device counter is stuck.
     // Preserve both raw API values; never invent a replacement device position.
@@ -41,7 +42,8 @@ public sealed record CapturedTrack(
     string WavePath,
     PcmFormat Format,
     long FrameCount,
-    IReadOnlyList<CapturedPacket> Packets);
+    IReadOnlyList<CapturedPacket> Packets,
+    string? SegmentId = null);
 
 public sealed record CaptureResult(
     string SessionDirectory,

@@ -1,4 +1,7 @@
 # Convenience scripts
+`Install-WhisperLocal.ps1`: 仅供用户显式授权的本地环境配置，固定写入 `H:\AI\Whisper`；下载官方 b5130 CPU x64、多语言 base、公开 JFK 测试样本及许可，核对官方 ZIP SHA-256 与固定模型 SHA-256，生成来源和配置清单。产品不调用此脚本；不自动改 PATH/代理/运行时/应用数据目录，不上传内容。本轮已获用户授权并执行，见 docs/47。
+M3 文件检查：默认 `Dev.ps1 -Action Test` 包含录音导入与 SRT/VTT 导出边界测试。显式真实模型 probe 为 `scripts/Dotnet.ps1 -Arguments @('tests/ProjectEcho.Tests/bin/Release/net10.0-windows/ProjectEcho.Tests.dll','--m3-real-whisper-probe','H:\AI\Whisper\whisper-b5130\Release\whisper-cli.exe','H:\AI\Whisper\models\ggml-base.bin','H:\AI\Whisper\samples\jfk.wav','--output','.local/TestResults/M3Whisper/new-run')`，输出目录须为新的项目内目录。没有录音/上传。
+M3 WPF 集成：通过项目本地 Dotnet 包装器启动 App DLL，`--m3-whisper-smoke --audio <公开样本WAV>` 使用已保存配置执行真实UI识别；`--m3-replay-smoke --audio <公开样本WAV> --subtitles <对应SRT/VTT>` 导入文件并用实际WPF路由事件测试字幕定位，播放器静音，不改变系统音量，不采集。结果写 `.local/diagnostics/m3-*`。开发版直接 exe 需要可定位的.NET；便携版自带运行时。
 `Test-MicrophoneIntegration.ps1`: `-List`或无ID仅枚举；显式`-MicrophoneId`启动约20秒真实mic短测（mic累计约10秒、录音上限30秒），远端限自建测试进程，不回放/转写/上传。默认Release。设备和mix采样率须匹配；跨速率时钟映射尚未验证。详情见docs/36。
 `Test-M1Integration.ps1`: 默认Release，显式选择Recording（40秒）、Disconnect（2秒失联）、Crash（32秒Host故障）或Silence（真实15分钟数字静音）。只录本次新建测试进程、mic固定关闭，全部探针共享项目内互斥锁。错误返回非零并保留原件；数据保存与设备时钟限制分别报告。先构建对应配置，普通Dev Test不执行实采。
 环境准备在Windows PowerShell 7.6.5实跑；其他宿主版本未验证。普通构建/测试不录音；显式 `Test-AudioIntegration.ps1` 会录制其自己创建的合成音进程，mic固定关闭。脚本不修改全局PATH/代理/执行策略、不安装驱动、不上传文件。实际证据见STATUS、docs/21及docs/33。

@@ -7,7 +7,7 @@ namespace ProjectEcho.Core.Transcription;
 /// <summary>Optional, user-configured whisper.cpp CLI. Never downloads a model or executable.</summary>
 public static class WhisperTranscriber
 {
-    public const string VerifiedCliSource = "https://github.com/ggml-org/whisper.cpp/blob/master/examples/cli/cli.cpp";
+    public const string VerifiedCliSource = "https://github.com/ggml-org/whisper.cpp/blob/b5130/examples/cli/cli.cpp";
 
     public static WhisperReadiness Inspect(WhisperConfiguration? configuration)
     {
@@ -72,7 +72,7 @@ public static class WhisperTranscriber
                 // Verified against upstream examples/cli/cli.cpp on 2026-09-30. No prompt, network URL, shell or arbitrary arguments.
                 foreach (string argument in new[] { "-m", TranscriptFiles.LocalPath(request.Configuration.ModelPath), "-f", wavePath,
                     "-l", request.Configuration.Language, "-t", request.Configuration.Threads.ToString(CultureInfo.InvariantCulture),
-                    "-ng", "-osrt", "-otxt", "-oj", "-of", outputBase }) start.ArgumentList.Add(argument);
+                    "-ng", "-osrt", "-otxt", "-ojf", "-of", outputBase }) start.ArgumentList.Add(argument);
                 process = new Process { StartInfo = start };
                 if (!process.Start()) throw new IOException("本地转写进程未启动。");
                 try { process.PriorityClass = ProcessPriorityClass.BelowNormal; priorityNote = "BelowNormal"; }
@@ -95,10 +95,10 @@ public static class WhisperTranscriber
                 { status = "NoSpeech"; message = "模型未返回字幕；原始输出保留，不能据此保证录音没有讲话。"; }
                 else
                 {
-                    revision = TranscriptService.Import(new(meeting, request.MeetingId, request.MeetingDurationMs, srt,
+                    revision = TranscriptService.ImportWhisper(new(meeting, request.MeetingId, request.MeetingDurationMs, srt,
                         "whisper.cpp（本地，待人工校对）", request.Configuration.ModelName ?? Path.GetFileName(request.Configuration.ModelPath),
-                        IsSynthetic: request.IsSynthetic), cancellationToken);
-                    status = "Succeeded"; message = "本地转写已保存独立原稿；时间为 approximate，文字与说话人需人工核对。";
+                        IsSynthetic: request.IsSynthetic), outputBase + ".json", cancellationToken);
+                    status = "Succeeded"; message = "本地转写已保存独立原稿；按句末标点及可用 token 时间分句，时间仍为 approximate，文字需人工核对。";
                 }
             }
         }
@@ -121,7 +121,8 @@ public static class WhisperTranscriber
                 importedAt = DateTimeOffset.UtcNow, status, elapsedMilliseconds = timer.ElapsedMilliseconds,
                 provider = "whisper.cpp", modelName = request.Configuration.ModelName ?? Path.GetFileName(request.Configuration.ModelPath),
                 modelSha256 = modelHash, executableSha256 = executableHash, inputWaveSha256 = waveHash,
-                request.Configuration.Language, request.Configuration.Threads, cpuOnly = true, priorityNote,
+                request.Configuration.Language, request.Configuration.Threads, cpuOnly = true, maxSegmentLength = 0,
+                fullTokenJson = true, subtitleSegmentation = WhisperSentenceSegmenter.Policy, priorityNote,
                 modelLicenseAcknowledged = request.Configuration.ModelLicenseAcknowledged,
                 cliSource = VerifiedCliSource, cliSourceCheckedAt = "2026-09-30", exitCode,
                 revisionId = revision?.RevisionId, message

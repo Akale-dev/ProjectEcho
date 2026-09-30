@@ -5,12 +5,31 @@ using NAudio.Wave;
 namespace ProjectEcho.Capture.Windows;
 
 /// <summary>
-/// Current M1 microphone capability gate, not a general cross-format clock repair.
-/// The shared mix rate must equal the endpoint-reported device format rate.
+/// Chooses a shared capture stream in the endpoint's device-frame rate domain.
+/// The actual captured format, raw device counter and raw QPC remain unmodified.
 /// This class neither changes endpoint settings nor initializes an audio stream.
 /// </summary>
 internal static class MicrophoneFormatPolicy
 {
+    internal static MicrophoneStreamFormat Select(WaveFormat mixFormat, WaveFormat deviceReportedFormat)
+    {
+        ArgumentNullException.ThrowIfNull(mixFormat);
+        ArgumentNullException.ThrowIfNull(deviceReportedFormat);
+        ValidateSupportedFormat(mixFormat);
+        ValidateSupportedFormat(deviceReportedFormat);
+        // GetMixFormat may be 48 kHz while the same endpoint reports 44.1 kHz and
+        // GetBuffer's device positions advance in that device domain. Request the
+        // endpoint format explicitly: AUTOCONVERTPCM permits the shared audio
+        // engine to deliver it even when IsFormatSupported without that flag says
+        // no. It does not alter system settings or make a different device eligible.
+        bool conversion = mixFormat.SampleRate != deviceReportedFormat.SampleRate;
+        WaveFormat captured = conversion ? deviceReportedFormat : mixFormat;
+        Validate(captured, deviceReportedFormat);
+        return new(captured, conversion
+            ? AudioClientStreamFlags.AutoConvertPcm | AudioClientStreamFlags.SrcDefaultQuality
+            : 0);
+    }
+
     internal static WaveFormat ReadDeviceFormat(MMDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
@@ -70,8 +89,7 @@ internal static class MicrophoneFormatPolicy
         ValidateSupportedFormat(deviceReportedFormat);
         if (mixFormat.SampleRate != deviceReportedFormat.SampleRate)
             throw new NotSupportedException($"所选麦克风共享格式为 {mixFormat.SampleRate} Hz，设备报告格式为 {deviceReportedFormat.SampleRate} Hz。" +
-                "M1 尚未验证跨采样率转换下的设备时钟与帧边界，因此在采集启动前拒绝此组合。" +
-                "请自行核对该设备设置后重新预检；本程序不会更换麦克风或修改系统格式。");
+                "采集流须使用设备帧计数的采样率；不能把不同速率的帧数直接比较。尚未启动采集，不会更换麦克风或修改系统格式。");
     }
 
     private static void ValidateSupportedFormat(WaveFormat format)
@@ -87,3 +105,5 @@ internal static class MicrophoneFormatPolicy
             throw new InvalidDataException("麦克风设备格式的有效位深无效。");
     }
 }
+
+internal sealed record MicrophoneStreamFormat(WaveFormat Format, AudioClientStreamFlags ConversionFlags);

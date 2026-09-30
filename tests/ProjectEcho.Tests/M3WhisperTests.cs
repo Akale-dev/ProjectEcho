@@ -62,11 +62,14 @@ internal static class M3WhisperTests
         string Value(string option) { int i = Array.IndexOf(args, option); if (i < 0 || i + 1 >= args.Length) throw new ArgumentException("fixture argument missing"); return args[i + 1]; }
         string output = Value("-of"), model = Value("-m");
         if (!Path.GetFullPath(output).StartsWith(Path.GetFullPath(Directory.GetCurrentDirectory()) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return 90;
-        if (!args.Contains("-ng") || !args.Contains("-osrt") || !args.Contains("-otxt") || !args.Contains("-oj")) return 91;
+        if (!args.Contains("-ng") || !args.Contains("-osrt") || !args.Contains("-otxt") || !args.Contains("-ojf")) return 91;
+        File.WriteAllText(output + "-arguments.json", System.Text.Json.JsonSerializer.Serialize(args));
         string behavior = File.ReadAllText(model); Console.WriteLine("ProjectEcho synthetic CLI fixture, never actual ASR.");
         if (behavior == "synthetic-fail") { Console.Error.WriteLine("synthetic failure"); return 7; }
         if (behavior == "synthetic-wait")
         { File.WriteAllText(Path.Combine(Path.GetDirectoryName(output)!, "fixture-ready.txt"), "ready"); await Task.Delay(TimeSpan.FromMinutes(5)); return 8; }
+        if (behavior.StartsWith("synthetic-sentence-", StringComparison.Ordinal))
+            return M3SentenceSegmentationTests.WriteFixture(output, behavior);
         File.WriteAllText(output + ".srt", "1\n00:00:00,100 --> 00:00:00,900\n合成夹具结果，非真实 ASR\n", new UTF8Encoding(false));
         File.WriteAllText(output + ".txt", "合成夹具结果，非真实 ASR\n", new UTF8Encoding(false));
         File.WriteAllText(output + ".json", "{\"isSynthetic\":true}", new UTF8Encoding(false)); return 0;

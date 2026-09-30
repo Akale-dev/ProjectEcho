@@ -46,12 +46,12 @@ public partial class MainWindow
             {
                 Width = size.Width;
                 Height = size.Height;
-                for (int page = 0; page < MainTabs.Items.Count; page++)
+                foreach (int page in new[] { 0, 1, 2, 5, 3, 4 })
                 {
-                    NavigationList.SelectedIndex = page;
+                    NavigateTo(page);
                     await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
-                    if (MainTabs.SelectedIndex != page || !ScopeText.IsVisible || !StopButton.IsVisible)
-                        throw new InvalidOperationException("任务导航或常驻录音状态不可见。");
+                    if (!ScopeText.IsVisible || StopButton.IsVisible != (page == 0) || ReplayPlayerBar.IsVisible != (page == 5))
+                        throw new InvalidOperationException("录音栏/回听栏未限制在对应页面。");
                     SaveLayoutImage(directory, $"{size.Label}-page-{page + 1}-light.png", 1, files);
                     if (page == 3 && transcriptionView is not null)
                     {
@@ -71,9 +71,9 @@ public partial class MainWindow
             Height = 900;
             useDarkTheme = true;
             ApplyVisualTheme();
-            for (int page = 0; page < MainTabs.Items.Count; page++)
+            foreach (int page in new[] { 0, 1, 2, 5, 3, 4 })
             {
-                NavigationList.SelectedIndex = page;
+                NavigateTo(page);
                 await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
                 SaveLayoutImage(directory, $"standard-page-{page + 1}-dark.png", 1, files);
                 if (page == 3 && transcriptionView is not null)
@@ -89,7 +89,7 @@ public partial class MainWindow
             }
             useDarkTheme = false;
             ApplyVisualTheme();
-            NavigationList.SelectedIndex = 0;
+            NavigateTo(0);
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
             SaveLayoutImage(directory, "recording-render-150-percent.png", 1.5, files);
             SaveLayoutImage(directory, "recording-render-200-percent.png", 2, files);
@@ -97,7 +97,8 @@ public partial class MainWindow
             {
                 Status = "PASS", OsBuild = Environment.OSVersion.Version.ToString(),
                 Test = "Actual WPF navigation/render + existing synthetic privacy/playback guard assertions",
-                Pages = MainTabs.Items.Count, MinimumWidth = MinWidth, MinimumHeight = MinHeight,
+                Pages = 6, MeetingTabs = MeetingTabs.Items.Count, RecordingBarOnlyOnRecording = true, PlayerOnlyOnReplay = true,
+                MinimumWidth = MinWidth, MinimumHeight = MinHeight,
                 LightAndDarkRendered = true, HigherResolutionRenders = "150% and 200%; render scale only, not a real OS DPI switch",
                 CaptureStarted = false, MicrophoneCollected = false, HistoricalRecordingsRead = false,
                 SourceMode = "None selected; UI uses synthetic/redacted labels",
@@ -115,13 +116,14 @@ public partial class MainWindow
             SessionStateText.Text = originalState;
             useDarkTheme = false;
             ApplyVisualTheme();
-            NavigationList.SelectedIndex = 0;
+            NavigateTo(1);
         }
     }
 
     private async Task CaptureScrolledPageAsync(string directory, string fileName, List<string> files)
     {
-        if (MainTabs.SelectedItem is not TabItem { Content: ScrollViewer scroll } || scroll.ScrollableHeight <= 0) return;
+        var selectedTab = MainTabs.SelectedIndex == 1 ? MeetingTabs.SelectedItem : MainTabs.SelectedItem;
+        if (selectedTab is not TabItem { Content: ScrollViewer scroll } || scroll.ScrollableHeight <= 0) return;
         scroll.ScrollToEnd();
         await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
         SaveLayoutImage(directory, fileName, 1, files);

@@ -9,6 +9,9 @@ using ProjectEcho.Export;
 if (args.Length > 0 && args[0] == "-m" && args.Contains("-osrt"))
     return await M3WhisperTests.RunFixtureAsync(args);
 
+if (args.Length > 0 && args[0] == "--m3-real-whisper-probe")
+    return await M3RealWhisperProbe.RunAsync(args);
+
 if (args.Length > 0 && args[0] == "--list-audio-devices")
     return AudioDeviceDiagnostics.Run(args);
 
@@ -84,17 +87,24 @@ Run("M0-SYNTH probe consent scope and started handshake", () => ProbeSafetyTests
 Run("M1-SYNTH real microphone probe range assertions", M1MicrophoneProbe.RunSyntheticChecks);
 Run("T54-SYNTH health snapshot ordering never underflows", RecordingHealthTests.Run);
 Run("M1-SYNTH microphone reported/client rate policy", MicrophoneFormatPolicyTests.Run);
+MicrophoneFormatPolicyTests.RegisterTimelineTests(Run, output);
+M3bMicrophoneClockTests.Register(Run, output);
 Run("M0 explicit clock capability preserves limited QPC status", ClockCapabilityTests.Run);
 M1StorageTests.Register(Run, output);
 M1ValidationIsolationTests.Register(Run, output);
 M2CodecTests.Register(Run, output);
 M2Mp3Tests.Register(Run, output);
 M3AudioPreparationTests.Register(Run, output);
+M3AudioImportTests.Register(Run, output);
+M3SubtitleExportTests.Register(Run, output);
+M3SentenceSegmentationTests.Register(Run, output);
 M3TranscriptTests.Register(Run, output);
 M3WhisperTests.Register(Run, output);
+M3LocalTranscriberTests.Register(Run, output);
 M4aTimelineTests.Register(Run, output);
 TruePeakTests.Register(Run, output);
 M2ExportTests.Register(Run, output);
+M2SavedMixLoaderTests.Register(Run, output);
 M2LargeWaveTests.Register(Run, output);
 Run("T24-SYNTH acoustic marker detector rejects silence and verifies known delays", M2LongRunProbe.RunSyntheticChecks);
 Run("T26/T28-SYNTH WPF rendered tail detects integer truncation and timing errors", WpfPlaybackIntegration.RunSyntheticChecks);

@@ -43,8 +43,10 @@ internal sealed class RecordingSourceFactory : IRecordingSourceFactory
         try
         {
             var format = client.MixFormat;
-            if (flow == DataFlow.Capture) MicrophoneFormatPolicy.Validate(format, MicrophoneFormatPolicy.ReadDeviceFormat(device));
-            return new WasapiSource(id, client, format, flow == DataFlow.Render);
+            var microphone = flow == DataFlow.Capture
+                ? MicrophoneFormatPolicy.Select(format, MicrophoneFormatPolicy.ReadDeviceFormat(device)) : null;
+            return new WasapiSource(id, client, microphone?.Format ?? format, flow == DataFlow.Render,
+                microphone?.ConversionFlags ?? 0);
         }
         catch { client.Dispose(); throw; }
     }
@@ -59,7 +61,8 @@ internal sealed class RecordingSourceFactory : IRecordingSourceFactory
         public WaveFormat WaveFormat { get; }
         public PcmFormat Format { get; }
         public WaitHandle PacketReady => ready;
-        public WasapiSource(string id, AudioClient audioClient, WaveFormat waveFormat, bool loopback)
+        public WasapiSource(string id, AudioClient audioClient, WaveFormat waveFormat, bool loopback,
+            AudioClientStreamFlags conversionFlags = 0)
         {
             client = audioClient; Id = id; WaveFormat = waveFormat;
             try
@@ -67,7 +70,7 @@ internal sealed class RecordingSourceFactory : IRecordingSourceFactory
                 Format = CaptureSession.Describe(waveFormat);
                 Format.Validate();
                 if (Format.Channels > 2) throw new NotSupportedException("当前只支持单/双声道录音格式。");
-                var flags = AudioClientStreamFlags.EventCallback | (loopback ? AudioClientStreamFlags.Loopback : 0);
+                var flags = AudioClientStreamFlags.EventCallback | (loopback ? AudioClientStreamFlags.Loopback : 0) | conversionFlags;
                 client.Initialize(AudioClientShareMode.Shared, flags, 0, 0, waveFormat, Guid.Empty);
                 client.SetEventHandle(ready.SafeWaitHandle.DangerousGetHandle());
                 capture = client.AudioCaptureClient;

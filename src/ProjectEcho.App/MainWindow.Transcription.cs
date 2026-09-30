@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.Win32;
 using ProjectEcho.Core;
 using ProjectEcho.Core.Transcription;
@@ -15,17 +16,20 @@ public partial class MainWindow
     private TranscriptionView? transcriptionView;
     private string? transcriptMeeting, importFile, mappingFile, whisperExecutable, whisperModel;
     private bool transcriptBusy, updatingRevisions;
+    private string? transcriptAutoLoadMeeting;
     private Task transcriptWork = Task.CompletedTask;
     private CancellationTokenSource? transcriptCancellation;
     private TranscriptRevision? visibleRevision;
     private TranscriptRow? visibleSegment;
     private (string Path, long Milliseconds)? pendingTranscriptSeek;
+    private bool playbackOpened, transcriptOwnsPlayer;
     private sealed record RevisionRow(TranscriptRevision Revision)
     {
-        public string Label => $"{Revision.ImportedAt.ToLocalTime():MM-dd HH:mm:ss} · {(Revision.ParentRevisionId is null ? "原稿" : "修订")} · {Revision.Provider} · {Revision.RevisionId}";
+        public string Label => $"{Revision.ImportedAt.ToLocalTime():MM-dd HH:mm:ss.fff} · {(Revision.ParentRevisionId is null ? "原稿" : "修订")} · {Revision.Provider}";
     }
     private sealed record TranscriptRow(string Directory, TranscriptRevision Revision, TranscriptSegment Segment, string Title)
     {
+        public string TimeLabel => Segment.StartMs is { } ms ? TimeSpan.FromMilliseconds(ms).ToString(@"hh\:mm\:ss") : "无时间";
         public string Label => $"{Title} · {(Segment.StartMs is { } ms ? TimeSpan.FromMilliseconds(ms).ToString(@"hh\:mm\:ss") : "无时间")} · {Segment.Text}";
     }
 
@@ -38,14 +42,20 @@ public partial class MainWindow
         view.ClearMappingButton.Click += (_, _) => { mappingFile = null; view.PartBox.Clear(); view.MappingFileText.Text = "未使用分片映射：字幕按完整会议时间导入。"; };
         view.ImportButton.Click += (_, _) => StartTranscriptWork(ImportTranscriptAsync);
         view.RefreshButton.Click += (_, _) => StartTranscriptWork(() => LoadTranscriptVersionsAsync());
+        view.WorkspaceTabs.SelectionChanged += (_, e) =>
+        {
+            if (ReferenceEquals(e.Source, view.WorkspaceTabs)) EnsureTranscriptVersions();
+        };
         view.RevisionBox.SelectionChanged += (_, _) =>
         {
             if (!updatingRevisions && view.RevisionBox.SelectedItem is RevisionRow row && transcriptMeeting is { } directory)
                 DisplayRevision(directory, row.Revision);
         };
         view.SegmentsBox.SelectionChanged += (_, _) => SelectTranscriptSegment();
+        view.SegmentInvoked += (_, _) => SeekTranscript();
         view.SearchButton.Click += (_, _) => StartTranscriptWork(SearchTranscriptsAsync);
         view.SaveRevisionButton.Click += (_, _) => StartTranscriptWork(SaveTranscriptRevisionAsync);
+        view.ExportSubtitlesButton.Click += (_, _) => PickTranscriptExport();
         view.SeekButton.Click += (_, _) => SeekTranscript();
         view.StopListeningButton.Click += (_, _) => { pendingTranscriptSeek = null; StopPlayback_Click(this, new RoutedEventArgs()); };
         view.WhisperExeButton.Click += (_, _) =>
@@ -61,23 +71,88 @@ public partial class MainWindow
         view.SaveConfigurationButton.Click += (_, _) => SaveWhisperConfiguration();
         view.RunWhisperButton.Click += (_, _) => StartTranscriptWork(RunWhisperAsync);
         view.CancelButton.Click += (_, _) => { transcriptCancellation?.Cancel(); view.StatusText.Text = "正在取消并等待文字任务收尾…"; };
-        player.MediaOpened += (_, _) =>
-        {
-            var pending = pendingTranscriptSeek; pendingTranscriptSeek = null;
-            if (pending is null || WindowCloseRequested || !SessionRules.CanPlayback(state) || player.Source?.LocalPath != pending.Value.Path) return;
-            player.Position = TimeSpan.FromMilliseconds(pending.Value.Milliseconds);
-            player.Play();
-        };
+        AttachPlaybackPlayer(player);
         LoadWhisperConfiguration();
+    }
+
+    private void AttachPlaybackPlayer(MediaPlayer ownedPlayer)
+    {
+        ownedPlayer.MediaOpened += (_, _) =>
+        {
+            // MediaOpened is asynchronous. A closed/replaced player's late event
+            // must never consume a newer request, including one for the same URI.
+            if (!ReferenceEquals(ownedPlayer, player) || !transcriptOwnsPlayer || player.Source is null) return;
+            playbackOpened = true;
+            playbackDurationMs ??= player.NaturalDuration.HasTimeSpan ? (long)player.NaturalDuration.TimeSpan.TotalMilliseconds : null;
+            UpdateReplayControls();
+            var pending = pendingTranscriptSeek;
+            if (pending is null) return;
+            pendingTranscriptSeek = null;
+            if (WindowCloseRequested || !SessionRules.CanPlayback(state)) { ResetTranscriptPlayback(); return; }
+            if (!string.Equals(player.Source?.LocalPath, pending.Value.Path, StringComparison.OrdinalIgnoreCase)) return;
+            try { PlayTranscriptPosition(pending.Value.Milliseconds); }
+            catch (Exception ex) { ResetTranscriptPlayback(); transcriptionView!.StatusText.Text = "回听未启动：" + ex.Message; }
+        };
+        ownedPlayer.MediaFailed += (_, e) =>
+        {
+            if (!ReferenceEquals(ownedPlayer, player)) return;
+            bool wasTranscript = transcriptOwnsPlayer;
+            ResetTranscriptPlayback();
+            SetStatus("回放失败：" + e.ErrorException.Message);
+            if (wasTranscript) transcriptionView!.StatusText.Text = "回听失败，可重新单击字幕重试：" + e.ErrorException.Message;
+        };
+        ownedPlayer.MediaEnded += (_, _) =>
+        {
+            if (ReferenceEquals(ownedPlayer, player) && transcriptOwnsPlayer)
+            {
+                playbackPaused = true; UpdatePlaybackTransport();
+                transcriptionView!.StatusText.Text = "本场录音已播放到结尾；可单击任意带时间的字幕重新回听。";
+            }
+        };
+    }
+
+    private void ResetTranscriptPlayback()
+    {
+        double volume = player.Volume; bool muted = player.IsMuted;
+        pendingTranscriptSeek = null; playbackOpened = false; transcriptOwnsPlayer = false;
+        player.Stop(); player.Close();
+        player.Volume = volume; player.IsMuted = muted;
+        playbackPaused = false; playbackDurationMs = null;
+        UpdatePlaybackTransport();
+    }
+
+    private void ReplaceTranscriptPlayer()
+    {
+        // Preserve the user's volume/mute settings across a new media session.
+        double volume = player.Volume; bool muted = player.IsMuted;
+        ResetTranscriptPlayback();
+        player = new MediaPlayer { Volume = volume, IsMuted = muted };
+        AttachPlaybackPlayer(player);
+        transcriptOwnsPlayer = true;
+    }
+
+    private void PlayTranscriptPosition(long milliseconds)
+    {
+        // The decoded mix timeline is the authority (validated by SeekTranscript).
+        // WPF/Windows can round M4A NaturalDuration down to a whole second, so it
+        // must not reject a valid subtitle near the end of that listening copy.
+        if (!player.HasAudio) throw new InvalidDataException("回听文件未包含可播放音频。");
+        player.Position = TimeSpan.FromMilliseconds(milliseconds);
+        player.Play();
+        playbackPaused = false; UpdatePlaybackTransport();
+        transcriptionView!.StatusText.Text = $"正在从 {TimeSpan.FromMilliseconds(milliseconds):hh\\:mm\\:ss\\.fff} 回听；字幕时间为近似值，请结合声音核对。";
     }
 
     private void UpdateTranscriptionControls()
     {
         if (transcriptionView is not { } view) return;
         bool open = !WindowCloseRequested, selected = selectedMeetingDirectory is not null;
+        if ((!open || !SessionRules.CanPlayback(state)) && (pendingTranscriptSeek is not null || transcriptOwnsPlayer))
+            ResetTranscriptPlayback();
         if (!string.Equals(transcriptMeeting, selectedMeetingDirectory, StringComparison.OrdinalIgnoreCase))
         {
             transcriptMeeting = selectedMeetingDirectory;
+            transcriptAutoLoadMeeting = null;
             visibleRevision = null; visibleSegment = null;
             view.RevisionBox.ItemsSource = null; view.SegmentsBox.ItemsSource = null; view.EditBox.Clear();
             mappingFile = null; view.PartBox.Clear();
@@ -89,6 +164,9 @@ public partial class MainWindow
         view.SearchButton.IsEnabled = open && !transcriptBusy;
         view.RevisionBox.IsEnabled = open && !transcriptBusy;
         view.SaveRevisionButton.IsEnabled = open && !transcriptBusy && visibleSegment is not null;
+        var exportRevision = visibleSegment?.Revision ?? visibleRevision;
+        view.ExportSubtitlesButton.IsEnabled = open && !transcriptBusy && exportRevision is { Segments.Count: > 0 }
+            && exportRevision.Segments.All(segment => segment.StartMs is not null && segment.EndMs is not null);
         view.SeekButton.IsEnabled = open && !transcriptBusy && SessionRules.CanPlayback(state) && visibleSegment?.Segment.StartMs is not null;
         view.StopListeningButton.IsEnabled = open && SessionRules.CanPlayback(state);
         view.EditBox.IsEnabled = open && !transcriptBusy && visibleSegment is not null;
@@ -118,6 +196,17 @@ public partial class MainWindow
         transcriptWork = RunTranscriptWorkAsync(operation);
     }
 
+    private void EnsureTranscriptVersions()
+    {
+        if (!initialized || WindowCloseRequested || transcriptBusy || transcriptionView is not { } view ||
+            MainTabs.SelectedIndex != 1 || MeetingTabs.SelectedIndex != 3 || view.WorkspaceTabs.SelectedIndex != 1 ||
+            selectedMeetingDirectory is not { } directory || transcriptAutoLoadMeeting == directory) return;
+        // One automatic attempt per meeting selection. A failed read remains visible and
+        // can be retried explicitly; returning to the tab preserves unsaved edits.
+        transcriptAutoLoadMeeting = directory;
+        StartTranscriptWork(() => LoadTranscriptVersionsAsync());
+    }
+
     private async Task RunTranscriptWorkAsync(Func<Task> operation)
     {
         transcriptBusy = true;
@@ -126,7 +215,7 @@ public partial class MainWindow
         try { await operation(); }
         catch (OperationCanceledException) { transcriptionView!.StatusText.Text = "文字任务已取消；原始音频和已有修订保留。"; }
         catch (Exception ex) { transcriptionView!.StatusText.Text = "文字任务未完成，可修正后重试：" + ex.Message; }
-        finally { transcriptCancellation = null; transcriptBusy = false; UpdateControls(); }
+        finally { transcriptCancellation = null; transcriptBusy = false; UpdateControls(); EnsureTranscriptVersions(); }
     }
 
     private (string Directory, string Id, long DurationMs, bool Synthetic) SelectedTranscriptMeeting()
@@ -136,7 +225,7 @@ public partial class MainWindow
         if (new FileInfo(path).Length > 16_000_000) throw new InvalidDataException("会议信息超过读取上限。");
         using var json = JsonDocument.Parse(File.ReadAllText(path));
         var root = json.RootElement;
-        if (root.GetProperty("schemaVersion").GetString() != "m1-recording-1") throw new InvalidDataException("这场录音的格式尚不支持文字归档。");
+        if (root.GetProperty("schemaVersion").GetString() is not ("m1-recording-1" or "m3-audio-import-1")) throw new InvalidDataException("这场录音的格式尚不支持文字归档。");
         long duration = root.GetProperty("duration100ns").GetInt64();
         if (duration <= 0 || duration > 86400L * 10_000_000) throw new InvalidDataException("会议时长无效。");
         return (directory, Path.GetFileName(directory), (duration + 9999) / 10000,
@@ -153,7 +242,11 @@ public partial class MainWindow
             IsSynthetic: meeting.Synthetic, ExpectedMixSha256: currentMix?.WaveSha256);
         view.StatusText.Text = "正在解析、检查时间并保留原稿…";
         var revision = await Task.Run(() => TranscriptService.Import(request, transcriptCancellation!.Token));
-        if (selectedMeetingDirectory == meeting.Directory) await LoadTranscriptVersionsAsync(revision.RevisionId);
+        if (selectedMeetingDirectory == meeting.Directory)
+        {
+            await LoadTranscriptVersionsAsync(revision.RevisionId);
+            view.WorkspaceTabs.SelectedIndex = 1;
+        }
         view.StatusText.Text = $"已为 {meeting.Id} 导入 {revision.Segments.Count} 段；原稿已保留。\n" + string.Join("\n", revision.Warnings);
     }
 
@@ -163,11 +256,15 @@ public partial class MainWindow
         var token = transcriptCancellation?.Token ?? CancellationToken.None;
         var revisions = await Task.Run(() => TranscriptService.ListRevisions(directory, token));
         if (selectedMeetingDirectory != directory || WindowCloseRequested) return;
+        transcriptAutoLoadMeeting = directory;
         var view = transcriptionView!;
         updatingRevisions = true;
         try
         {
             var rows = revisions.OrderByDescending(r => r.ImportedAt).Select(r => new RevisionRow(r)).ToArray();
+            string? replayPreference = preferredRevision ?? (replayMeetingDirectory == directory && ReplayRevisionBox.SelectedItem is RevisionRow replayRow
+                ? replayRow.Revision.RevisionId : null);
+            SetReplayRevisions(directory, revisions, replayPreference);
             view.RevisionBox.ItemsSource = rows;
             view.RevisionBox.SelectedItem = rows.FirstOrDefault(r => r.Revision.RevisionId == preferredRevision) ?? rows.FirstOrDefault();
             if (view.RevisionBox.SelectedItem is RevisionRow row) DisplayRevision(directory, row.Revision);
@@ -194,7 +291,7 @@ public partial class MainWindow
         view.EditBox.Text = visibleSegment?.Segment.Text ?? "";
         view.SegmentTimeText.Text = visibleSegment is { Segment: var segment }
             ? $"{(segment.StartMs is { } start ? TimeSpan.FromMilliseconds(start).ToString(@"hh\:mm\:ss\.fff") : "无时间戳")} · {segment.TimestampQuality} · {segment.SpeakerLabel ?? "未标说话人"}"
-            : "选择一条文字可校订；有时间戳时可定位回放。";
+            : "单击带时间的字幕可立即回听；纯文字可选择校订。";
         UpdateTranscriptionControls();
     }
 
@@ -208,6 +305,25 @@ public partial class MainWindow
         var revision = await Task.Run(() => TranscriptService.CreateRevision(directory, row.Revision.RevisionId, segments, "用户校订文字", transcriptCancellation!.Token));
         if (selectedMeetingDirectory == directory) await LoadTranscriptVersionsAsync(revision.RevisionId);
         view.StatusText.Text = $"已为 {row.Title}（{Path.GetFileName(directory)}）保存新修订；父版本、原稿和原始音频均保留。";
+    }
+
+    private void PickTranscriptExport()
+    {
+        if (WindowCloseRequested || transcriptBusy || !transcriptionView!.ExportSubtitlesButton.IsEnabled) return;
+        var picker = new SaveFileDialog
+        {
+            Title = "保存完整会议时间轴字幕", Filter = "SubRip 字幕|*.srt|WebVTT 字幕|*.vtt",
+            FileName = "会议字幕.srt", DefaultExt = ".srt", AddExtension = true, OverwritePrompt = true
+        };
+        if (picker.ShowDialog(this) == true) StartTranscriptWork(() => ExportTranscriptSubtitlesAsync(picker.FileName));
+    }
+
+    private async Task ExportTranscriptSubtitlesAsync(string destinationPath)
+    {
+        var revision = visibleSegment?.Revision ?? visibleRevision ?? throw new InvalidOperationException("先读取带时间的字幕版本。");
+        string directory = ValidateRecordingDirectory(visibleSegment?.Directory ?? transcriptMeeting ?? throw new InvalidOperationException("先选择字幕所属会议。"));
+        string result = await Task.Run(() => TranscriptSubtitleExporter.Export(directory, revision.RevisionId, destinationPath, transcriptCancellation!.Token, overwrite: true));
+        transcriptionView!.StatusText.Text = "字幕已保存：" + result + "\n保留完整会议时间轴和毫秒时间；模型/导入字幕的时间为近似值，需结合原录音校对。";
     }
 
     private async Task SearchTranscriptsAsync()
@@ -251,20 +367,26 @@ public partial class MainWindow
 
     private void SeekTranscript()
     {
-        if (WindowCloseRequested || !SessionRules.CanPlayback(state) || visibleSegment is not { Segment.StartMs: { } milliseconds } row) return;
+        if (WindowCloseRequested || transcriptBusy || !SessionRules.CanPlayback(state) || visibleSegment is not { Segment.StartMs: { } milliseconds } row) return;
+        SeekTranscriptRow(row);
+    }
+
+    private void SeekTranscriptRow(TranscriptRow row)
+    {
+        if (WindowCloseRequested || !SessionRules.CanPlayback(state) || row.Segment.StartMs is not { } milliseconds) return;
         try
         {
             ValidateRecordingDirectory(row.Directory);
             if (!renderedMeetings.TryGetValue(row.Directory, out var mix))
                 throw new InvalidOperationException("请先在会议库选中这场录音，并生成完整混音，再从文字定位回听。");
-            string path = SelectListeningPath(mix) ?? throw new InvalidOperationException("完整回听文件尚未就绪。");
+            // Import manifests use portable "/" separators. Canonicalize before
+            // comparing with MediaPlayer.Source.LocalPath, which uses Windows "\".
+            string path = Path.GetFullPath(SelectListeningPath(mix) ?? throw new InvalidOperationException("完整回听文件尚未就绪。"));
             if (milliseconds < 0 || milliseconds * 1000L >= mix.DurationUs) throw new InvalidDataException("这条文字时间不在可回听范围内。");
-            player.Stop(); player.Close();
-            pendingTranscriptSeek = (path, milliseconds);
-            player.Open(new Uri(path));
+            OpenListeningPosition(path, milliseconds, mix.DurationUs);
             transcriptionView!.StatusText.Text = "正在定位回听；外部转写时间为近似值，请结合声音核对。";
         }
-        catch (Exception ex) { pendingTranscriptSeek = null; transcriptionView!.StatusText.Text = ex.Message; }
+        catch (Exception ex) { ResetTranscriptPlayback(); transcriptionView!.StatusText.Text = ex.Message; }
     }
 
     private WhisperConfiguration CurrentWhisperConfiguration() => new(whisperExecutable ?? "", whisperModel ?? "",
@@ -318,17 +440,21 @@ public partial class MainWindow
     private async Task RunWhisperAsync()
     {
         var meeting = SelectedTranscriptMeeting(); var mix = currentMix ?? throw new InvalidOperationException("请先生成完整混音。");
-        var config = CurrentWhisperConfiguration(); var readiness = WhisperTranscriber.Inspect(config);
+        ILocalTranscriber transcriber = LocalTranscriptionBackends.Default;
+        var config = LocalTranscriptionConfiguration.FromWhisper(CurrentWhisperConfiguration()); var readiness = transcriber.Inspect(config);
         if (!readiness.Ready) throw new InvalidOperationException(readiness.Message);
         var view = transcriptionView!; var token = transcriptCancellation!.Token;
         view.StatusText.Text = "正在校验混音并准备 16 kHz 会后识别副本…";
         var audio = await Task.Run(() => AsrAudioPreparation.Prepare(mix.WavePath, mix.WaveSha256,
             Path.Combine(meeting.Directory, "transcripts", "asr-inputs"), token), token);
         view.StatusText.Text = "本地识别正在运行；可取消，也可开始下一场录音。";
-        var result = await Task.Run(() => WhisperTranscriber.RunAsync(new(meeting.Directory, meeting.Id, meeting.DurationMs,
+        var result = await Task.Run(() => transcriber.RunAsync(new(meeting.Directory, meeting.Id, meeting.DurationMs,
             audio.Path, audio.Sha256, config, meeting.Synthetic), token), token);
         if (result.Revision is { } revision && selectedMeetingDirectory == meeting.Directory)
+        {
             await LoadTranscriptVersionsAsync(revision.RevisionId);
+            view.WorkspaceTabs.SelectedIndex = 1;
+        }
         view.StatusText.Text = $"{meeting.Id} · {result.Status} · {result.ElapsedMilliseconds / 1000d:F1} 秒\n{result.Message}";
     }
 }

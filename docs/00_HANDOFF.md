@@ -3,6 +3,12 @@
 ## 一句话
 做一个不依赖 Zoom/Webex 录音按钮的 Windows 项目会议记录器：本地录音可靠、会后合并可上传、资料可追溯。
 
+2026-09-30 M3b反馈修复：针对三次16k mic失败的时钟机制做合成复现和边界/跨块修复，支持录音中首次明确选mic；图标/倍速/回听字幕导出/句级字幕/自动版本读取/新会议清选已实现。141组默认回归及实际WPF/公开base识别通过，本轮无采集，真实mic修复后复测仍待用户主动执行。使用 `artifacts/ProjectEcho-win-x64-20260930-M3b-Fix2/ProjectEcho.exe`；旧Data手动选择，旧字幕需重新识别。详情见 [51](51_M3B_FEEDBACK_FIXES.md) 与STATUS；下方为历史记录。
+
+2026-09-30 M3b最新：左侧日期/标题会议库、会议四标签、录音页专属操作栏、回听页字幕播放器及设置内主题已重构。非48k mic格式协商和通用本地ASR接口落地，Whisper默认，Qwen仅准备；128组默认回归、实际WPF与现有base短英文识别通过，真实44.1k设备采集仍未执行。本轮未启mic/入会/上传。新包 `artifacts/ProjectEcho-win-x64-20260930-M3b`，操作看[49](49_M3B_USER_GUIDE_ZH.md)，验证看[50](50_M3B_IMPLEMENTATION_AND_VALIDATION.md)，接口看[48](48_M3B_LOCAL_ASR_BACKENDS.md)。M2未验现场闸门不变；下方均为历史记录。
+
+2026-09-30本轮追加：按用户授权在H:\AI\Whisper配置真实whisper.cpp 1.9.4/b5130与多语言base，支持外部WAV/MP3/M4A导入、单击字幕跳转播放、SRT/VTT完整时间轴导出；真实公开英文语音/实际WPF/113组回归通过，新包为 `artifacts/ProjectEcho-win-x64-20260930-M3-Whisper`。中文/长会及M2现场缺口未冒充通过。当前证据与已修复回放路径故障见 [47](47_M3_WHISPER_AND_SUBTITLE_REPLAY.md) 和 STATUS；下段是先前记录。
+
 2026-09-30最新更新：按用户要求复审M2并加入MP3，实现M3本地导入/修订/检索/分片映射及可选whisper.cpp适配，不加入SQLite；UI拆为五个任务页并嵌入原创图标。最终105组默认测试、实际WPF文字流程与新M3便携包无采集检查通过。真实模型尚未配置/实测，M2双设备同步/干净Windows及暂缓现场项目仍待验。当前结论见 `../STATUS.md`、`45_M3_TRANSCRIPTION_CONTRACT.md` 与 `46_M3_MP3_UI_IMPLEMENTATION.md`；既有M2长录音证据见44，旧FAIL/限制不变。下文交付目标不代表已验收。
 
 ## 首版交付目标（2026-09-28 复审后）

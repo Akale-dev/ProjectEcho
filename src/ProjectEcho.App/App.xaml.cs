@@ -13,8 +13,33 @@ public partial class App : Application
         bool playbackSmoke = e.Args.Contains("--playback-smoke");
         bool layoutSmoke = e.Args.Contains("--ui-layout-smoke");
         bool transcriptionSmoke = e.Args.Contains("--transcription-smoke");
+        bool m3ReplaySmoke = e.Args.Contains("--m3-replay-smoke");
+        bool realWhisperSmoke = e.Args.Contains("--m3-whisper-smoke");
         try
         {
+            if (m3ReplaySmoke || realWhisperSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string Option(string name)
+                {
+                    int index = Array.IndexOf(e.Args, name);
+                    return index >= 0 && index + 1 < e.Args.Length ? Path.GetFullPath(e.Args[index + 1])
+                        : throw new ArgumentException("Missing replay test option: " + name);
+                }
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics",
+                    (realWhisperSmoke ? "m3-whisper-ui-" : "m3-replay-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                var result = realWhisperSmoke
+                    ? await testWindow.RealWhisperSmokeAsync(Option("--audio"), folder, deadline.Token)
+                    : await testWindow.M3ReplaySmokeAsync(Option("--audio"), Option("--subtitles"), folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(), Result = result },
+                    new JsonSerializerOptions { WriteIndented = true }));
+                Shutdown(0); return;
+            }
             if (layoutSmoke || transcriptionSmoke)
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -87,9 +112,9 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            if (exportCloseSmoke || playbackSmoke || layoutSmoke || transcriptionSmoke)
+            if (exportCloseSmoke || playbackSmoke || layoutSmoke || transcriptionSmoke || m3ReplaySmoke || realWhisperSmoke)
             {
-                var evidence = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics", (layoutSmoke || transcriptionSmoke ? "m3-ui-failure-" : playbackSmoke ? "m2-wpf-playback-failure-" : "m2-wpf-export-close-failure-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".txt");
+                var evidence = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics", (realWhisperSmoke ? "m3-whisper-ui-failure-" : m3ReplaySmoke ? "m3-replay-failure-" : layoutSmoke || transcriptionSmoke ? "m3-ui-failure-" : playbackSmoke ? "m2-wpf-playback-failure-" : "m2-wpf-export-close-failure-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(evidence)!);
                 File.WriteAllText(evidence, ex.ToString());
             }

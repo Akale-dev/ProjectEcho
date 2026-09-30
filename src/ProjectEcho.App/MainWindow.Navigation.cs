@@ -22,22 +22,84 @@ public partial class MainWindow
         Height = Math.Min(Height, availableHeight);
     }
 
-    private void Navigation_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private bool libraryExpanded = true;
+    private bool libraryRead;
+
+    // Semantic destinations also keep deep links from export/transcription stable.
+    private void NavigateTo(int page)
     {
-        if (MainTabs is not null && NavigationList.SelectedIndex >= 0)
-            MainTabs.SelectedIndex = NavigationList.SelectedIndex;
+        MainTabs.SelectedIndex = page == 0 ? 0 : page == 4 ? 2 : 1;
+        if (page is 1 or 2 or 3 or 5)
+        {
+            MeetingTabs.SelectedIndex = page switch { 2 => 1, 3 => 3, 5 => 2, _ => 0 };
+            libraryExpanded = true;
+        }
+        UpdateNavigation();
+        EnsureTranscriptVersions();
+    }
+
+    private void UpdateNavigation()
+    {
+        RecordingBar.Visibility = MainTabs.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+        LibraryListPanel.Visibility = libraryExpanded ? Visibility.Visible : Visibility.Collapsed;
+        LibraryNavigationButton.Content = libraryExpanded ? "02   会议库   ▾" : "02   会议库   ▸";
+        PageContextText.Text = MainTabs.SelectedIndex switch { 0 => "新会议录音", 2 => "诊断与设置", _ => "会议库" };
+        RecordNavigationButton.Background = (Brush)FindResource(MainTabs.SelectedIndex == 0 ? "SidebarSelectedBrush" : "SidebarBrush");
+        LibraryNavigationButton.Background = (Brush)FindResource(MainTabs.SelectedIndex == 1 ? "SidebarSelectedBrush" : "SidebarBrush");
+        SettingsNavigationButton.Background = (Brush)FindResource(MainTabs.SelectedIndex == 2 ? "SidebarSelectedBrush" : "SidebarBrush");
+    }
+
+    private void LibraryNavigation_Click(object sender, RoutedEventArgs e)
+    {
+        bool wasLibrary = MainTabs.SelectedIndex == 1;
+        MainTabs.SelectedIndex = 1;
+        libraryExpanded = !libraryRead || !wasLibrary || !libraryExpanded;
+        if (!libraryRead) RefreshRecovery_Click(this, e);
+        UpdateNavigation();
+    }
+
+    private void MeetingTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (initialized && ReferenceEquals(e.Source, MeetingTabs) && MeetingTabs.SelectedIndex is 2 or 3)
+        {
+            EnsureMeetingSubtitles();
+            EnsureTranscriptVersions();
+        }
     }
 
     private void Navigate_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: string index } && int.TryParse(index, out var page))
-            NavigationList.SelectedIndex = page;
+        {
+            if (page == 0 && ReferenceEquals(sender, RecordNavigationButton)) ClearMeetingForNewRecording();
+            NavigateTo(page);
+        }
+    }
+
+    private void ClearMeetingForNewRecording()
+    {
+        if (!ProjectEcho.Core.SessionRules.CanStart(state) || WindowCloseRequested) return;
+        savedMixCancellation?.Cancel();
+        ResetTranscriptPlayback();
+        ClearReplaySubtitles();
+        synchronizingMeetingSelection = true;
+        try { RecoveryBox.SelectedIndex = -1; }
+        finally { synchronizingMeetingSelection = false; }
+        selectedMeetingDirectory = null;
+        selectedMeetingImported = false;
+        currentMix = null; mixedPath = null; lastExportDirectory = null;
+        SelectedMeetingText.Text = "选择一场会议";
+        MeetingMetadataText.Text = "点击左侧会议选择历史记录。";
+        FiledTitleBox.Clear(); FiledProjectBox.Text = "未分类";
+        TitleBox.Text = ProjectEcho.Core.SessionDefaults.Title(DateTimeOffset.Now);
+        UpdateControls();
     }
 
     private void ToggleTheme_Click(object sender, RoutedEventArgs e)
     {
         useDarkTheme = !useDarkTheme;
         ApplyVisualTheme();
+        UpdateNavigation();
     }
 
     protected override void OnInitialized(EventArgs e)

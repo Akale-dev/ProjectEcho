@@ -186,13 +186,16 @@ public sealed class CaptureSession : IAsyncDisposable
         try
         {
             var format = client.MixFormat;
-            if (flow == DataFlow.Capture) MicrophoneFormatPolicy.Validate(format, MicrophoneFormatPolicy.ReadDeviceFormat(device));
-            return Initialize(id, client, format, flow == DataFlow.Render);
+            var microphone = flow == DataFlow.Capture
+                ? MicrophoneFormatPolicy.Select(format, MicrophoneFormatPolicy.ReadDeviceFormat(device)) : null;
+            return Initialize(id, client, microphone?.Format ?? format, flow == DataFlow.Render,
+                microphone?.ConversionFlags ?? 0);
         }
         catch { client.Dispose(); throw; }
     }
 
-    private static LiveSource Initialize(string id, AudioClient client, WaveFormat waveFormat, bool loopback)
+    private static LiveSource Initialize(string id, AudioClient client, WaveFormat waveFormat, bool loopback,
+        AudioClientStreamFlags conversionFlags = 0)
     {
         var ready = new AutoResetEvent(false);
         try
@@ -200,7 +203,7 @@ public sealed class CaptureSession : IAsyncDisposable
             PcmFormat format = Describe(waveFormat);
             format.Validate();
             if (format.Channels > 2) throw new NotSupportedException("M0 仅支持单/双声道试录与真实混音；此设备多声道格式尚未验证。");
-            var flags = AudioClientStreamFlags.EventCallback;
+            var flags = AudioClientStreamFlags.EventCallback | conversionFlags;
             if (loopback) flags |= AudioClientStreamFlags.Loopback;
             // Shared event-driven streams require both durations to be zero (IAudioClient::Initialize).
             // Let the engine select its buffer; a fixed 100 ms request violates that contract.

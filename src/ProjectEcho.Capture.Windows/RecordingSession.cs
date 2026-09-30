@@ -30,6 +30,7 @@ public sealed class RecordingSession : IAsyncDisposable
     private ulong epoch, lastIteration;
     private long available;
     private RecordingOptions options = null!;
+    private string? fixedMicrophoneDeviceId;
     private string remoteFault = "", micFault = "";
     public Task<RecordingResult> Completion => completed.Task;
     public event Action<RecordingHealth>? HealthChanged;
@@ -47,6 +48,7 @@ public sealed class RecordingSession : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(selection.Selection.SessionDirectory);
         if (Interlocked.Exchange(ref startOnce, 1) != 0) throw new InvalidOperationException("录音会话不可复用。");
         options = selection;
+        fixedMicrophoneDeviceId = selection.Selection.MicrophoneDeviceId;
         var thread = new Thread(Main) { IsBackground = true, Name = "ProjectEcho M1 capture" };
         thread.SetApartmentState(ApartmentState.MTA);
         thread.Start();
@@ -175,6 +177,14 @@ public sealed class RecordingSession : IAsyncDisposable
             var result = new RecordingResult(directory, stored?.ManifestPath ?? Path.Combine(directory, "meeting.json"),
                 stored?.StorageComplete == true && writerError is null, Us(end),
                 warnings.Concat(stored?.Warnings ?? []).Distinct().ToArray());
+            // A writer validation failure may prevent meeting.json from being written.
+            // Keep the technical failure separately so the library can explain why the
+            // preserved partial originals need inspection after the Host has exited.
+            if (writer is not null)
+            {
+                try { M1Storage.WriteAtomicJson(Path.Combine(directory, "recording-result.json"), result); }
+                catch { /* Never turn a secondary diagnostics write into a failed shutdown. */ }
+            }
             completed.TrySetResult(result);
         }
     }
@@ -225,7 +235,7 @@ public sealed class RecordingSession : IAsyncDisposable
         try
         {
             Open(factory.OpenRemote(options.Selection));
-            if (micEnabled) Open(factory.OpenMicrophone(options.Selection.MicrophoneDeviceId
+            if (micEnabled) Open(factory.OpenMicrophone(fixedMicrophoneDeviceId
                 ?? throw new InvalidOperationException("未选择固定麦克风。")));
         }
         catch { CloseSources(sources.ToArray(), "stop", "start-failed"); throw; }
@@ -256,6 +266,7 @@ public sealed class RecordingSession : IAsyncDisposable
             WaitForSourceOrControl();
         }
         ready.Task.GetAwaiter().GetResult();
+        live.Prepared = true;
         if (Volatile.Read(ref stopping) != 0) throw new OperationCanceledException("启动已取消。");
         source.Start(); live.Started = true;
         lastIteration = now();
@@ -288,15 +299,29 @@ public sealed class RecordingSession : IAsyncDisposable
                     break;
                 case "mic_on":
                     if (paused) throw new InvalidOperationException("请先恢复录音，再明确开启麦克风。");
-                    if (control.DeviceId is null || control.DeviceId != options.Selection.MicrophoneDeviceId)
+                    if (string.IsNullOrWhiteSpace(control.DeviceId) ||
+                        (fixedMicrophoneDeviceId is not null && control.DeviceId != fixedMicrophoneDeviceId))
                         throw new InvalidOperationException("仅允许本场明确选定的固定麦克风；不会替换设备。");
-                    if (!micEnabled) { Open(factory.OpenMicrophone(control.DeviceId)); micEnabled = true; micFault = ""; }
+                    if (!micEnabled)
+                    {
+                        Open(factory.OpenMicrophone(control.DeviceId));
+                        // Initial MicOff/null is not a permanent prohibition: the first
+                        // explicit MicOn selects the exact device. A failed open does not
+                        // commit the selection, and later toggles/resumes never replace it.
+                        fixedMicrophoneDeviceId ??= control.DeviceId;
+                        micEnabled = true; micFault = "";
+                    }
                     break;
                 case "bookmark": message = "已标记此刻"; break;
                 default: throw new InvalidOperationException("未知录音控制命令。");
             }
             long effective = Us(boundaryAt ?? now());
-            Event(control.Operation, control.Id, effective);
+            if (control.Operation == "mic_on")
+            {
+                string? confirmedDevice = fixedMicrophoneDeviceId;
+                Enqueue(new(store => store.WriteEvent(control.Operation, control.Id, effective, confirmedDevice)));
+            }
+            else Event(control.Operation, control.Id, effective);
             var ack = new RecordingAck(control.Id, control.Operation, paused, micEnabled, effective, message);
             control.Done.TrySetResult(ack);
             NotifyAck(ack);
@@ -438,7 +463,11 @@ public sealed class RecordingSession : IAsyncDisposable
             }
             if (source.DeviceLimited) warnings.Enqueue(source.Source.Id + " 设备帧计数不可依赖；保留原值，以实际API QPC标记时间。长时/双轨同步未验收。");
             if (source.Discarded > 0) warnings.Enqueue(source.Source.Id + $" 边界舍弃 {source.Discarded} 帧。");
-            if (source.Frames == 0) { captureFault = true; warnings.Enqueue(source.Source.Id + " 本段未收到有效音频包，不等于静音。"); }
+            if (source.Prepared && source.Frames == 0) { captureFault = true; warnings.Enqueue(source.Source.Id + " 本段未收到有效音频包，不等于静音。"); }
+            // A late MicOn can be refused by the actual-format disk budget
+            // before its segment exists. Never poison the still-recording remote
+            // writer by queuing a boundary for an uncreated segment.
+            if (!source.Prepared) continue;
             try
             {
                 Enqueue(new(store => store.WriteBoundary(source.SegmentId, requestId, operation, source.Cutoff, null,
@@ -534,7 +563,7 @@ public sealed class RecordingSession : IAsyncDisposable
         public IRecordingAudioSource Source { get; } = source;
         public string SegmentId { get; } = segmentId;
         public Queue<RecordingBlock> Pending { get; } = new();
-        public bool Started, StopFailed, DeviceLimited, DeviceClockAnomaly, SeenPacket, LastSilent, ObservedSound;
+        public bool Prepared, Started, StopFailed, DeviceLimited, DeviceClockAnomaly, SeenPacket, LastSilent, ObservedSound;
         public bool AllDevicePositionsZero = true;
         public ulong Cutoff, LastPacketAt;
         public long Frames, Discarded;

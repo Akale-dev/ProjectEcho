@@ -97,7 +97,8 @@ public static class M1Recovery
                         long sessionUs = Nonnegative(data, "sessionStartUs");
                         long derived = valid ? Math.Max(0, checked((long)((((Int128)qpc - epoch) * segment.Format.SampleRate + (Int128)offset * AudioClock.UnitsPerSecond) / (segment.Format.SampleRate * 10L)))) : 0;
                         if (derived != sessionUs) throw new InvalidDataException("派生 session 时间与原始 QPC/保留偏移不一致。");
-                        var packet = new CapturedPacket(chunkOffset, count, raw, device, qpc, flags, valid, deviceValid, offset);
+                        long clockJitter = data.TryGetProperty("clockJitter100ns", out var jitterField) ? jitterField.GetInt64() : 0;
+                        var packet = new CapturedPacket(chunkOffset, count, raw, device, qpc, flags, valid, deviceValid, offset, clockJitter);
                         if (segment.Last is { } previous)
                         {
                             bool sameRaw = previous.QpcPosition100ns == qpc && previous.DevicePosition == device && previous.RawFrameCount == raw && previous.Flags == flags;
@@ -106,6 +107,7 @@ public static class M1Recovery
                                 if (offset != previous.RetainedFrameOffset + previous.FrameCount || previous.TimestampValid != valid || previous.DevicePositionValid != deviceValid)
                                     throw new InvalidDataException("同一原包的子区间重复、有洞或质量不一致。");
                                 if (declaredGap != 0) throw new InvalidDataException("同一原包的后续子区间重复声明缺口。");
+                                if (clockJitter != 0) throw new InvalidDataException("同一原包的后续子区间重复声明时钟抖动。");
                             }
                             else
                             {
@@ -116,9 +118,12 @@ public static class M1Recovery
                                     (Int128)previous.RawFrameCount * AudioClock.UnitsPerSecond;
                                 // Raw clocks can drift relative to nominal sample rate. A single-frame
                                 // tolerance covers quantization; larger unreported gaps/overlaps do not.
-                                if (valid && previous.TimestampValid && clockDifference < -AudioClock.UnitsPerSecond)
+                                if (clockJitter != 0 && clockJitter != MicrophonePacketClock.BoundedJitter100ns(
+                                    segment.SourceId, segment.Format.SampleRate, previous, packet))
+                                    throw new InvalidDataException("QPC 抖动声明与原始时钟、连续设备帧或允许范围不一致。");
+                                if (clockJitter == 0 && valid && previous.TimestampValid && clockDifference < -AudioClock.UnitsPerSecond)
                                     throw new InvalidDataException("原包 QPC 范围重叠超过一帧。");
-                                ulong expectedGap = clockDifference > AudioClock.UnitsPerSecond ? checked((ulong)(clockDifference / segment.Format.SampleRate)) : 0;
+                                ulong expectedGap = clockJitter == 0 && clockDifference > AudioClock.UnitsPerSecond ? checked((ulong)(clockDifference / segment.Format.SampleRate)) : 0;
                                 if (declaredGap != expectedGap) throw new InvalidDataException("原包 QPC 范围缺口未精确声明。");
                                 if (deviceValid && previous.DevicePositionValid)
                                 {
@@ -128,7 +133,7 @@ public static class M1Recovery
                                 }
                             }
                         }
-                        else if (declaredGap != 0 || segment.AnchorQpc != (valid ? qpc : null) || segment.AnchorDevice != (valid && deviceValid ? device : null) ||
+                        else if (declaredGap != 0 || clockJitter != 0 || segment.AnchorQpc != (valid ? qpc : null) || segment.AnchorDevice != (valid && deviceValid ? device : null) ||
                             segment.AnchorUs != sessionUs || segment.AnchorQuality != quality) throw new InvalidDataException("segment 锚点不是首包实际位置。");
                         chunk.Packets.Add(packet); chunk.Frames += count; segment.Last = packet; segment.LastSequence = expected;
                         if (valid) segment.MaximumEnd = Int128.Max(segment.MaximumEnd, (Int128)qpc * segment.Format.SampleRate +
@@ -219,7 +224,7 @@ public static class M1Recovery
                 if (stream.Length < checked(water.Offset + water.Bytes)) throw new InvalidDataException("WAV短于已确认水位，存在已保存数据损失。");
                 stream.Position = water.Offset;
                 if (HashBytes(stream, water.Bytes, cancellationToken) != water.Hash) throw new InvalidDataException("已确认PCM哈希不匹配，存在损坏。");
-                tracks.Add(new(chunk.Segment.SourceId, file, chunk.Segment.Format, water.Frames, chunk.Packets.Take(water.PacketCount).ToArray()));
+                tracks.Add(new(chunk.Segment.SourceId, file, chunk.Segment.Format, water.Frames, chunk.Packets.Take(water.PacketCount).ToArray(), chunk.Segment.Id));
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or OverflowException)
             { issues.Add($"{id} 未恢复：{ex.Message}"); }

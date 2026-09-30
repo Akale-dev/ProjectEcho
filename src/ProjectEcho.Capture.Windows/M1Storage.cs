@@ -78,7 +78,8 @@ public sealed class M1Storage : IDisposable
         if (!packet.TimestampValid || (packet.Flags & 4) != 0 || packet.QpcPosition100ns < epoch)
             throw new InvalidDataException("时间有歧义或早于会话起点的 PCM 不进入 M1 原件。");
         if ((packet.Flags & 2) != 0 && pcm.Any(b => b != 0)) throw new InvalidDataException("SILENT 包含非零 PCM。");
-        ulong gap = ValidateContinuity(segment, packet);
+        ulong gap = ValidateContinuity(segment, packet, out long clockJitter);
+        if (clockJitter != 0) storageWarnings.Add(segment.SourceId + " 连续设备帧的 API QPC 存在小幅抖动；已保留原始时钟及偏差，回听按相邻实际时钟锚点映射。长时同步仍需实测。");
         if (gap != 0) storageWarnings.Add(segment.SourceId + " 存在未观察到音频包的时间区间；已保存明确缺口，不当作采集的静音。");
         if (!segment.Written) WriteSegment(segment, packet);
         int remaining = packet.FrameCount, consumed = 0;
@@ -95,6 +96,7 @@ public sealed class M1Storage : IDisposable
                 flags = Flags(packet.Flags), retainedFrameOffset = checked(offset + consumed), frameCount = count,
                 chunkFrameOffset = chunk.Frames, sessionStartUs = SessionUs(packet, offset + consumed, segment.Format.SampleRate),
                 timestampQuality = packet.GetTimestampQuality(), gapBefore100ns = U(consumed == 0 ? gap : 0),
+                clockJitter100ns = consumed == 0 ? clockJitter : 0,
                 gapReason = consumed == 0 && gap != 0 ? "unobserved_audio_interval" : null });
             segment.LastSequence = sequence - 1;
             if (packet.TimestampValid)
@@ -138,11 +140,11 @@ public sealed class M1Storage : IDisposable
         if (segment.Active is { } chunk) { FinalizeChunk(chunk); segment.Active = null; }
     }
 
-    public void WriteEvent(string operation, string requestId, long sessionUs)
+    public void WriteEvent(string operation, string requestId, long sessionUs, string? microphoneDeviceId = null)
     {
         EnsureOpen();
         if (sessionUs < 0 || string.IsNullOrWhiteSpace(operation) || string.IsNullOrWhiteSpace(requestId)) throw new ArgumentException("无效事件。");
-        WriteLine(events, eventSequence++, new { type = "event", operation, requestId, sessionUs }, synthetic);
+        WriteLine(events, eventSequence++, new { type = "event", operation, requestId, sessionUs, microphoneDeviceId }, synthetic);
         events.Flush(true);
     }
 
@@ -238,8 +240,9 @@ public sealed class M1Storage : IDisposable
 
     private long SessionUs(CapturedPacket packet, int offset, int rate) => packet.TimestampValid
         ? Math.Max(0, checked((long)((((Int128)packet.QpcPosition100ns - epoch) * rate + (Int128)offset * AudioClock.UnitsPerSecond) / (rate * 10L)))) : 0;
-    private static ulong ValidateContinuity(Segment segment, CapturedPacket packet)
+    private static ulong ValidateContinuity(Segment segment, CapturedPacket packet, out long clockJitter)
     {
+        clockJitter = 0;
         if (segment.PreviousPacket is not { } previous)
         {
             if (segment.AnchorPacket is { } anchor && (anchor.QpcPosition100ns != packet.QpcPosition100ns || anchor.DevicePosition != packet.DevicePosition ||
@@ -260,8 +263,10 @@ public sealed class M1Storage : IDisposable
         if (packet.QpcPosition100ns <= previous.QpcPosition100ns) throw new InvalidDataException("原始QPC不递增，拒绝写入PCM。");
         var difference = ((Int128)packet.QpcPosition100ns - previous.QpcPosition100ns) * segment.Format.SampleRate -
             (Int128)previous.RawFrameCount * AudioClock.UnitsPerSecond;
-        if (difference < -AudioClock.UnitsPerSecond) throw new InvalidDataException("原包QPC重叠超过一帧，拒绝写入PCM。");
-        ulong gap = difference > AudioClock.UnitsPerSecond ? checked((ulong)(difference / segment.Format.SampleRate)) : 0;
+        clockJitter = MicrophonePacketClock.BoundedJitter100ns(segment.SourceId, segment.Format.SampleRate, previous, packet);
+        if (clockJitter == 0 && difference < -AudioClock.UnitsPerSecond)
+            throw new InvalidDataException("原包QPC重叠超过一帧，且没有连续设备帧的小幅抖动证据，拒绝写入PCM。");
+        ulong gap = clockJitter == 0 && difference > AudioClock.UnitsPerSecond ? checked((ulong)(difference / segment.Format.SampleRate)) : 0;
         if (packet.DevicePositionValid && previous.DevicePositionValid)
         {
             var expected = (UInt128)previous.DevicePosition + (uint)previous.RawFrameCount;

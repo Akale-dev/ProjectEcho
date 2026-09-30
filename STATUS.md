@@ -1,6 +1,46 @@
 # Development status
 Updated: 2026-09-30
 
+## 最新结论：M3b 七项反馈已修复，真实 mic 复测待用户主动执行
+
+**已实现：**针对三份 16k mic 失败索引支持的时钟问题，增加连续设备帧证据约束的短时 QPC 偏差处理、磁盘严格复算、完整原包跨块映射及收尾诊断；保留真实关麦/暂停段间隙。支持初始不选 mic 后在录音中明确选择开启，成功后固定设备，预算拒绝不连带中止远端 writer。回听按钮为图标，支持六档倍速和当前版 SRT/VTT 导出；字幕改为标点/token边界分句，校订页自动读取版本，新会议清除旧会库选择。旧音频、失败记录、字幕与人工修订保留。
+
+**已测试：**Windows25H2 **26200.9457/x64**、SDK10.0.401/runtime10.0.12/NAudio3.1.0；Release **0错误0警告，141组默认回归PASS**。包括8组QPC/跨块/边界与篡改检查、首次开麦失败/重试/固定设备/预算保护、5组句级字幕。实际WPF自动读取/未保存编辑保留/新会议清选/隐私回执，静音回听六档与0.5x/2x实际推进、所选字幕版本导出往返通过。现有base识别公开JFK新参数完整一句、取消重试/原件哈希通过。用户报告Zoom **mic关闭**时录音/保存/转写通过，记录为PASS_USER_REPORTED。
+
+**交付：**新完整自包含目录 `artifacts/ProjectEcho-win-x64-20260930-M3b-Fix2`，运行其中 `ProjectEcho.exe` 并保留整个文件夹。旧资料在设置选择旧包Data目录（目前每次启动需重选）；旧字幕需重新识别才使用新分句逻辑。最终发布验证及证据见 [51](docs/51_M3B_FEEDBACK_FIXES.md)。
+
+**发布复验：**617文件完整性、默认WPF隐私启动与包内Host运行时通过；直接运行最终包的真实Whisper、转写/清选、静音倍速回听/字幕导出、导出关窗四流程全部exit0。证据 `.local/diagnostics/m3b-fixes-bundled-workflows-02.json`；不替代真实mic或干净Windows。
+
+**未测试/限制：**本轮没有采集、启麦或入会。历史三次记录没有被拒绝包/异常堆栈，使用其已知相对时钟加明确合成包复现旧故障机制，不能声称原堆栈已取到。**修复后真实16k mic+Zoom/中途首次开启仍NOT_RUN**；44.1k硬件、两小时双设备同步、干净Windows等原闸门不变。字幕时间仍approximate；中文/混合语言/长会议质量未验。状态为`FIX_IMPLEMENTED / WINDOWS_AUTOMATED_VALIDATED / REAL_MIC_RETEST_PENDING`。
+
+证据：`.local/TestResults/M3bFixes/final-02/results.json`、`.local/diagnostics/m3b-mic-fix-diagnosis.json`、`.local/diagnostics/m3b-fixes-environment.json`、`.local/diagnostics/m3b-sentence-real-jfk-20260930/report.json`。以下为历史记录。
+
+## 最新结论：M3b 界面重构、字幕播放器与多规格录音链路已实现
+
+**已实现：**01新会议录音、02左侧日期/标题会议库、03导入录音、左下04诊断与设置；每场会议的基本信息/导出音频/回听/转写与搜索四标签。录音栏只在录音页，播放器只在回听页；支持字幕版本、当前字幕、点击定位、暂停/继续与进度条。历史混音增加源清单/索引指纹，重开校验复用不自动生成重复文件。mic格式协商不再固定48k；ASR实际经通用接口调用默认Whisper，Qwen3-ASR仅预留准备。
+
+**已测试：**Windows25H2 **26200.9457/x64**、SDK10.0.401/runtime10.0.12/NAudio3.1.0；Release构建0错误0警告，**128组默认测试全部通过**。含16/22.05/44.1/48/96k合成原轨边界→磁盘恢复→混音→16kASR完整时间轴、4组ASR接口、6组安全缓存复用。实际WPF字幕点击/暂停/暂停中定位/当前字幕/继续播放、录音状态防回放、会库选择与缓存重开通过。现有whisper.cpp/base经新接口真实识别11秒公开英文样本通过（开发版UI2798ms，不作普遍速度承诺）。无采集、mic或上传；字幕时间仍为近似值。
+
+**新便携包：**`artifacts/ProjectEcho-win-x64-20260930-M3b/ProjectEcho.exe`，保留整个文件夹。617个发布文件、231143051字节；发布文件完整性、默认WPF启动、包内Host IPC/运行时已通过。本机Whisper配置在发布校验后加入Data/settings，不把模型、录音或本机配置收入发布清单。中文场景手册为 [49](docs/49_M3B_USER_GUIDE_ZH.md)，包内为`使用说明.zh-CN.md`。旧录音未迁移，新包须在设置选原Data目录才能读取。
+
+**未测试/限制：**真实44.1k设备Initialize/GetBuffer及转换后的实际设备时钟、录制中修改系统格式仍NOT_RUN；本轮没有启麦，不用合成测试冒充设备验收。M2双设备两小时同步、干净Windows、未验/暂缓现场项目保持原状态。中文/混合语言/噪声/长会议ASR质量、真实显示器DPI/高对比/读屏未验。Qwen未部署。M3b状态为`IMPLEMENTED / WINDOWS_AUTOMATED_VALIDATED / REAL_44K1_PENDING`。
+
+**发布包复验：**直接运行新包EXE的文字/历史混音重开、导出关窗、字幕播放器、真实Whisper四流程全部退出0；证据`.local/diagnostics/m3b-bundled-workflows.json`。包内运行时与哈希证据`.local/diagnostics/portable-20260930-171813/portable-smoke.json`，不替代干净Windows检查。
+
+详情：[50实施、失败记录与证据](docs/50_M3B_IMPLEMENTATION_AND_VALIDATION.md)、[48 ASR合同](docs/48_M3B_LOCAL_ASR_BACKENDS.md)。以下保留原M3及更早结论。
+
+## 最新结论：M3 已接入真实 base，支持外部录音、字幕单击回听与 SRT/VTT 导出
+
+**已实现：**按用户授权在 `H:\AI\Whisper` 安装官方 whisper.cpp **1.9.4 / b5130 CPU x64** 和多语言 **base**，核对官方 SHA-256 与 MIT 许可。开发版和新便携包的本机配置已接入。可导入 WAV/MP3/M4A，保留原件；单击字幕即跳转并播放，支持重复/快速点击与磁盘重开。识别原稿与修订可保存为 UTF-8 SRT/VTT，保留完整录音时间轴的毫秒起止、暂停和重叠；无时间文字不造字幕时间。
+
+**已测试：**Windows **26200.9457 / x64**、SDK10.0.401、runtime10.0.12、NAudio3.1.0。最终 Release 0错误/0警告，**113组默认测试 PASS**；真实11秒公开JFK样本经M3转写、取消/重试、原件哈希和SRT/VTT往返全部通过。发布版实际UI自动语言/2线程识别全流程 **2.762秒**；实际WPF字幕点击9种定位/继续播放检查、4种录音状态保护、字幕导出再导入与重开均PASS。没有采集、mic或上传。不是物理鼠标/可听输出逐样本或普适识别准确率验收。
+
+**新便携包：**`artifacts/ProjectEcho-win-x64-20260930-M3-Whisper/ProjectEcho.exe`，保留整个文件夹。616个发布文件、231040862字节；完整性/默认启动/包内Host运行时PASS。发布包直接执行真实识别、字幕回放、既有文字流程和导出关窗检查均退出0。Whisper独立存放在用户指定目录；本机 `Data/settings/whisper.json` 是发布校验后添加的可变本机配置，不属于616个发布文件，未把音频/模型打入发布清单。
+
+**未测试/阻塞：**中文/中英混合、专业词、噪声与长会议识别仍待实测，时间标记仍为approximate；短英文样本耗时不作普遍承诺。M2双设备两小时同步、干净Windows、未验平台/暂缓现场项保持原状态。首轮字幕路径比较错误导致“打开却不播放”的FAIL已保留并修复；旧WPF M4A整秒时长对照失败也保留，未把它写成新PASS。M3状态为 `IMPLEMENTED / PUBLIC_ENGLISH_MODEL_AND_REPLAY_VALIDATED`，不代表M2现场闸门已全过。
+
+详情：[47真实模型与同步字幕](docs/47_M3_WHISPER_AND_SUBTITLE_REPLAY.md)。以下保留此前历史结论。
+
 ## 本轮结论：M2复审通过已有回归；MP3、M3文字工作流及任务式UI已实现
 
 **已实现：**保留WAV/M4A，新增实际MP3压缩与限大小分片；M3支持TXT/MD/SRT/VTT/JSON导入、分片时间映射、原稿/修订独立保存、本地搜索和定时回听，提供可取消/重试的本地whisper.cpp适配。按用户决定不加入SQLite。界面拆为录音、会议库、导出、转写与搜索、诊断五页，增加明暗主题与原创多尺寸EXE图标。
@@ -68,13 +108,14 @@ Updated: 2026-09-30
 | M0 capture feasibility | FEASIBLE_WITH_LIMITATIONS / QPC_ONLY | docs/34；实际API QPC/帧数可用；旧device审计FAIL与未测平台保留，不声称同步通过 |
 | M1 reliable recording | IMPLEMENTED / FIELD_ACCEPTANCE_PENDING | docs/35–44；讲话/UI用户通过、修复后固定mic短边界通过；两小时远端通过；双设备声学/拔插/系统状态仍未全验 |
 | M2 mixed/export MVP | IMPLEMENTED / FIELD_ACCEPTANCE_PENDING | docs/37–46；原M2回归保留，新增MP3实际编解码通过；20260930-M3完整包；T46干净Windows阻塞 |
-| M3 local ASR/import | IMPLEMENTED / MODEL_ACCEPTANCE_PENDING | docs/45–46；导入/搜索/修订/分片映射及合成CLI失败取消测试通过；真实模型与语音未配置/未测；无SQLite |
+| M3 local ASR/import | IMPLEMENTED / PUBLIC_ENGLISH_MODEL_AND_REPLAY_VALIDATED | docs/45–47；真实base英文/UI识别、取消重试、外部录音、字幕点击回听及SRT/VTT往返通过；中文/混合语言/长会议仍未验；无SQLite |
+| M3b meeting UI / formats / ASR boundary | FIX_IMPLEMENTED / WINDOWS_AUTOMATED_VALIDATED / REAL_MIC_RETEST_PENDING | docs/48–51；141组通过；七项反馈修复与WPF/公开base通过；修复后16k mic+Zoom和44.1k硬件待验，Qwen仅准备 |
 | M4 project analysis | NOT_STARTED | none |
 | M5 optional tab extension | OPTIONAL_NOT_STARTED | none |
 | M6 release verification | NOT_STARTED | none |
 
 ## Next task
-新M3便携验证包可试用。下一步使用用户提供并授权的本地CLI/模型与短语音验真实识别；同时仍需合规干净Windows目标与可靠公共声学参考补M2现场闸门。无需重复要求用户做已通过的讲话/UI测试；不自动下载、启用管理员功能或扩大音源来制造通过。
+使用M3b-Fix2完整便携包；在设置选择原Data读取旧会议。下一步由用户主动复测当前16k mic+Zoom启动，以及初始关mic/未选设备后中途开启；核对保存、关麦/暂停边界和回听。旧字幕重新识别后选择新版本检查句级效果。真实44.1k、获授权中文/中英质量、干净Windows与双设备同步保持后续未验项，不改系统格式或扩大音源制造通过。
 
 ## Per-stage reporting template
 Implemented:

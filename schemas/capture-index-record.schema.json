@@ -278,6 +278,12 @@
               "type": "string",
               "pattern": "^(0|[1-9][0-9]*)$"
             },
+            "clockJitter100ns": {
+              "type": "integer",
+              "minimum": -20000,
+              "maximum": 20000,
+              "description": "Signed adjacent raw QPC interval deviation. Nonzero only for microphone packets with independently continuous valid device frames; recompute and validate the bounded policy during recovery. Raw QPC and privacy boundaries remain unchanged."
+            },
             "gapReason": {
               "type": [
                 "string",

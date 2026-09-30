@@ -2,6 +2,8 @@
 
 本文件记录后端合同；整阶段运行结果以 STATUS、验收矩阵和实施报告为准。没有新增 SQLite、NuGet 依赖、上传、网络模型调用或自动下载。录音与转写没有调用依赖。
 
+2026-09-30追加：按用户显式授权在 `H:\AI\Whisper` 配置官方 CLI 1.9.4/b5130 和多语言 base，完成公开英文语音实测。新增外部录音导入、字幕单击回听及 SRT/VTT 导出；见 [47](47_M3_WHISPER_AND_SUBTITLE_REPLAY.md)。配置脚本的显式下载不属于产品自动下载。
+
 ## 导入与不可覆盖版本
 
 `ProjectEcho.Core.Transcription.TranscriptService` 提供 `Import`、`ListRevisions`、`Load`、`CreateRevision`、`Search` 与 `FindOverlapCandidates`。调用方提供已保存会议目录、meetingId 及从会议清单核对的会话时长。只能在该会议的 `transcripts/` 子目录写派生结果。
@@ -26,10 +28,10 @@ TXT/MD 始终 `untimed`，不猜时间或说话人。字幕标记/Markdown/HTML/
 
 `WhisperTranscriber.Inspect` 只检查本地配置，不同步散列大模型。`RunAsync` 校验所选 exe/model/input WAV 哈希，在唯一 `transcripts/asr/<attemptId>/` 中运行独立 CPU 进程；UI 应通过后台任务调用，避免首次 await 之前的文件校验占用界面。进程尝试设为 BelowNormal，实际结果记在 attempt.json。没有配置/模型时返回 `NotConfigured`，可正常录音、导出与导入。
 
-使用参数 `-m/-f/-l/-t/-ng/-osrt/-otxt/-oj/-of`；这些参数于 2026-09-30 实际查阅 [whisper.cpp 官方 CLI 源码](https://github.com/ggml-org/whisper.cpp/blob/master/examples/cli/cli.cpp) 核验，并非凭空假定 CLI。运行使用 `ProcessStartInfo.ArgumentList`、`UseShellExecute=false`，没有拼 shell、任意参数或远程 URL。用户自行提供信任的 exe 与模型，确认模型来源和许可；不随包分发/下载模型，兼容性仍需实际验证。
+当前参数为 `-m/-f/-l/-t/-ng/-osrt/-otxt/-ojf/-of`；于 2026-09-30 查阅 [whisper.cpp b5130 官方 CLI 源码](https://github.com/ggml-org/whisper.cpp/blob/b5130/examples/cli/cli.cpp)，并以本机1.9.4/b5130/base的公开JFK输入真实核验。M3b反馈修复移除了旧`-ml 48`字符/token长度强切：它并不按句子分段。`-ojf`启用并保存完整token时间；规范化先核对JSON/SRT文字、段时间和token全文，再按中英文句末标点及模型token边界分句。保留句末引号，避免小数、常见英文称谓/缩写切句；附近非重叠未完句可在1秒缺口、30秒/240字符上限内合并。无法可靠拆分、token缺失/乱序/重叠或JSON不匹配时保留原模型段并提示，不按句长插值。时间始终为`approximate`，不等于强制对齐，也不保证所有语言的句法正确。原始SRT仍按原哈希存档，JSON/TXT不改；旧版本与人工校订不会自动重分句，用户重跑才生成独立新稿。运行使用 `ProcessStartInfo.ArgumentList`、`UseShellExecute=false`，没有拼 shell、任意参数或远程 URL。应用不随包分发或自动下载模型。
 
 ASR 仅接受会话目录内、哈希已知的 16 kHz mono PCM16 WAV/RF64，验证实际容器/完整帧/时长；48 kHz 混音必须由会后转换层生成副本后调用。输入全为数字零时不启动模型、不造字幕，返回 `NoSpeech`。这只是数字静音保护，不证明噪声、低声或真实安静会议不会出现幻觉。
 
-模型输出 SRT/TXT/JSON、stdout/stderr 与耗时、来源哈希、退出码保留于 attempt 目录；成功 SRT 再导入独立版本。单个诊断流限 2 Mi 字符；单次运行最长 24 小时。取消结束该次进程树，状态 `Cancelled`；失败为 `Failed`，用户可再运行得到独立新尝试。进程失败不改变音轨或已有人工修订。`Succeeded` 仅表示程序输出已解析保存，绝不等于识别准确。
+模型输出 SRT/TXT/JSON、stdout/stderr 与耗时、来源哈希、退出码保留于 attempt 目录；成功 SRT 再导入独立版本。所选版本可通过 `TranscriptSubtitleExporter` 导出 SRT/VTT，保持完整时间轴的原毫秒起止，拒绝无时间版本，不删除重叠/重复；只允许保存到会议原件目录之外。单个诊断流限 2 Mi 字符；单次运行最长 24 小时。取消结束该次进程树，状态 `Cancelled`；失败为 `Failed`，用户可再运行得到独立新尝试。进程失败不改变音轨或已有人工修订。`Succeeded` 仅表示程序输出已解析保存，绝不等于识别准确。
 
-Windows 合成 CLI 夹具仅检验失败/取消/重试和输出保留；它不是 whisper.cpp、没有真实模型。真实获授权中英语音、专业词、准确率、速度、GPU benchmark 与真实静音模型幻觉验收均 **NOT_RUN**，不得用合成结果代替。
+Windows 合成 CLI 夹具仍仅检验失败/取消/重试和输出保留；它不代表模型。另有真实base公开英文11秒样本的管线、UI、取消/重试与字幕往返测试见47。中文/中英混合、专业词、长会议准确率、GPU benchmark 与真实安静/噪声幻觉验收仍 **NOT_RUN**，不得用短英文或合成结果代替。

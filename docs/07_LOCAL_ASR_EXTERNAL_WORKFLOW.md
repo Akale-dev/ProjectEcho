@@ -1,6 +1,6 @@
 # 07｜本地转写与手动外部识别
 
-2026-09-30实施：TXT/MD/SRT/VTT/JSON导入、不可覆盖的原稿与修订、本地搜索、分片映射、可选whisper.cpp适配已落地；不加入SQLite。实际数据合同见 [45](45_M3_TRANSCRIPTION_CONTRACT.md)，本轮验证与限制见 [46](46_M3_MP3_UI_IMPLEMENTATION.md)。未配置真实模型，不能把合成CLI夹具当作真实识别通过。
+2026-09-30实施：TXT/MD/SRT/VTT/JSON导入、不可覆盖的原稿与修订、本地搜索、分片映射、whisper.cpp适配已落地；不加入SQLite。后续按用户授权配置真实1.9.4/b5130 CLI与多语言base，公开英文语音验证通过，支持外部录音导入、字幕单击定位及SRT/VTT导出。实际数据合同见 [45](45_M3_TRANSCRIPTION_CONTRACT.md)，最新验证与限制见 [47](47_M3_WHISPER_AND_SUBTITLE_REPLAY.md)；合成CLI夹具与真实短语音的证据分开记录。
 
 ## 双路线，录音不依赖任一路线成功
 路线A：录完→可选本地 whisper.cpp→原始转写/人工校对→项目分析。

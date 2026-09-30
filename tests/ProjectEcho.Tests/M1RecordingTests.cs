@@ -26,6 +26,8 @@ internal static class M1RecordingTests
             foreach (bool failDispose in new[] { false, true })
                 UnconfirmedStop(Path.Combine(output, $"m1-recording-{operation}-{(failDispose ? "dispose" : "stop")}-failure"), operation, failDispose);
         MicStartFailure(Path.Combine(output, "m1-recording-mic-start-failure"));
+        LateMicrophoneSelection(Path.Combine(output, "m1-recording-late-mic-selection"));
+        LateMicrophoneDiskBudget(Path.Combine(output, "m1-recording-late-mic-disk-budget"));
         ConcurrentStopControl(Path.Combine(output, "m1-recording-concurrent-stop"));
         DeviceClockClassification(Path.Combine(output, "m1-recording-device-clock"));
     }
@@ -288,6 +290,78 @@ internal static class M1RecordingTests
             Await(session.StopAsync("stop-after-mic-retry"));
             Require(failedMic.ReadCalls == 0 && failedMic.DisposeCalls == 1 && replacement.DisposeCalls == 1,
                 "Final Stop reused or double-disposed the failed mic.");
+        }
+        finally { Await(session.DisposeAsync().AsTask()); MarkSynthetic(directory); }
+    }
+
+    private static void LateMicrophoneSelection(string directory)
+    {
+        var clock = new TestClock(); int attempts = 0;
+        var factory = new FakeFactory { MicrophoneStarting = () =>
+            { if (Interlocked.Increment(ref attempts) == 1) throw new IOException("Synthetic unavailable first selection."); } };
+        var session = new RecordingSession(factory, clock.Read, _ => 1L << 40);
+        try
+        {
+            var options = Options(directory);
+            Await(session.StartAsync(options with { Selection = options.Selection with { MicrophoneDeviceId = null } }));
+            Require(factory.MicOpenCount == 0, "Initial off/null opened a microphone.");
+            var remote = factory.Source("remote", 0);
+            remote.Push(Block(Epoch, 0, 480, 1000)); clock.Set(Epoch + 100_000);
+            Wait(() => remote.Emitted == 1, "Late-selection remote packet was not read.");
+            Expect<InvalidOperationException>(() => Await(session.ControlAsync("late-empty", "mic_on", " ")));
+            Expect<IOException>(() => Await(session.ControlAsync("late-unavailable", "mic_on", "unavailable-choice")));
+            Require(remote.StopCalls == 0 && !session.Completion.IsCompleted, "Failed late mic selection stopped remote capture.");
+            var on = Await(session.ControlAsync("late-confirmed", "mic_on", FixedMic));
+            Require(on.MicrophoneEnabled && factory.RequestedMics.SequenceEqual(["unavailable-choice", FixedMic]),
+                "Failed first choice became permanent, or explicit choice was changed.");
+            var mic = factory.Source("mic", 1);
+            mic.Push(Block(Epoch + 100_000, 0, 480, 2000)); clock.Set(Epoch + 200_000);
+            Wait(() => mic.Emitted == 1, "First explicitly selected mic was not read.");
+            var off = Await(session.ControlAsync("late-off", "mic_off"));
+            Require(!off.MicrophoneEnabled && mic.StopCalls == 1 && mic.DisposeCalls == 1, "Late mic off did not stop collection.");
+            Expect<InvalidOperationException>(() => Await(session.ControlAsync("late-replacement", "mic_on", "another-choice")));
+            Await(session.ControlAsync("late-on-again", "mic_on", FixedMic));
+            var micAgain = factory.Source("mic", 2);
+            micAgain.Push(Block(Epoch + 200_000, 0, 480, 3000)); clock.Set(Epoch + 300_000);
+            Wait(() => micAgain.Emitted == 1, "Fixed late mic did not reopen.");
+            Await(session.ControlAsync("late-pause", "pause"));
+            clock.Set(Epoch + 500_000);
+            Await(session.ControlAsync("late-resume", "resume"));
+            Require(factory.RequestedMics.SequenceEqual(["unavailable-choice", FixedMic, FixedMic, FixedMic]),
+                "Resume forgot the explicitly selected late mic or changed devices.");
+            var result = Await(session.StopAsync());
+            Require(File.Exists(Path.Combine(directory, "recording-result.json")), "Session result was not persisted for inspection.");
+            var events = File.ReadAllLines(Path.Combine(directory, "journal", "events.jsonl"))
+                .Select(line => JsonDocument.Parse(line).RootElement.GetProperty("data").Clone()).ToArray();
+            Require(events.Where(row => Text(row, "operation") == "mic_on").All(row => Text(row, "microphoneDeviceId") == FixedMic),
+                "Late mic selection was not persisted with its explicit mic_on boundary.");
+        }
+        finally { Await(session.DisposeAsync().AsTask()); MarkSynthetic(directory); }
+    }
+
+    private static void LateMicrophoneDiskBudget(string directory)
+    {
+        var clock = new TestClock(); var factory = new FakeFactory();
+        var session = new RecordingSession(factory, clock.Read, _ => 100L * 1024 * 1024);
+        try
+        {
+            var options = Options(directory);
+            Await(session.StartAsync(options with { Selection = options.Selection with { MicrophoneDeviceId = null } }));
+            var remote = factory.Source("remote", 0);
+            remote.Push(Block(Epoch, 0, 480, 1000)); clock.Set(Epoch + 100_000);
+            Wait(() => remote.Emitted == 1, "Late-mic budget fixture remote packet was not read.");
+            Expect<IOException>(() => Await(session.ControlAsync("late-budget-reject", "mic_on", FixedMic)));
+            var mic = factory.Source("mic", 0);
+            Require(mic.StartCalls == 0 && mic.ReadCalls == 0 && mic.DisposeCalls == 1,
+                "Disk budget rejection collected mic PCM or leaked its unopened source.");
+            Await(session.ControlAsync("remote-continues-after-budget", "bookmark"));
+            Require(remote.StopCalls == 0 && !session.Completion.IsCompleted,
+                "Late MicOn budget rejection poisoned the existing remote writer.");
+            var result = Await(session.StopAsync());
+            Require(result.StorageComplete && ReadSource(directory, "remote").SequenceEqual(Samples(480, 1000)),
+                "Rejected unopened microphone lost accepted remote PCM or failed finalization.");
+            Require(!Journal(directory).Any(row => Text(row, "type") == "segment" && Text(row, "sourceId") == "mic"),
+                "Unopened over-budget microphone created a phantom segment.");
         }
         finally { Await(session.DisposeAsync().AsTask()); MarkSynthetic(directory); }
     }

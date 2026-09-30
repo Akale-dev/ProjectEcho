@@ -80,16 +80,48 @@ internal static class M2TimelineRenderer
                 }
                 if (nextOffset != track.FrameCount) throw new InvalidDataException("WAV 帧数与索引不一致。");
             }
+            // A raw packet can straddle the storage chunk boundary. Re-anchor
+            // all its fragments together: assigning an entire 0.7 ms correction
+            // to a one-frame last fragment would reverse it or leave a hole.
+            var rawPackets = prepared.GroupBy(p => (p.Packet.QpcPosition100ns, p.Packet.DevicePosition,
+                p.Packet.RawFrameCount, p.Packet.Flags, p.Track.Format, p.Track.SegmentId))
+                .OrderBy(group => group.Key.QpcPosition100ns)
+                .Select(group => group.OrderBy(p => p.Packet.RetainedFrameOffset).ToArray()).ToArray();
+            if (rawPackets.Length > 0 && rawPackets[0][0].Packet.ClockJitter100ns != 0)
+                throw new InvalidDataException("首个原包不能声明相邻时钟抖动。");
+            for (int i = 1; i < rawPackets.Length; i++)
+            {
+                var previous = rawPackets[i - 1]; var current = rawPackets[i];
+                var a = previous[^1]; var b = current[0];
+                bool declaredJitter = b.Packet.ClockJitter100ns != 0;
+                if (declaredJitter && (a.Track.Format != b.Track.Format || a.Track.SegmentId != b.Track.SegmentId ||
+                    b.Packet.ClockJitter100ns != MicrophonePacketClock.BoundedJitter100ns(
+                        a.Track.SourceId, a.Track.Format.SampleRate, a.Packet, b.Packet)))
+                    throw new InvalidDataException("混音的时钟抖动声明缺少连续设备帧/原始QPC证据。");
+                double rawStart = (double)((Int128)a.Packet.QpcPosition100ns - epoch) * SampleRate / AudioClock.UnitsPerSecond;
+                double rawDuration = (double)(b.Packet.QpcPosition100ns - a.Packet.QpcPosition100ns) * SampleRate / AudioClock.UnitsPerSecond;
+                double nominal = (double)a.Packet.RawFrameCount * SampleRate / a.Track.Format.SampleRate;
+                // Apply the existing quantization tolerance to the complete raw
+                // packet too; even a one-input-frame correction can reverse a
+                // one-frame chunk fragment if adjusted after splitting.
+                bool quantizedContiguous = a.Track.Format == b.Track.Format && a.Track.SegmentId == b.Track.SegmentId &&
+                    b.Packet.RetainedFrameOffset == 0 &&
+                    a.Packet.RetainedFrameOffset + (long)a.Packet.FrameCount == a.Packet.RawFrameCount &&
+                    Math.Abs(rawDuration - nominal) <= 2.0 * SampleRate / a.Track.Format.SampleRate + .0001;
+                if (!declaredJitter && !quantizedContiguous) continue;
+                foreach (var fragment in previous)
+                {
+                    fragment.Start = rawStart + rawDuration * fragment.Packet.RetainedFrameOffset / fragment.Packet.RawFrameCount;
+                    fragment.End = rawStart + rawDuration * (fragment.Packet.RetainedFrameOffset + fragment.Packet.FrameCount) / fragment.Packet.RawFrameCount;
+                }
+            }
             spans = prepared.OrderBy(p => p.Start).ToArray();
             for (int i = 0; i + 1 < spans.Length; i++)
             {
                 var a = spans[i]; var b = spans[i + 1]; double difference = b.Start - a.End;
-                // Two input frames is the M1 accepted QPC rounding tolerance. Re-anchor
-                // each contiguous packet to the following API timestamp. Larger gaps
-                // remain silence; they are never stretched away by a resampler.
-                double tolerance = 2.0 * SampleRate / a.Track.Format.SampleRate + 0.0001;
-                if (Math.Abs(difference) <= tolerance && b.Start > a.Start) a.End = b.Start;
-                else if (difference < 0) throw new InvalidDataException("同一路来源时间范围重叠；拒绝重复混入 PCM。");
+                // Whole raw packets were already mapped. Only floating-point
+                // roundoff remains permissible between their chunk fragments.
+                if (difference < -0.0001) throw new InvalidDataException("同一路来源时间范围重叠；拒绝重复混入 PCM。");
             }
         }
 

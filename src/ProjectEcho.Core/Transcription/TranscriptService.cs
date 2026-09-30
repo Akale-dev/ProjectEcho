@@ -6,6 +6,13 @@ namespace ProjectEcho.Core.Transcription;
 public static class TranscriptService
 {
     public static TranscriptRevision Import(TranscriptImportRequest request, CancellationToken cancellationToken = default)
+        => ImportCore(request, null, cancellationToken);
+
+    internal static TranscriptRevision ImportWhisper(TranscriptImportRequest request, string tokenJsonPath,
+        CancellationToken cancellationToken = default) => ImportCore(request, tokenJsonPath, cancellationToken);
+
+    private static TranscriptRevision ImportCore(TranscriptImportRequest request, string? whisperTokenJsonPath,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request); cancellationToken.ThrowIfCancellationRequested();
         string meeting = TranscriptFiles.Meeting(request.MeetingDirectory);
@@ -17,6 +24,9 @@ public static class TranscriptService
         byte[] original = TranscriptFiles.ReadBounded(request.InputPath, cancellationToken);
         var warnings = new List<string>();
         var segments = TranscriptParser.Parse(original, extension, request.MeetingId, warnings);
+        TranscriptFiles.ValidateSegments(segments, TranscriptFiles.MaximumDurationMs);
+        if (whisperTokenJsonPath is not null)
+            segments = WhisperSentenceSegmenter.Normalize(segments, whisperTokenJsonPath, warnings, cancellationToken);
         // Local subtitle ranges are checked before and after applying a manifest. Untimed text stays untimed.
         TranscriptFiles.ValidateSegments(segments, TranscriptFiles.MaximumDurationMs);
         TranscriptMapping? mapping = null;

@@ -21,18 +21,20 @@
      <Button x:Name="ImportButton" Content="导入到当前会议" HorizontalAlignment="Left"/>
     </StackPanel>
    </TabItem>
-   <TabItem Header="搜索与校订">
+   <TabItem Header="字幕回放与校订">
     <StackPanel Margin="0,12,0,0">
      <WrapPanel><Button x:Name="RefreshButton" Content="读取转写版本"/><TextBlock Text="选择要查看的版本" VerticalAlignment="Center"/></WrapPanel>
      <ComboBox x:Name="RevisionBox" DisplayMemberPath="Label"/>
      <DockPanel Margin="0,6,0,6"><Button x:Name="SearchButton" Content="搜索" DockPanel.Dock="Right"/><TextBox x:Name="SearchBox" ToolTip="输入关键词；搜索只在本地进行"/></DockPanel>
      <CheckBox x:Name="AllMeetingsBox" Content="搜索当前数据目录的所有会议（点击搜索时读取）" Margin="0,0,0,8"/>
-     <ListBox x:Name="SegmentsBox" Height="205" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True">
+     <TextBlock Text="单击带时间的字幕，立即跳到对应录音并播放；再次单击可从该句重新听。键盘选中后按 Enter 也可回听。" Margin="0,0,0,8"/>
+     <ListBox x:Name="SegmentsBox" Height="205" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" PreviewKeyDown="Segments_KeyDown">
+      <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><EventSetter Event="PreviewMouseLeftButtonUp" Handler="Segment_MouseLeftButtonUp"/></Style></ListBox.ItemContainerStyle>
       <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" Margin="6"/></DataTemplate></ListBox.ItemTemplate>
      </ListBox>
-     <TextBlock x:Name="SegmentTimeText" Text="选择一条文字可校订；有时间戳时可定位回放。" Margin="0,8,0,6"/>
+     <TextBlock x:Name="SegmentTimeText" Text="单击带时间的字幕可立即回听；纯文字可选择校订。" Margin="0,8,0,6"/>
      <TextBox x:Name="EditBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" MaxHeight="200" VerticalScrollBarVisibility="Auto" MaxLength="100000"/>
-     <WrapPanel Margin="0,10,0,0"><Button x:Name="SaveRevisionButton" Content="保存为新修订"/><Button x:Name="SeekButton" Content="从此处回听"/><Button x:Name="StopListeningButton" Content="停止回听"/></WrapPanel>
+     <WrapPanel Margin="0,10,0,0"><Button x:Name="SaveRevisionButton" Content="保存为新修订"/><Button x:Name="SeekButton" Content="从此处回听"/><Button x:Name="StopListeningButton" Content="停止回听"/><Button x:Name="ExportSubtitlesButton" Content="导出字幕 SRT / VTT…"/></WrapPanel>
      <TextBlock Text="重叠内容只提示复核，保留各片原文。人物标签不等于已确认身份。录音和暂停期间不可回听。"/>
     </StackPanel>
    </TabItem>

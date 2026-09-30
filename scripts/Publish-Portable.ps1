@@ -34,12 +34,15 @@ foreach ($runtimeConfig in @('ProjectEcho.runtimeconfig.json','CaptureHost\Proje
 }
 New-Item -ItemType Directory -Path (Join-Path $output 'LICENSES'), (Join-Path $output 'tests') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'tests\audio_probe.html') -Destination (Join-Path $output 'tests\audio_probe.html')
-Copy-Item -LiteralPath (Join-Path $root 'docs\38_PORTABLE_GUIDE.md') -Destination (Join-Path $output 'README.zh-CN.md')
+$readme = (Get-Content -LiteralPath (Join-Path $root 'docs\38_PORTABLE_GUIDE.md') -Raw).Replace('(49_M3B_USER_GUIDE_ZH.md)', '(使用说明.zh-CN.md)')
+[IO.File]::WriteAllText((Join-Path $output 'README.zh-CN.md'), $readme)
+$guide = (Get-Content -LiteralPath (Join-Path $root 'docs\49_M3B_USER_GUIDE_ZH.md') -Raw).Replace('(../STATUS.md)', '(README.zh-CN.md)').Replace('(38_PORTABLE_GUIDE.md)', '(README.zh-CN.md)')
+[IO.File]::WriteAllText((Join-Path $output '使用说明.zh-CN.md'), $guide)
 Get-ChildItem -LiteralPath (Join-Path $root 'tools\licenses') -File | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $output ('LICENSES\' + $_.Name))
 }
 @{
-    schemaVersion = 1; application = 'ProjectEcho'; milestone = 'M3'; releaseStatus = 'IMPLEMENTED_ACCEPTANCE_IN_PROGRESS'
+    schemaVersion = 1; application = 'ProjectEcho'; milestone = 'M3b'; releaseStatus = 'IMPLEMENTED_ACCEPTANCE_IN_PROGRESS'
     runtime = 'self-contained'; rid = 'win-x64'; defaultDataDirectory = 'Data'; compressedFormat = 'AAC in M4A; MPEG-1 Layer III in MP3'
     transcription = 'Local file import and optional user-configured whisper.cpp; no bundled executable/model or SQLite'
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'portable.json') -Encoding utf8
