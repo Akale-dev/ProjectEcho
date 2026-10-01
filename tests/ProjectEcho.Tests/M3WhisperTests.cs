@@ -79,6 +79,33 @@ internal static class M3WhisperTests
             await Console.Error.WriteAsync("unrelated model text 100%\n");
             await Console.Error.WriteAsync("whisper_print_progress_callback: progress = 100%");
         }
+        if (behavior == "synthetic-progress-loading")
+        {
+            if (!args.Contains("-pp") || args.Contains("-p")) return 92;
+            string attempt = Path.GetDirectoryName(output)!;
+            await Console.Error.WriteAsync("whisper_init_from_file_with_params_no_state: loading model from 'synthetic-large.bin'\r\n");
+            await Console.Error.FlushAsync();
+            File.WriteAllText(Path.Combine(attempt, "fixture-model-loading.txt"), "synthetic-model-loading-not-real-ASR");
+            if (!await WaitForMarker("continue-recognition.txt")) return 93;
+            await Console.Error.WriteAsync("main: processing '" + new string('x', 400) + "' (16000 samples, 1.0 sec), lang = auto\r\n");
+            await Console.Error.WriteAsync("whisper_print_progress_callback: progress =  63%");
+            await Console.Error.FlushAsync();
+            File.WriteAllText(Path.Combine(attempt, "fixture-progress-emitted.txt"), "synthetic-engine-percent-token");
+            if (!await WaitForMarker("continue-save.txt")) return 94;
+            await Console.Error.WriteAsync("\rwhisper_print_progress_callback: progress = 100%\n");
+            await Console.Error.FlushAsync();
+
+            async Task<bool> WaitForMarker(string name)
+            {
+                var deadline = Stopwatch.StartNew();
+                while (deadline.Elapsed < TimeSpan.FromSeconds(10))
+                {
+                    if (File.Exists(Path.Combine(attempt, name))) return true;
+                    await Task.Delay(10);
+                }
+                return false;
+            }
+        }
         if (behavior.StartsWith("synthetic-sentence-", StringComparison.Ordinal))
             return M3SentenceSegmentationTests.WriteFixture(output, behavior);
         File.WriteAllText(output + ".srt", "1\n00:00:00,100 --> 00:00:00,900\n合成夹具结果，非真实 ASR\n", new UTF8Encoding(false));

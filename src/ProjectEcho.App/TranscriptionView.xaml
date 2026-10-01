@@ -74,7 +74,10 @@
   </TabControl>
   <Grid Grid.Row="2" Margin="0,8,0,0">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <StackPanel><StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,5"><TextBlock x:Name="ProgressText"/><ProgressBar x:Name="RecognitionProgressBar" Minimum="0" Maximum="100" Height="7" IsIndeterminate="True" Margin="0,3,0,0"/></StackPanel><TextBox x:Name="StatusText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Height="58" Text="{DynamicResource Loc298FB5928CE13BEB}"/></StackPanel>
+   <StackPanel><StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,5">
+    <DockPanel LastChildFill="True"><StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center"><TextBlock x:Name="ProgressElapsedText" Opacity="0.7"/><ProgressBar x:Name="RecognitionActivityBar" Width="42" Height="4" IsIndeterminate="True" Margin="8,0,0,0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False"/></StackPanel><TextBlock x:Name="ProgressText" TextWrapping="Wrap"/></DockPanel>
+    <ProgressBar x:Name="RecognitionProgressBar" Minimum="0" Maximum="100" Height="7" IsIndeterminate="True" Margin="0,3,0,0"/>
+   </StackPanel><TextBox x:Name="StatusText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Height="58" Text="{DynamicResource Loc298FB5928CE13BEB}"/></StackPanel>
    <Button Grid.Column="1" x:Name="CancelButton" Content="{DynamicResource Loc911ABCEFE1EA8CED}" IsEnabled="False" VerticalAlignment="Bottom" Margin="8,0,0,0"/>
   </Grid>
  </Grid>

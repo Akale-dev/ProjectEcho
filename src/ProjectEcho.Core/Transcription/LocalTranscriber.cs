@@ -30,9 +30,13 @@ public sealed record LocalTranscriptionReadiness(bool Ready, string Message);
 
 public enum LocalTranscriptionStatus { NotConfigured, Succeeded, NoSpeech, Cancelled, Failed }
 
-public enum LocalTranscriptionStage { Validating, Recognizing, Saving }
+// Append new stages so existing values retain their numeric identity.
+public enum LocalTranscriptionStage { Validating, Recognizing, Saving, LoadingModel }
 
-/// <summary>Percent is engine-reported recognition progress, not an estimate of total task time.</summary>
+/// <summary>
+/// Percent is engine-reported seek/window recognition progress, not elapsed work or total task time.
+/// Validation, model loading, recognition before a callback, and saving have no invented percentage.
+/// </summary>
 public sealed record LocalTranscriptionProgress(LocalTranscriptionStage Stage, int? Percent = null);
 
 /// <summary>

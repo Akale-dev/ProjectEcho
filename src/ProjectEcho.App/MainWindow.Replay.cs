@@ -27,6 +27,7 @@ public partial class MainWindow
     private object? lastSubtitleItems;
     private string? lastSubtitleMedia;
     private double nextSubtitleBoundaryMs;
+    private bool revealReplaySubtitleOnNextUpdate;
     private bool updatingPlaybackTransport;
     private double playbackSpeed = 1;
     private static readonly Geometry ReplayPlayGeometry = Geometry.Parse("M 2 0 L 15 8 L 2 16 Z");
@@ -39,7 +40,15 @@ public partial class MainWindow
         replayTimer.Tick += ReplayRendering;
         replayTimer.Start();
         Closed += (_, _) => replayTimer.Stop();
+        // Selection is display/copy state only. Seeking remains confined to the
+        // explicit mouse/Enter handlers, so playback following cannot restart audio.
         ReplaySegmentsBox.SelectionChanged += (_, _) => ReplayCopyButton.IsEnabled = !WindowCloseRequested && ReplaySegmentsBox.SelectedItem is TranscriptRow;
+        ReplaySegmentsBox.IsVisibleChanged += (_, _) =>
+        {
+            if (!ReplaySegmentsBox.IsVisible) return;
+            InvalidateReplaySubtitleFollow();
+            UpdatePlaybackPosition();
+        };
     }
 
     private void ReplayRendering(object? sender, EventArgs e)
@@ -237,6 +246,7 @@ public partial class MainWindow
 
     private void DisplayReplayRevision()
     {
+        InvalidateReplaySubtitleFollow();
         if (ReplayRevisionBox.SelectedItem is not RevisionRow row || replayMeetingDirectory is not { } directory)
         {
             ReplaySegmentsBox.ItemsSource = null;
@@ -273,6 +283,7 @@ public partial class MainWindow
     private void OpenListeningPosition(string path, long milliseconds, long? durationUs = null)
     {
         if (WindowCloseRequested || deletingMeeting || !SessionRules.CanPlayback(state)) return;
+        InvalidateReplaySubtitleFollow();
         path = Path.GetFullPath(path);
         if (transcriptOwnsPlayer && string.Equals(player.Source?.LocalPath, path, StringComparison.OrdinalIgnoreCase))
         {
@@ -299,6 +310,7 @@ public partial class MainWindow
     {
         if (updatingPlaybackPosition || !initialized || !playbackOpened || !SessionRules.CanPlayback(state) || WindowCloseRequested || deletingMeeting) return;
         player.Position = TimeSpan.FromMilliseconds(Math.Max(0, Math.Min(e.NewValue * 1000, Math.Max(0, (playbackDurationMs ?? 0) - 1))));
+        InvalidateReplaySubtitleFollow();
         ResetDisplayPlaybackClock();
         UpdatePlaybackPosition();
     }
@@ -327,6 +339,22 @@ public partial class MainWindow
         double displayed = displayAnchorMs + extrapolation * playbackSpeed;
         displayLastMs = Math.Max(displayLastMs, displayed);
         return displayLastMs;
+    }
+
+    private void InvalidateReplaySubtitleFollow()
+    {
+        nextSubtitleBoundaryMs = 0;
+        revealReplaySubtitleOnNextUpdate = true;
+    }
+
+    private void FollowReplaySubtitle(TranscriptRow? row)
+    {
+        bool changed = !ReferenceEquals(ReplaySegmentsBox.SelectedItem, row);
+        if (changed) ReplaySegmentsBox.SelectedItem = row;
+        // No Focus, Seek, list rebuild, or per-frame scrolling. A user can inspect
+        // another row while paused; the next seek/active sentence resumes following.
+        if (row is not null && (changed || revealReplaySubtitleOnNextUpdate)) ReplaySegmentsBox.ScrollIntoView(row);
+        revealReplaySubtitleOnNextUpdate = false;
     }
 
     private void UpdatePlaybackPosition()
@@ -365,5 +393,8 @@ public partial class MainWindow
         string subtitle = active.Length > 0 ? string.Join("\n", active.Select(row => row.Segment.Text))
             : playbackOpened ? UiText.T("此处没有字幕") : UiText.T("播放时在这里显示当前字幕");
         if (CurrentSubtitleText.Text != subtitle) CurrentSubtitleText.Text = subtitle;
+        // Rows are ordered by start time. With overlapping cues, select the most
+        // recently started one while retaining every active cue in the text display.
+        FollowReplaySubtitle(active.LastOrDefault());
     }
 }

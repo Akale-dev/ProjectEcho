@@ -71,7 +71,9 @@ public static class WhisperTranscriber
                     UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = attempt,
                     RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
                 };
-                // -pp and its stderr callback format verified against b5130 cli.cpp on 2026-10-01.
+                // -pp is print-progress (-p means processors). b5130 reports progress at seek/window
+                // boundaries, not model loading, encoding, or every token. Do not split audio or
+                // alter decoding/context merely to make its percentage look smoother.
                 foreach (string argument in new[] { "-m", TranscriptFiles.LocalPath(request.Configuration.ModelPath), "-f", wavePath,
                     "-l", request.Configuration.Language, "-t", request.Configuration.Threads.ToString(CultureInfo.InvariantCulture),
                     "-ng", "-pp", "-osrt", "-otxt", "-ojf", "-of", outputBase }) start.ArgumentList.Add(argument);
@@ -83,8 +85,10 @@ public static class WhisperTranscriber
                 using var timeout = new CancellationTokenSource(TimeSpan.FromHours(24));
                 using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
                 using var stopRegistration = stop.Token.Register(() => Kill(process));
-                progress?.Report(new(LocalTranscriptionStage.Recognizing));
-                var progressParser = new WhisperProgressParser(value => progress?.Report(new(LocalTranscriptionStage.Recognizing, value)));
+                progress?.Report(new(LocalTranscriptionStage.LoadingModel));
+                var progressParser = new WhisperProgressParser(
+                    value => progress?.Report(new(LocalTranscriptionStage.Recognizing, value)),
+                    stage => progress?.Report(new(stage)));
                 Task stdout = CaptureOutput(process.StandardOutput, TranscriptFiles.Inside(attempt, "stdout.txt"), process, stop.Token);
                 Task stderr = CaptureOutput(process.StandardError, TranscriptFiles.Inside(attempt, "stderr.txt"), process, stop.Token, progressParser);
                 try { await Task.WhenAll(process.WaitForExitAsync(stop.Token), stdout, stderr).ConfigureAwait(false); }
@@ -129,7 +133,8 @@ public static class WhisperTranscriber
                 request.Configuration.Language, request.Configuration.Threads, cpuOnly = true, maxSegmentLength = 0,
                 fullTokenJson = true, subtitleSegmentation = WhisperSentenceSegmenter.Policy, priorityNote,
                 modelLicenseAcknowledged = request.Configuration.ModelLicenseAcknowledged,
-                cliSource = VerifiedCliSource, cliSourceCheckedAt = "2026-10-01", printProgress = true, exitCode,
+                cliSource = VerifiedCliSource, cliSourceCheckedAt = "2026-10-01", printProgress = true,
+                progressPolicy = WhisperProgressParser.Policy, progressMeaning = "engine_seek_window_not_task_time", exitCode,
                 revisionId = revision?.RevisionId, message
             });
         }

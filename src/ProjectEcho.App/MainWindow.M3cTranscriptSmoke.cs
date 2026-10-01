@@ -46,6 +46,13 @@ public partial class MainWindow
             importFile = captions; StartTranscriptWork(ImportTranscriptAsync); await transcriptWork.WaitAsync(token);
             var revision = visibleRevision ?? throw new InvalidDataException(view.StatusText.Text);
             NavigateTo(5); await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
+            var automaticSubtitleStarts = new HashSet<long>();
+            void ObserveAutomaticSubtitle(object sender, SelectionChangedEventArgs args)
+            {
+                if (playbackOpened && !playbackPaused && ReplaySegmentsBox.SelectedItem is TranscriptRow { Segment.StartMs: { } start })
+                    automaticSubtitleStarts.Add(start);
+            }
+            ReplaySegmentsBox.SelectionChanged += ObserveAutomaticSubtitle;
             PlayListeningAndWait();
             var ready = Stopwatch.StartNew();
             while (!playbackOpened || player.Position.TotalMilliseconds < 100)
@@ -57,6 +64,7 @@ public partial class MainWindow
             ReplayPositionSlider.ValueChanged += Sample;
             await Task.Delay(2500, token);
             ReplayPositionSlider.ValueChanged -= Sample;
+            ReplaySegmentsBox.SelectionChanged -= ObserveAutomaticSubtitle;
             double measuredSeconds = sampleTimer.Elapsed.TotalSeconds;
             double distinctChangesPerSecond = samples.Count / measuredSeconds;
             File.WriteAllText(Path.Combine(folder, "slider-samples.json"), JsonSerializer.Serialize(new
@@ -64,12 +72,14 @@ public partial class MainWindow
                 Samples = samples.Select(s => new { s.At, s.Slider, s.Media }).ToArray() }, new JsonSerializerOptions { WriteIndented = true }));
             M3cNeed(distinctChangesPerSecond >= 24, $"播放条有效位置变化仍不足24次/秒：{distinctChangesPerSecond:F2}。");
             M3cNeed(samples.Zip(samples.Skip(1)).All(pair => pair.Second.Slider >= pair.First.Slider - 2), "连续播放进度倒退。");
+            M3cNeed(automaticSubtitleStarts.Count >= 6, "自然播放未自动选中后续字幕句子。");
             var snapshot = new { SampleSeconds = measuredSeconds, DistinctSliderChanges = samples.Count, DistinctChangesPerSecond = distinctChangesPerSecond,
                 MaximumSliderMediaDifferenceMs = samples.Max(sample => Math.Abs(sample.Slider - sample.Media)), Samples = samples.Select(s => new { s.At, s.Slider, s.Media }).ToArray() };
 
             PausePlaybackButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             double paused = ReplayPositionSlider.Value;
             await Task.Delay(250, token); M3cNeed(playbackPaused && Math.Abs(ReplayPositionSlider.Value - paused) < 0.08, "暂停后滑块继续推进。");
+            var subtitleFollowing = await ReplayFollowingSmokeAsync(imported.MeetingDirectory, revision, token);
             NavigateTo(3); view.WorkspaceTabs.SelectedIndex = 1;
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
             view.PlaybackPositionSlider.Value = 6;
@@ -129,6 +139,7 @@ public partial class MainWindow
             M3cNeed(PlaybackFixtureHash(wave) == waveHash && host is null && !microphoneEnabled, "音频原件改变或意外采集。");
             return new { Status = "PASS", SourceMode = "SYNTHETIC FILE IMPORT / MUTED WPF PLAYBACK / NO CAPTURE", PlaybackSmoothness = snapshot,
                 PlaybackRateAdvanceMs = rateAdvance, SharedSeekPauseSpeed = true, FixedFooterAtMinimumWindow = true, CopySelectedText = true,
+                AutomaticSubtitleStartsDuringPlayback = automaticSubtitleStarts.Order().ToArray(), SubtitleFollowing = subtitleFollowing,
                 PlainTextBothViews = true, ImportTabLast = true, RecordingPrivacyGuard = true, Images = images, ClipboardRestored = true,
                 PhysicalKeyboard = "NOT_RUN; copy button routed event and shared copy implementation tested" };
         }

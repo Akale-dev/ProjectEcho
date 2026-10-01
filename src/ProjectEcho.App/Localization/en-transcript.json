@@ -107,5 +107,9 @@
   "模型未返回字幕；原始输出保留，不能据此保证录音没有讲话。": "The model returned no subtitles. Its raw output is preserved; this does not prove that the recording contains no speech.",
   "本地转写已保存独立原稿；按句末标点及可用 token 时间分句，时间仍为 approximate，文字需人工核对。": "Local transcription was saved as a separate original. Sentences use final punctuation and available token timings. Timestamps remain approximate; check the text against the recording.",
   "本地转写已取消；原始音频、已有转写和本次原始输出保留，可重试。": "Local transcription was cancelled. Original audio, existing transcripts and this attempt's raw output are preserved. You can retry.",
-  "所选配置不属于 whisper.cpp；不会用其他引擎配置启动程序或自动回退。": "The selected configuration is not for whisper.cpp. A different engine's settings will not be used, and no automatic fallback will occur."
+  "所选配置不属于 whisper.cpp；不会用其他引擎配置启动程序或自动回退。": "The selected configuration is not for whisper.cpp. A different engine's settings will not be used, and no automatic fallback will occur.",
+  "正在加载模型并准备识别…": "Loading the model and preparing transcription…",
+  "正在识别，等待首个进度回报…": "Transcribing; waiting for the first progress update…",
+  "本地识别 {0}%（引擎按音频窗口回报）": "Transcription {0}% (engine updates per audio window)",
+  "已用时 {0}": "Elapsed {0}"
 }

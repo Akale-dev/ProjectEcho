@@ -15,6 +15,7 @@ public partial class App : Application
         bool transcriptionSmoke = e.Args.Contains("--transcription-smoke");
         bool m3ReplaySmoke = e.Args.Contains("--m3-replay-smoke");
         bool realWhisperSmoke = e.Args.Contains("--m3-whisper-smoke");
+        bool whisperProgressSmoke = e.Args.Contains("--m3-whisper-progress-smoke");
         bool m3cTranscriptSmoke = e.Args.Contains("--m3c-transcript-smoke");
         bool m3cLibrarySmoke = e.Args.Contains("--m3c-library-smoke");
         try
@@ -36,7 +37,7 @@ public partial class App : Application
                     new JsonSerializerOptions { WriteIndented = true }));
                 Shutdown(0); return;
             }
-            if (m3ReplaySmoke || realWhisperSmoke)
+            if (m3ReplaySmoke || realWhisperSmoke || whisperProgressSmoke)
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 string Option(string name)
@@ -46,12 +47,14 @@ public partial class App : Application
                         : throw new ArgumentException("Missing replay test option: " + name);
                 }
                 string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics",
-                    (realWhisperSmoke ? "m3-whisper-ui-" : "m3-replay-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff"));
+                    (whisperProgressSmoke ? "whisper-progress-" : realWhisperSmoke ? "m3-whisper-ui-" : "m3-replay-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff"));
                 Directory.CreateDirectory(folder);
-                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+                using var deadline = new CancellationTokenSource(whisperProgressSmoke ? TimeSpan.FromMinutes(20) : TimeSpan.FromSeconds(90));
                 var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
                 MainWindow = testWindow; testWindow.Show();
-                var result = realWhisperSmoke
+                var result = whisperProgressSmoke
+                    ? await testWindow.RealWhisperProgressSmokeAsync(Option("--audio"), folder, deadline.Token)
+                    : realWhisperSmoke
                     ? await testWindow.RealWhisperSmokeAsync(Option("--audio"), folder, deadline.Token)
                     : await testWindow.M3ReplaySmokeAsync(Option("--audio"), Option("--subtitles"), folder, deadline.Token);
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
@@ -131,9 +134,9 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            if (exportCloseSmoke || playbackSmoke || layoutSmoke || transcriptionSmoke || m3ReplaySmoke || realWhisperSmoke || m3cTranscriptSmoke || m3cLibrarySmoke)
+            if (exportCloseSmoke || playbackSmoke || layoutSmoke || transcriptionSmoke || m3ReplaySmoke || realWhisperSmoke || whisperProgressSmoke || m3cTranscriptSmoke || m3cLibrarySmoke)
             {
-                var evidence = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics", (m3cTranscriptSmoke || m3cLibrarySmoke ? "m3c-ui-failure-" : realWhisperSmoke ? "m3-whisper-ui-failure-" : m3ReplaySmoke ? "m3-replay-failure-" : layoutSmoke || transcriptionSmoke ? "m3-ui-failure-" : playbackSmoke ? "m2-wpf-playback-failure-" : "m2-wpf-export-close-failure-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".txt");
+                var evidence = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics", (whisperProgressSmoke ? "whisper-progress-failure-" : m3cTranscriptSmoke || m3cLibrarySmoke ? "m3c-ui-failure-" : realWhisperSmoke ? "m3-whisper-ui-failure-" : m3ReplaySmoke ? "m3-replay-failure-" : layoutSmoke || transcriptionSmoke ? "m3-ui-failure-" : playbackSmoke ? "m2-wpf-playback-failure-" : "m2-wpf-export-close-failure-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(evidence)!);
                 File.WriteAllText(evidence, ex.ToString());
             }

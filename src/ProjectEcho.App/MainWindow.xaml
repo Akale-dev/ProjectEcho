@@ -12,7 +12,7 @@
         </StackPanel>
         <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,18">
           <Button x:Name="SettingsNavigationButton" Content="{DynamicResource Loc4BB8E3925A7F3CF7}" Tag="4" Click="Navigate_Click" Style="{StaticResource SidebarButton}"/>
-          <Button x:Name="LanguageButton" Content="{DynamicResource LocBFE8339134B5C50C}" Click="Language_Click" Style="{StaticResource SidebarButton}" AutomationProperties.Name="{DynamicResource Loc3D13868593AE4EEB}"/>
+          <Button x:Name="LanguageButton" Content="EN/中" Click="Language_Click" Style="{StaticResource SidebarButton}" AutomationProperties.Name="{DynamicResource Loc3D13868593AE4EEB}"/>
           <TextBlock Text="{DynamicResource LocE501B5C5CF12CDB5}" Foreground="{DynamicResource SidebarTextBrush}" FontSize="11" Margin="13,8,0,0"/>
         </StackPanel>
         <Grid>

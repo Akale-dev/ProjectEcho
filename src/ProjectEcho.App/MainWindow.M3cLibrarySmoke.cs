@@ -2,9 +2,11 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 using ProjectEcho.Core;
 using ProjectEcho.Core.Library;
+using ProjectEcho.Core.Transcription;
 
 namespace ProjectEcho.App;
 
@@ -58,6 +60,16 @@ public partial class MainWindow
         {
             ChangeLanguage(language, persist: false);
             NavigateTo(4); await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render, token);
+            var sidebarLeftEdges = new List<double>();
+            foreach (var navigationButton in new[] { RecordNavigationButton, LibraryNavigationButton, ImportAudioButton, SettingsNavigationButton, LanguageButton })
+            {
+                var presenter = FindContent(navigationButton) ?? throw new InvalidDataException("Missing sidebar content presenter.");
+                if (presenter.HorizontalAlignment != HorizontalAlignment.Left)
+                    throw new InvalidDataException("Sidebar template ignored left content alignment: " + navigationButton.Name);
+                sidebarLeftEdges.Add(presenter.TranslatePoint(new Point(), this).X);
+            }
+            if (sidebarLeftEdges.Max() - sidebarLeftEdges.Min() > 2 || !Equals(LanguageButton.Content, "EN/中"))
+                throw new InvalidDataException("Sidebar labels do not share a left edge or the invariant language label changed.");
             string expected = language switch { "en" => "Open data folder", "zh-Hant" => "打開數據目錄", _ => "打开数据目录" };
             if (!Equals(OpenDataRootButton.Content, expected))
                 throw new InvalidDataException($"Static UI resource did not change: {language} / {OpenDataRootButton.Content}");
@@ -70,6 +82,33 @@ public partial class MainWindow
                 throw new InvalidDataException("Language switching mutated meeting content.");
             SaveLayoutImage(evidence, "minimum-settings-" + language + ".png", 1, images);
             NavigateTo(3); transcriptionView!.WorkspaceTabs.SelectedIndex = 1;
+            var view = transcriptionView;
+            using (var display = new RecognitionProgressDisplay(view, () => true))
+            {
+                display.Report(new(LocalTranscriptionStage.LoadingModel));
+                if (!view.RecognitionProgressBar.IsIndeterminate || view.ProgressText.Text != UiText.T("正在加载模型并准备识别…"))
+                    throw new InvalidDataException("Loading model was displayed as numerical recognition progress.");
+                display.Report(new(LocalTranscriptionStage.Recognizing, 0));
+                if (!view.RecognitionProgressBar.IsIndeterminate)
+                    throw new InvalidDataException("An engine's zero before its first window looks like stalled determinate progress.");
+                display.Report(new(LocalTranscriptionStage.Recognizing, 63));
+                string beforeElapsed = view.ProgressElapsedText.Text;
+                var elapsedWait = System.Diagnostics.Stopwatch.StartNew();
+                while (view.ProgressElapsedText.Text == beforeElapsed && elapsedWait.Elapsed < TimeSpan.FromSeconds(4))
+                    await Task.Delay(50, token);
+                if (view.RecognitionProgressBar.IsIndeterminate || view.RecognitionProgressBar.Value != 63 ||
+                    view.RecognitionActivityBar.Visibility != Visibility.Visible || view.ProgressElapsedText.Text == beforeElapsed)
+                    throw new InvalidDataException($"Sparse progress display: indeterminate={view.RecognitionProgressBar.IsIndeterminate}, value={view.RecognitionProgressBar.Value}, activity={view.RecognitionActivityBar.Visibility}, elapsed='{beforeElapsed}' -> '{view.ProgressElapsedText.Text}'.");
+                display.Report(new(LocalTranscriptionStage.Saving));
+                if (!view.RecognitionProgressBar.IsIndeterminate || view.ProgressText.Text != UiText.T("识别运算已结束，正在校验并保存文字…"))
+                    throw new InvalidDataException("Saving was incorrectly shown as a finished recognition task.");
+                display.Dispose();
+                string priorText = view.ProgressText.Text;
+                display.Report(new(LocalTranscriptionStage.Recognizing, 99));
+                if (view.ProgressText.Text != priorText || view.RecognitionActivityBar.Visibility != Visibility.Collapsed)
+                    throw new InvalidDataException("A disposed attempt accepted a stale progress callback.");
+            }
+            view.ProgressPanel.Visibility = Visibility.Collapsed;
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render, token);
             SaveLayoutImage(evidence, "minimum-editor-" + language + ".png", 1, images);
             filter.Close();
@@ -114,6 +153,18 @@ public partial class MainWindow
         return new { Status = "PASS", SqliteLibrary = true, FilterSort = true, InvalidRanges = true,
             ConfirmationAcceptedAndCancelled = true, RecordingDeletionGuard = true, RecoverableDeleteOriginalsUnchanged = true,
             Languages = new[] { "zh-CN", "zh-Hant", "en" }, UserContentUnchanged = true,
+            SidebarLeftAligned = true, LanguageLabel = "EN/中", SparseProgressRemainsActiveWithoutFakePercentages = true,
             CaptureStarted = false, MicrophoneCollected = false, ComputerUse = false, Images = images };
+    }
+
+    private static ContentPresenter? FindContent(DependencyObject parent)
+    {
+        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is ContentPresenter presenter) return presenter;
+            if (FindContent(child) is { } found) return found;
+        }
+        return null;
     }
 }

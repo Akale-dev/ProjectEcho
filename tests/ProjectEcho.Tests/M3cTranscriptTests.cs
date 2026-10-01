@@ -7,9 +7,91 @@ internal static class M3cTranscriptTests
     {
         string root = Path.Combine(output, "m3c-transcript"); Directory.CreateDirectory(root);
         run("T35-SYNTH M3c Whisper percentages parse real callback format across bounded stream chunks", ProgressParser);
+        run("T35-SYNTH large-model loading stays indeterminate and complete percent tokens report before newline", LoadingAndPartialProgress);
         run("T35-WINDOWS SYNTHETIC CLI M3c progress is engine reported with separate validation and saving stages", () => ProgressPipeline(root));
+        run("T35-WINDOWS SYNTHETIC CLI loading and live no-newline progress arrive before process completion", () => LiveLoadingPipeline(root));
         run("T59-SYNTH M3c full text export preserves selected revision Unicode and repeated words without timestamps", () => TextExport(root));
         run("T20/T50-SYNTH M3c full text rejects meeting destinations and preserves files on cancellation or conflict", () => TextBoundaries(root));
+    }
+
+    private static void LoadingAndPartialProgress()
+    {
+        var percentages = new List<int>(); var stages = new List<LocalTranscriptionStage>();
+        var parser = new WhisperProgressParser(percentages.Add, stages.Add);
+        parser.Append("whisper_init_from_file_with_params_no_state: loading model from 'ggml-large-v3.bin'\r");
+        parser.Append("whisper_model_load: model size = 3094.36 MB\nmodel says 100%\r");
+        Need(percentages.Count == 0 && stages.Count == 0, "模型加载日志被当作识别百分比或完成。");
+        foreach (char value in "main: processing '") parser.Append([value]);
+        Need(stages.SequenceEqual(new[] { LocalTranscriptionStage.Recognizing }) && percentages.Count == 0,
+            "已加载模型/输入后的真实处理标记没有及时切阶段。");
+        parser.Append(new string('x', 4096)); parser.Append("' (768000 samples, 48.0 sec), lang = auto\r");
+        parser.Append("whisper_full_with_state: auto-detected language: zh (p = 0.99)\n");
+        parser.Append("whisper_print_progress_callback: progress =   0%");
+        Need(percentages.SequenceEqual(new[] { 0 }), "完整0%仍等待换行或被擅自抹去。");
+        parser.Append("\rwhisper_print_progress_callback: prog");
+        parser.Append("ress =  63");
+        Need(percentages.Count == 1, "百分号尚未到达时提前猜进度。");
+        parser.Append("%");
+        Need(percentages.SequenceEqual(new[] { 0, 63 }), "无换行63%未立即回报。");
+        parser.Append("\nmain: processing 'duplicate'\rwhisper_model_load: loading model\r");
+        parser.Append("whisper_print_progress_callback: progress =  45%\rwhisper_print_progress_callback: progress = 100%");
+        Need(percentages.SequenceEqual(new[] { 0, 63, 100 }) && stages.Count == 1, "进度倒退或阶段重复/退回。");
+        parser.Complete(); Need(percentages.Count == 3, "EOF重复发布已收到百分比。");
+    }
+
+    private static void LiveLoadingPipeline(string root)
+    {
+        string meeting = M3TranscriptTests.Meeting(root, "live-loading"), wave = WriteProgressWave(meeting);
+        string model = M3TranscriptTests.Input(meeting, "fixture.bin", "synthetic-progress-loading");
+        var request = new LocalTranscriptionRequest(meeting, "live-loading", 1000, wave, M3TranscriptTests.Hash(wave),
+            new("whisper.cpp", Path.Combine(AppContext.BaseDirectory, "ProjectEcho.Tests.exe"), model, ModelLicenseAcknowledged: true), true);
+        var reports = new Reports();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var task = LocalTranscriptionBackends.Default.RunAsync(request, timeout.Token, reports);
+        try
+        {
+            string loading = WaitFor("fixture-model-loading.txt");
+            var initial = reports.Snapshot();
+            Need(!task.IsCompleted && initial.Any(x => x.Stage == LocalTranscriptionStage.LoadingModel) &&
+                initial.All(x => x.Percent is null) && initial.All(x => x.Stage != LocalTranscriptionStage.Recognizing),
+                "模型加载等待被显示成0%识别或提前切到识别。");
+            File.WriteAllText(Path.Combine(Path.GetDirectoryName(loading)!, "continue-recognition.txt"), "continue");
+            string emitted = WaitFor("fixture-progress-emitted.txt");
+            while (!reports.Snapshot().Any(x => x.Percent == 63) && !task.IsCompleted && !timeout.IsCancellationRequested) Thread.Sleep(10);
+            Need(!task.IsCompleted && reports.Snapshot().Any(x => x.Percent == 63), "管道收到无换行%后仍等待进程退出。");
+            File.WriteAllText(Path.Combine(Path.GetDirectoryName(emitted)!, "continue-save.txt"), "continue");
+            var result = task.GetAwaiter().GetResult();
+            Need(result.Status == LocalTranscriptionStatus.Succeeded, "长加载合成夹具失败：" + result.Message);
+            var values = reports.Snapshot();
+            Need(values.Where(x => x.Percent is not null).Select(x => x.Percent).SequenceEqual(new int?[] { 63, 100 }),
+                "管道擅自插入计时器百分比。");
+            var phases = values.Select(x => x.Stage).Where((x, i) => i == 0 || values[i - 1].Stage != x).ToArray();
+            Need(phases.SequenceEqual(new[] { LocalTranscriptionStage.Validating, LocalTranscriptionStage.LoadingModel,
+                LocalTranscriptionStage.Recognizing, LocalTranscriptionStage.Saving }), "阶段乱序或保存前漏阶段。");
+        }
+        finally { timeout.Cancel(); _ = task.GetAwaiter().GetResult(); }
+
+        string WaitFor(string marker)
+        {
+            while (!task.IsCompleted && !timeout.IsCancellationRequested)
+            {
+                string? path = Directory.EnumerateFiles(Path.Combine(meeting, "transcripts", "asr"), marker, SearchOption.AllDirectories).FirstOrDefault();
+                if (path is not null) return path;
+                Thread.Sleep(10);
+            }
+            throw new InvalidDataException("合成CLI未及时发布阶段标记：" + marker);
+        }
+    }
+
+    private static string WriteProgressWave(string meeting)
+    {
+        string wave = Path.Combine(meeting, "input.wav");
+        using var writer = new BinaryWriter(File.Create(wave));
+        writer.Write(Encoding.ASCII.GetBytes("RIFF")); writer.Write(32036); writer.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
+        writer.Write(16); writer.Write((short)1); writer.Write((short)1); writer.Write(16000); writer.Write(32000); writer.Write((short)2); writer.Write((short)16);
+        writer.Write(Encoding.ASCII.GetBytes("data")); writer.Write(32000);
+        for (int i = 0; i < 16000; i++) writer.Write((short)(Math.Sin(i * 2 * Math.PI * 440 / 16000) * 3000));
+        return wave;
     }
 
     private static void ProgressParser()
@@ -90,6 +172,7 @@ internal static class M3cTranscriptTests
     {
         internal readonly List<LocalTranscriptionProgress> Values = [];
         public void Report(LocalTranscriptionProgress value) { lock (Values) Values.Add(value); }
+        internal LocalTranscriptionProgress[] Snapshot() { lock (Values) return Values.ToArray(); }
     }
     private static void Need(bool value, string message) => M3TranscriptTests.Need(value, message);
     private static void Reject<T>(Action action) where T : Exception

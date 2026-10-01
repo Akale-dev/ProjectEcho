@@ -66,6 +66,5 @@ public partial class MainWindow
         catch (Exception ex) { SetStatus(UiText.T("语言已切换，但偏好未能保存：") + ex.Message); }
     }
 
-    private void UpdateLanguageLabel() => LanguageButton.Content = UiText.Language switch
-    { "en" => "Language · English ▾", "zh-Hant" => "語言 · 繁體中文 ▾", _ => "语言 · 简体中文 ▾" };
+    private void UpdateLanguageLabel() => LanguageButton.Content = "EN/中";
 }

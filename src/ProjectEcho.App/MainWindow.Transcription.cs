@@ -496,26 +496,15 @@ public partial class MainWindow
         var config = LocalTranscriptionConfiguration.FromWhisper(CurrentWhisperConfiguration()); var readiness = transcriber.Inspect(config);
         if (!readiness.Ready) throw new InvalidOperationException(UiText.T(readiness.Message));
         var view = transcriptionView!; var token = transcriptCancellation!.Token;
-        view.ProgressPanel.Visibility = Visibility.Visible;
-        view.RecognitionProgressBar.IsIndeterminate = true;
-        view.ProgressText.Text = UiText.T("正在准备识别音频…");
+        using var display = new RecognitionProgressDisplay(view,
+            () => transcriptBusy && !token.IsCancellationRequested && transcriptCancellation?.Token == token);
         view.StatusText.Text = UiText.T("正在校验混音并准备 16 kHz 会后识别副本…");
         var audio = await Task.Run(() => AsrAudioPreparation.Prepare(mix.WavePath, mix.WaveSha256,
             Path.Combine(meeting.Directory, "transcripts", "asr-inputs"), token), token);
         view.StatusText.Text = UiText.T("本地识别正在运行；可取消，也可开始下一场录音。");
-        var progress = new Progress<LocalTranscriptionProgress>(value =>
-        {
-            // A late callback from an already completed/cancelled attempt must not replace newer UI state.
-            if (!transcriptBusy || token.IsCancellationRequested || transcriptCancellation?.Token != token) return;
-            view.RecognitionProgressBar.IsIndeterminate = value.Percent is null;
-            if (value.Percent is { } percent) view.RecognitionProgressBar.Value = percent;
-            view.ProgressText.Text = value.Stage switch
-            {
-                LocalTranscriptionStage.Validating => UiText.T("正在校验本地文件…"),
-                LocalTranscriptionStage.Saving => UiText.T("识别运算已结束，正在校验并保存文字…"),
-                _ => value.Percent is { } amount ? UiText.F($"本地识别 {amount}%（引擎报告）") : UiText.T("本地识别运行中，等待引擎报告进度…")
-            };
-        });
+        // Progress<T> marshals engine callbacks to this UI thread. The display also
+        // rejects callbacks after this attempt has ended, been cancelled or replaced.
+        var progress = new Progress<LocalTranscriptionProgress>(display.Report);
         var result = await Task.Run(() => transcriber.RunAsync(new(meeting.Directory, meeting.Id, meeting.DurationMs,
             audio.Path, audio.Sha256, config, meeting.Synthetic), token, progress), token);
         if (result.Revision is { } revision && selectedMeetingDirectory == meeting.Directory)
