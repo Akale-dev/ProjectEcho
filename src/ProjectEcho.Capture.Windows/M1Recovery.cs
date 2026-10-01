@@ -54,6 +54,9 @@ public static class M1Recovery
                     case "segment":
                     {
                         string id = S(data, "segmentId"), sourceId = S(data, "sourceId");
+                        string? processingMode = data.TryGetProperty("processingMode", out var mode) && mode.ValueKind != JsonValueKind.Null
+                            ? mode.GetString() : null;
+                        M1Storage.ValidateProcessingMode(processingMode);
                         if (segments.Values.Any(s => s.SourceId == sourceId && !s.Closed)) throw new InvalidDataException("同来源存在未结束 segment。");
                         var formatData = data.GetProperty("format"); var format = Format(formatData);
                         var anchor = data.GetProperty("anchor"); var quality = Quality(anchor);
@@ -62,7 +65,8 @@ public static class M1Recovery
                         if ((quality == "invalid") != (qpc is null) || (quality == "device_referenced") != (device is not null))
                             throw new InvalidDataException("segment 锚点与时间质量不一致。");
                         if (qpc is { } anchorQpc && anchorQpc < epoch) throw new InvalidDataException("segment 锚点早于会话起点。");
-                        segments.Add(id, new(id, sourceId, format, formatData.GetProperty("validBitsPerSample").GetInt32(), qpc, device, sessionUs, quality));
+                        segments.Add(id, new(id, sourceId, format, formatData.GetProperty("validBitsPerSample").GetInt32(), qpc, device, sessionUs, quality)
+                            { ProcessingMode = processingMode });
                         break;
                     }
                     case "packet":
@@ -224,7 +228,8 @@ public static class M1Recovery
                 if (stream.Length < checked(water.Offset + water.Bytes)) throw new InvalidDataException("WAV短于已确认水位，存在已保存数据损失。");
                 stream.Position = water.Offset;
                 if (HashBytes(stream, water.Bytes, cancellationToken) != water.Hash) throw new InvalidDataException("已确认PCM哈希不匹配，存在损坏。");
-                tracks.Add(new(chunk.Segment.SourceId, file, chunk.Segment.Format, water.Frames, chunk.Packets.Take(water.PacketCount).ToArray(), chunk.Segment.Id));
+                tracks.Add(new(chunk.Segment.SourceId, file, chunk.Segment.Format, water.Frames, chunk.Packets.Take(water.PacketCount).ToArray(),
+                    chunk.Segment.Id, chunk.Segment.ProcessingMode));
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or OverflowException)
             { issues.Add($"{id} 未恢复：{ex.Message}"); }
@@ -494,6 +499,7 @@ public static class M1Recovery
     {
         public string Id = id, SourceId = source, AnchorQuality = quality;
         public PcmFormat Format = format; public int ValidBits = validBits;
+        public string? ProcessingMode;
         public ulong? AnchorQpc = qpc, AnchorDevice = device; public long AnchorUs = us;
         public bool Closed; public long? LastSequence; public CapturedPacket? Last;
         public bool HasInvalidTimestamp, HasTimelineGap;

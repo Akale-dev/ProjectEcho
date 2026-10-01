@@ -3,6 +3,8 @@
 ## 一句话
 做一个不依赖 Zoom/Webex 录音按钮的 Windows 项目会议记录器：本地录音可靠、会后合并可上传、资料可追溯。
 
+2026-10-01麦克风跟进完成：16k Jabra额外SRC路径的124帧启动短包通过同设备fresh RAW共享流修复，保留原QPC/device与隐私截止。加入MMCSS Audio/NORMAL、预分配scratch及真实微小mic缺口renderer v3保护，Release/179回归、短边界/40秒、两组90秒受控负载及新版1201.166629秒录音+完整WAV/MP3/3分片均通过。旧两小时与RAW单独20分钟中途断续FAIL保留；旧根因未完全证明，新版两小时/声学同步未验。包为`artifacts/ProjectEcho-win-x64-20261001-M3C-MicFix`，四项WPF最终通过但保留深路径限制；M0信号/隔离通过、严格remote设备计数审计仍FAIL。详见[54](54_MICROPHONE_STARTUP_GAP_FIX.md)与STATUS。全部测试接口，无computer-use；本次新修复任务不重新执行旧关机helper。
+
 2026-10-01 M3C完成：SQLite/会库筛选与可恢复删除/三语言/平滑回听/真实识别进度/字幕全文复制已实现，154默认回归、实际WPF及最终包通过。获授权两小时mic真实执行7201.170118秒，但545.5秒处有7.7478ms设备断续，严格连续性FAIL保留；原件磁盘可验证，有警告完整WAV/MP3五分片、15分钟静音和故障恢复通过。中文/混合ASR质量问题如实记录。最终包20261001-M3C-Final，报告[52](52_M3C_IMPLEMENTATION.md)，指南[53](53_M3C_USER_GUIDE_ZH.md)，精确状态见STATUS。用户要求测试接口且全部收尾后正常关机；没有使用computer-use、入会、上传或改变系统策略。下方为历史记录。
 
 2026-09-30 M3b反馈修复：针对三次16k mic失败的时钟机制做合成复现和边界/跨块修复，支持录音中首次明确选mic；图标/倍速/回听字幕导出/句级字幕/自动版本读取/新会议清选已实现。141组默认回归及实际WPF/公开base识别通过，本轮无采集，真实mic修复后复测仍待用户主动执行。使用 `artifacts/ProjectEcho-win-x64-20260930-M3b-Fix2/ProjectEcho.exe`；旧Data手动选择，旧字幕需重新识别。详情见 [51](51_M3B_FEEDBACK_FIXES.md) 与STATUS；下方为历史记录。

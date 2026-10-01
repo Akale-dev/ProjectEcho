@@ -104,7 +104,17 @@ internal static class M2TimelineRenderer
                 // Apply the existing quantization tolerance to the complete raw
                 // packet too; even a one-input-frame correction can reverse a
                 // one-frame chunk fragment if adjusted after splitting.
+                // A microphone's valid device counter is independent evidence:
+                // a small real loss must not be stretched away as QPC rounding.
+                // Discontinuity describes the interval before that packet, so
+                // A's flag must not forbid an independently continuous A->B pair.
+                // Keep the existing process-loopback QPC-only policy unchanged.
+                bool microphoneDeviceContiguous = a.Track.SourceId != "mic" ||
+                    (a.Packet.DevicePositionValid && b.Packet.DevicePositionValid &&
+                     (b.Packet.Flags & 5) == 0 &&
+                     (UInt128)a.Packet.DevicePosition + (uint)a.Packet.RawFrameCount == b.Packet.DevicePosition);
                 bool quantizedContiguous = a.Track.Format == b.Track.Format && a.Track.SegmentId == b.Track.SegmentId &&
+                    microphoneDeviceContiguous &&
                     b.Packet.RetainedFrameOffset == 0 &&
                     a.Packet.RetainedFrameOffset + (long)a.Packet.FrameCount == a.Packet.RawFrameCount &&
                     Math.Abs(rawDuration - nominal) <= 2.0 * SampleRate / a.Track.Format.SampleRate + .0001;

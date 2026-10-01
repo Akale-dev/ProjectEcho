@@ -1,6 +1,18 @@
 # Development status
 Updated: 2026-10-01
 
+## 最新跟进：麦克风启动缺口已修复，采集加固后20分钟复测通过
+
+**已实现：**本机16k mic原共享转换路径反复返回124帧首包，切换同设备fresh RAW共享格式后首包/后包均160帧。M0/M1/预检共用协商，保留原QPC/device和Stop/Pause/MicOff边界，记录可选processingMode。另加入采集线程MMCSS Audio/NORMAL和M1预分配缓冲，缩短持有WASAPI包的工作；极短真实mic缺口不再被混音量化容差抹去，混音v3拒绝自动复用旧版本，导出保留实际来源版本。
+
+**已测试：**Release 0错误0警告、**179组默认回归PASS**。RAW修复9次开麦首包与40秒跨块/压缩EOF通过；加固版再次通过短边界、40秒、两组90秒受控CPU负载（16逻辑核/4worker，非全机饱和），以及**1201.166629秒真实mic+自有进程树录音**。两路各41块、0声明缺口，原件hash/磁盘恢复/真实Stop边界通过；完整WAV57,655,999帧、MP3及3分片、18内容窗通过。MMCSS实际注册/优先级/释放成功，mic最大轮询12.0985ms/持包0.0149ms。环境Windows11 25H2 26200.9457/x64、SDK10.0.401/runtime10.0.12/NAudio3.1.0；全部测试接口执行，无computer-use、mic回放/ASR/上传。
+
+**最终包：**`artifacts/ProjectEcho-win-x64-20261001-M3C-MicFix/ProjectEcho.exe`，630文件/236,057,213字节，清单SHA-256 `ecfd7227c57836cfdb1aac40442300f738df47891b14e3750b1e605d6cafa8d7`。完整性、WPF默认启动、自带Host运行时与IPC通过；包内四个相关WPF流程最终通过，实际包组件额外20秒mic边界通过。Capture/Core/Export与20分钟测试组件hash一致；最终Host独立复验。本机Whisper配置在验包后另存可变Data/settings，不含模型或会议。
+
+**失败/未测仍保留：**RAW单独修复的1201秒复测在109–110秒出现两路真实缺口，与构建时间重合但未证明因果；旧两小时FAIL均未改写。新负载两组都通过，不能断言MMCSS是旧断续的唯一根因。最终M0短试录目标/尾音/隔离、mic关闭和退出通过，但严格设备计数审计仍因已知remote QPC-only能力FAIL（1321项），不包装成时钟验收通过。首轮WPF深路径失败保留；同一包/权限缩短路径后两项通过，较深目录下媒体/SQLite兼容仍有限制。其他设备、新版两小时、声学同步、干净Windows及原平台现场闸门未通过本次20分钟复测替代。
+
+报告与证据：[54](docs/54_MICROPHONE_STARTUP_GAP_FIX.md)、`.local/TestResults/MicStartupFix/scheduling-02/results.json`、`.local/MicStartupFix/scheduling-medium-summary.json`。状态`STARTUP_FIXED / WINDOWS_20MIN_AND_BOUNDED_LOAD_PASS / PRIOR_FAILURES_AND_LONG_RUN_LIMITS_RETAINED`。以下M3C结论为历史记录。
+
 ## 最新结论：M3C 功能与可自动测试完成，真实 mic 断续和识别质量限制保留
 
 **已实现：**用户要求的12项M3C功能已落地：SQLite会库/FTS5、日期项目长度筛选排序、可恢复确认删除、打开数据目录、平滑回听、真实引擎百分比、紧凑转写页/导入末页/固定字幕底栏、两处全文TXT与句子复制、简中/繁中/英文。原轨/时间索引/不可覆盖转写版本继续为权威文件；2026-10-01用户决定覆盖旧禁SQLite约束。

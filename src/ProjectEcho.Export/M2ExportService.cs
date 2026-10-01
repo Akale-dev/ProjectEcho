@@ -7,7 +7,8 @@ namespace ProjectEcho.Export;
 /// <summary>Offline derived files only. No device capture, playback, networking or original-file writes.</summary>
 public static class M2ExportService
 {
-    private const string RenderVersion = "m2-qpc-mono-2-rf64-truepeak";
+    internal const string RenderVersion = "m2-qpc-mono-3-mic-gap-preserving";
+    private const string CaptureTimeline = "complete_elapsed_qpc_packet_mapping";
     private const int MaximumSizeRetries = 8;
     private const int MaximumParts = 10000;
     private static readonly PcmFormat MixFormat = new(M2TimelineRenderer.SampleRate, 1, 16, false, 2);
@@ -101,7 +102,7 @@ public static class M2ExportService
                 sourceStorageComplete = recovery.IsCleanEnd,
                 sampleRate = MixFormat.SampleRate, channels = 1, frameCount = frames, duration100ns = capture.Duration100ns,
                 sourceGain = M2TimelineRenderer.SourceGain, peakCeiling = M2TimelineRenderer.PeakCeiling,
-                timeline = "complete_elapsed_qpc_packet_mapping", sourceHashes,
+                timeline = CaptureTimeline, sourceHashes,
                 wave = new { file = "mixed_full.wav", sha256 = waveHash, truePeak = peakProtection.After,
                     beforeTruePeakDbTp = peakProtection.Before.DbTp, appliedGain = peakProtection.AppliedGain,
                     processingCeilingDbTp = TruePeakProtection.ProcessingCeilingDbTp, additionalDelayFrames = 0 },
@@ -150,6 +151,16 @@ public static class M2ExportService
         if (fullMix.WaveSha256.Length != 64 || fullMix.WaveSha256 != mixHash) throw new InvalidDataException("完整混音 SHA-256 不一致，拒绝导出被改动的文件。");
         using var provenanceLock = M2FileSafety.LockedRead(M2FileSafety.Inside(mixRoot, "render.json"));
         using var provenance = JsonDocument.Parse(provenanceLock);
+        var provenanceRoot = provenance.RootElement;
+        string? sourceRenderVersion = provenanceRoot.TryGetProperty("renderVersion", out var versionField) && versionField.ValueKind == JsonValueKind.String
+            ? versionField.GetString() : null;
+        string? sourceTimeline = provenanceRoot.TryGetProperty("timeline", out var timelineField) && timelineField.ValueKind == JsonValueKind.String
+            ? timelineField.GetString() : null;
+        bool supportedRecording = sourceRenderVersion == RenderVersion && sourceTimeline == CaptureTimeline;
+        bool supportedImport = sourceRenderVersion == AudioImportService.SchemaVersion && sourceTimeline == AudioImportService.Timeline &&
+            provenanceRoot.TryGetProperty("captureClockMetadataAvailable", out var clocksAvailable) && clocksAvailable.ValueKind == JsonValueKind.False;
+        if (!supportedRecording && !supportedImport)
+            throw new InvalidDataException("派生混音版本或时间轴不受支持；旧录音混音须主动重新生成，不能将其标为当前版本。");
         if (provenance.RootElement.GetProperty("schemaVersion").GetString() != "m2-render-1" ||
             provenance.RootElement.GetProperty("wave").GetProperty("sha256").GetString() != mixHash ||
             provenance.RootElement.GetProperty("sourceStorageComplete").GetBoolean() != fullMix.SourceStorageComplete ||
@@ -252,10 +263,10 @@ public static class M2ExportService
             // No title, time-of-recording, source paths, URLs, profiles, source PCM or diagnostics.
             var exportManifest = new
                 {
-                    schemaVersion = "m2-export-1", renderVersion = RenderVersion, format = extension[1..],
+                    schemaVersion = "m2-export-1", renderVersion = sourceRenderVersion, format = extension[1..],
                     sourceStorageComplete = fullMix.SourceStorageComplete,
                     sampleRate = MixFormat.SampleRate, channels = 1, sourceMixSha256 = mixHash, completeTimelineFrames = fullMix.FrameCount,
-                    timeline = "complete_elapsed_including_pause_gaps", maxFileBytes = options.MaxFileBytes,
+                    timeline = sourceTimeline, maxFileBytes = options.MaxFileBytes,
                     maxDurationSeconds = options.MaxDurationSeconds, overlapSeconds = options.OverlapSeconds,
                     parts = parts.Select(part => new { file = Path.GetFileName(part.Path), byteLength = part.ByteLength,
                         sha256 = part.Sha256, decodedDurationSeconds = part.DecodedDurationSeconds,

@@ -48,6 +48,15 @@ if (args.Length > 0 && args[0] == "--m1-microphone-probe")
 if (args.Length > 0 && args[0] == "--mic-clock-diagnostics")
     return await MicrophoneClockDiagnostics.RunAsync(args);
 
+if (args.Length > 0 && args[0] == "--mic-format-ab-probe")
+    return await MicrophoneFormatAbProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--mic-scheduling-stress-probe")
+    return await MicSchedulingStressProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--cpu-stress-child")
+    return await MicSchedulingStressProbe.RunCpuChildAsync(args);
+
 if (args.Length > 0 && args[0] == "--tone-report")
     return ToneAnalysis.Run(args);
 
@@ -98,6 +107,11 @@ Run("T54-SYNTH health snapshot ordering never underflows", RecordingHealthTests.
 Run("M1-SYNTH microphone reported/client rate policy", MicrophoneFormatPolicyTests.Run);
 MicrophoneFormatPolicyTests.RegisterTimelineTests(Run, output);
 M3bMicrophoneClockTests.Register(Run, output);
+M3cMicrophoneGapRenderTests.Register(Run, output);
+MicrophoneProcessingMetadataTests.Register(Run, output);
+MicrophoneRawNegotiationTests.Register(Run);
+CaptureThreadSchedulingTests.Register(Run);
+CapturePacketScratchTests.Register(Run);
 Run("M0 explicit clock capability preserves limited QPC status", ClockCapabilityTests.Run);
 M1StorageTests.Register(Run, output);
 M1ValidationIsolationTests.Register(Run, output);

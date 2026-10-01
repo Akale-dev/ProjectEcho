@@ -20,13 +20,14 @@ internal static partial class M2LongRunProbe
     internal static async Task<int> RunMicrophoneEnduranceAsync(string[] args)
     {
         if (args.Length is < 3 or > 5 || args[0] != "--m3c-microphone-endurance-probe" ||
-            string.IsNullOrWhiteSpace(args[1]) || args[2] is not ("short" or "long")) return 2;
+            string.IsNullOrWhiteSpace(args[1]) || args[2] is not ("short" or "medium" or "long")) return 2;
         bool longRun = args[2] == "long";
-        if ((!longRun && args.Length > 4) || (longRun && args.Length < 4)) return 2;
+        bool mediumRun = args[2] == "medium", extendedRun = mediumRun || longRun;
+        if ((!extendedRun && args.Length > 4) || (extendedRun && args.Length < 4)) return 2;
         string root = SyntheticAudioProbe.FindProjectRoot();
-        string? outputDevice = longRun ? args.Length == 5 ? args[4] : null : args.Length == 4 ? args[3] : null;
+        string? outputDevice = extendedRun ? args.Length == 5 ? args[4] : null : args.Length == 4 ? args[3] : null;
         string? shortOutput = null;
-        if (longRun)
+        if (extendedRun)
         {
             // This qualifies actual storage/clock/codec behavior for this fixed mic, not an acoustic path.
             string proofPath = SyntheticAudioProbe.SafeProjectPath(root, args[3]);
@@ -34,7 +35,7 @@ internal static partial class M2LongRunProbe
             var p = proof.RootElement;
             if (p.GetProperty("Schema").GetString() != "m3c-microphone-endurance-1" ||
                 !p.TryGetProperty("EligibleForLongRun", out var eligible) || !eligible.GetBoolean() ||
-                p.GetProperty("IsLongRun").GetBoolean() ||
+                p.GetProperty("IsLongRun").GetBoolean() || p.GetProperty("RequestedSeconds").GetInt32() != 40 ||
                 p.GetProperty("MicrophoneId").GetString() != args[1] ||
                 DateTimeOffset.UtcNow - p.GetProperty("FinishedAtUtc").GetDateTimeOffset() > TimeSpan.FromHours(12))
                 throw new InvalidDataException("Long microphone endurance requires a recent eligible short readiness report for this exact microphone; source quality remains separate.");
@@ -52,7 +53,7 @@ internal static partial class M2LongRunProbe
         finally { foreach (var process in existing) process.Dispose(); }
         var microphone = SourceDiscovery.Enumerate().Microphones.SingleOrDefault(device => device.Id == args[1])
             ?? throw new IOException("Explicit microphone is unavailable; no fallback attempted.");
-        string run = Path.Combine(parent, (longRun ? "long-" : "short-") + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
+        string run = Path.Combine(parent, args[2] + "-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(run);
         File.WriteAllText(Path.Combine(run, "REAL_MICROPHONE_LOCAL_ONLY"),
             "Explicitly authorized fixed microphone PCM and newly created synthetic process only. Local originals retained. No microphone replay, speech interpretation, ASR or upload. NOT acoustic synchronization acceptance.");
@@ -66,7 +67,9 @@ internal static partial class M2LongRunProbe
                 .Select(path => new { Path = path, Sha256 = Hash(path) }).ToArray()
         }, Json));
         Console.WriteLine("Microphone endurance evidence: " + run);
-        int seconds = longRun ? LongSeconds : 40;
+        int seconds = longRun ? LongSeconds : mediumRun ? MediumSeconds : 40;
+        int budgetMinutes = longRun ? 122 : mediumRun ? 22 : 2;
+        int partMaximumSeconds = longRun ? 1800 : mediumRun ? 600 : 20;
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(seconds + 180));
         var client = new CaptureHostClient();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -114,9 +117,9 @@ internal static partial class M2LongRunProbe
         try
         {
             // Sparse 2%-amplitude marker bursts; no system volume/routing change. Short mode stops the programme at 40 seconds.
-            producer = await SyntheticAudioProbe.Producer.StartAsync(root, "target-sync-long", deadline.Token, outputDevice);
+            producer = await SyntheticAudioProbe.Producer.StartAsync(root, mediumRun ? "target-sync-medium" : "target-sync-long", deadline.Token, outputDevice);
             producerOutput = producer.ReadyInfo;
-            if (longRun && (string.IsNullOrEmpty(shortOutput) || producerOutput?.GetProperty("OutputDeviceId").GetString() != shortOutput))
+            if (extendedRun && (string.IsNullOrEmpty(shortOutput) || producerOutput?.GetProperty("OutputDeviceId").GetString() != shortOutput))
                 throw new IOException("Output endpoint differs from short qualification; no microphone recording started.");
             var selection = await SyntheticAudioProbe.FindOwnedSourceAsync(producer, deadline.Token);
             owned = SyntheticAudioProbe.IsOwnedSelection(selection, producer.Identity);
@@ -124,21 +127,21 @@ internal static partial class M2LongRunProbe
             var options = SyntheticAudioProbe.CreateOptions(selection, recording) with
             { MicrophoneEnabled = true, MicrophoneDeviceId = microphone.Id, Title = "固定麦克风与受控进程耐久测试（仅本地）" };
             var preflight = SourceDiscovery.Preflight(options);
-            long reservedBytes = checked(preflight.EstimatedBytesPerSecond * (longRun ? 122L : 2L) * 60 * 4 + 64L * 1024 * 1024);
+            long reservedBytes = checked(preflight.EstimatedBytesPerSecond * budgetMinutes * 60 * 4 + 64L * 1024 * 1024);
             preflightEvidence = new { preflight.CanStart, preflight.Errors, preflight.Warnings, preflight.EstimatedBytesPerSecond,
-                preflight.AvailableBytes, ReservedBytes = reservedBytes, BudgetMinutes = longRun ? 122 : 2 };
+                preflight.AvailableBytes, ReservedBytes = reservedBytes, BudgetMinutes = budgetMinutes };
             if (!preflight.CanStart || preflight.AvailableBytes < reservedBytes) throw new IOException("Source or disk budget preflight failed.");
             File.WriteAllText(Path.Combine(run, "preflight.json"), JsonSerializer.Serialize(preflightEvidence, Json));
-            await client.StartRecordingAsync(new RecordingOptions(options, seconds + 30, longRun ? 122 : 2), root, () => deadline.IsCancellationRequested);
+            await client.StartRecordingAsync(new RecordingOptions(options, seconds + 30, budgetMinutes), root, () => deadline.IsCancellationRequested);
             await started.Task.WaitAsync(TimeSpan.FromSeconds(12), deadline.Token);
             captureStartedAt = DateTimeOffset.UtcNow;
             goQpc = Now100ns();
             await producer.GoAsync(deadline.Token);
             var timer = Stopwatch.StartNew();
-            Task done = longRun ? producer.WaitDoneAsync(deadline.Token) : Task.Delay(TimeSpan.FromSeconds(seconds), deadline.Token);
+            Task done = extendedRun ? producer.WaitDoneAsync(deadline.Token) : Task.Delay(TimeSpan.FromSeconds(seconds), deadline.Token);
             while (!done.IsCompleted)
             {
-                var tick = Task.Delay(TimeSpan.FromSeconds(longRun ? 30 : 10), deadline.Token);
+                var tick = Task.Delay(TimeSpan.FromSeconds(extendedRun ? 30 : 10), deadline.Token);
                 var finished = await Task.WhenAny(done, terminal.Task, sourceFault.Task, tick);
                 if (finished == terminal.Task) throw new IOException("Host ended before the requested endurance duration.");
                 if (finished == sourceFault.Task) throw new IOException(await sourceFault.Task);
@@ -153,7 +156,7 @@ internal static partial class M2LongRunProbe
                 }
             }
             await done;
-            if (longRun && timer.Elapsed.TotalSeconds < seconds + 1)
+            if (extendedRun && timer.Elapsed.TotalSeconds < seconds + 1)
                 await Task.Delay(TimeSpan.FromSeconds(seconds + 1 - timer.Elapsed.TotalSeconds), deadline.Token);
             await client.StopAsync().WaitAsync(TimeSpan.FromSeconds(5), deadline.Token);
             var final = await terminal.Task.WaitAsync(TimeSpan.FromSeconds(60), deadline.Token);
@@ -190,7 +193,7 @@ internal static partial class M2LongRunProbe
             }
             tracksEvidence = sourceReports;
             double goSession = (double)((Int128)goQpc - recovery.Capture.EpochQpc100ns) / AudioClock.UnitsPerSecond;
-            foreach (int marker in longRun ? LongMarkers : new[] { 2 })
+            foreach (int marker in longRun ? LongMarkers : mediumRun ? MediumMarkers : new[] { 2 })
             {
                 double begin = Math.Max(0, goSession + marker - 1);
                 var detection = Detect(ReadWindow(recovery.Capture, "remote", begin, 4), begin);
@@ -199,7 +202,7 @@ internal static partial class M2LongRunProbe
             }
             if (errors.Count == 0)
             {
-                using var offline = new CancellationTokenSource(TimeSpan.FromMinutes(longRun ? 70 : 5));
+                using var offline = new CancellationTokenSource(TimeSpan.FromMinutes(longRun ? 70 : mediumRun ? 20 : 5));
                 File.WriteAllText(Path.Combine(run, "progress.json"), JsonSerializer.Serialize(new
                 { Status = "OFFLINE_RENDERING_AND_MP3", HostExited = hostExited, ProducerExitCode = producerExit, UpdatedAtUtc = DateTimeOffset.UtcNow }, Json));
                 mix = M2ExportService.RenderMeeting(recording, new MediaFoundationMp3Encoder(), offline.Token);
@@ -226,7 +229,7 @@ internal static partial class M2LongRunProbe
                     codecComparisons.Add(new { File = Path.GetFileName(mix.CompressedPath), Windows = content });
                     if (content.Any(window => !window.Pass)) errors.Add("full_MP3_waveform_content_not_preserved");
                 }
-                exported = M2ExportService.ExportParts(mix, new(M2ExportFormat.Mp3, 20_000_000, longRun ? 1800 : 20, 5, true), Path.Combine(run, "exports"), offline.Token);
+                exported = M2ExportService.ExportParts(mix, new(M2ExportFormat.Mp3, 20_000_000, partMaximumSeconds, 5, true), Path.Combine(run, "exports"), offline.Token);
                 if (exported.Parts[0].StartFrame != 0 || exported.Parts[^1].EndFrame != mix.FrameCount) errors.Add("MP3_export_timeline_incomplete");
                 for (int index = 0; index < exported.Parts.Count; index++)
                 {
@@ -237,7 +240,7 @@ internal static partial class M2LongRunProbe
                     var decoded = CheckCompressed(part.Path, part.StartUs / 1_000_000d - part.EncoderDelayFrames / (double)Rate, expected, offline.Token);
                     parts.Add(decoded); CheckDecodedMarkers(decoded, observations);
                     if (decoded.DecodedFrames != part.EndFrame - part.StartFrame + part.EncoderDelayFrames + part.TrailingPaddingFrames) errors.Add("MP3_part_EOF_incomplete");
-                    if (decoded.DecodedFrames / (double)Rate > (longRun ? 1800 : 20)) errors.Add("MP3_part_duration_exceeds_limit");
+                    if (decoded.DecodedFrames / (double)Rate > partMaximumSeconds) errors.Add("MP3_part_duration_exceeds_limit");
                     var content = CompareDecodedMixWindows(mix.WavePath, part.Path, part.StartFrame, part.EndFrame, part.EncoderDelayFrames,
                         markers.Select(marker => (long)Math.Round(Math.Max(0, marker.StartSeconds - 1) * Rate)), offline.Token);
                     codecComparisons.Add(new { File = Path.GetFileName(part.Path), Windows = content });
@@ -259,12 +262,12 @@ internal static partial class M2LongRunProbe
         if (result is null && terminal.Task.IsCompletedSuccessfully) result = terminal.Task.Result.RecordingResult;
         bool codecComplete = mix is not null && fullMp3 is not null && exported is not null && parts.Count == exported.Parts.Count;
         bool storageComplete = result?.StorageComplete == true && recovery?.IsCleanEnd == true && recovery.Issues.Count == 0 && originalsUnchanged;
-        bool eligibleForLongRun = !longRun && errors.Count == 0 && storageComplete && codecComplete;
+        bool eligibleForLongRun = !extendedRun && errors.Count == 0 && storageComplete && codecComplete;
         string status = errors.Count != 0 ? "FAIL" : qualityErrors.Count != 0 ? "PARTIAL_STARTUP_GAP_STORAGE_CODEC_VALIDATED"
-            : longRun ? "PASS_TWO_HOUR_MICROPHONE_ENDURANCE" : "PASS_SHORT_MICROPHONE_ENDURANCE";
+            : longRun ? "PASS_TWO_HOUR_MICROPHONE_ENDURANCE" : mediumRun ? "PASS_TWENTY_MINUTE_MICROPHONE_ENDURANCE" : "PASS_SHORT_MICROPHONE_ENDURANCE";
         var report = new
         {
-            Schema = "m3c-microphone-endurance-1", Status = status, IsLongRun = longRun, RequestedSeconds = seconds,
+            Schema = "m3c-microphone-endurance-1", Status = status, DurationMode = args[2], IsLongRun = longRun, RequestedSeconds = seconds,
             EligibleForLongRun = eligibleForLongRun,
             EligibilityReason = eligibleForLongRun ? qualityErrors.Count == 0 ? "storage, clock, boundaries and codec ready"
                 : "declared startup gap retained; storage/codec ready, continuity not passed" : "not a successful short readiness qualification",

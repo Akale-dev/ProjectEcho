@@ -14,6 +14,49 @@ internal static class M3AudioImportTests
         run("M3-WINDOWS M4A external import decodes to EOF and keeps canonical timeline", () => Compressed(output, new MediaFoundationM4aEncoder()));
         run("M3-SYNTH imported original/mix/metadata tamper and unsafe path rejected", () => Tamper(output));
         run("M3-SYNTH failed/cancelled import never publishes completed meeting", () => Failed(output));
+        run("M3/T33/T50-SYNTH imported audio export retains import version timeline and rejects altered provenance", () => ExportProvenance(output));
+    }
+
+    private static void ExportProvenance(string output)
+    {
+        string root = Path.Combine(output, "m3-import-export-version"), source = Source(root);
+        string sourceHash = Hash(source);
+        var imported = AudioImportService.Import(source, Path.Combine(root, "meetings"));
+        string renderPath = Path.Combine(imported.Mix.Directory, "render.json"); byte[] original = File.ReadAllBytes(renderPath);
+        foreach (bool includeManifest in new[] { true, false })
+        {
+            var exported = M2ExportService.ExportParts(imported.Mix, new(M2ExportFormat.Wave, 1_000_000, 30, 0, includeManifest), Path.Combine(root, "exports"));
+            using var receipt = JsonDocument.Parse(File.ReadAllText(exported.LocalReceiptPath!));
+            Verify(receipt.RootElement.GetProperty("export"));
+            if (includeManifest)
+            {
+                using var manifest = JsonDocument.Parse(File.ReadAllText(exported.ManifestPath!)); Verify(manifest.RootElement);
+            }
+            else Check(exported.ManifestPath is null, "用户未选择清单却导出清单。");
+            Check(exported.Parts.Single().EndFrame == imported.Mix.FrameCount, "导入全文导出损失尾帧。");
+        }
+        var changes = new Action<JsonObject>[]
+        {
+            value => value["renderVersion"] = M2ExportService.RenderVersion,
+            value => value.Remove("renderVersion"),
+            value => value["renderVersion"] = "m2-qpc-mono-2-rf64-truepeak",
+            value => value["timeline"] = "complete_elapsed_qpc_packet_mapping",
+            value => value["captureClockMetadataAvailable"] = true
+        };
+        try
+        {
+            foreach (var change in changes)
+            {
+                var data = JsonNode.Parse(original)!.AsObject(); change(data); File.WriteAllText(renderPath, data.ToJsonString());
+                Throws<InvalidDataException>(() => M2ExportService.ExportParts(imported.Mix, new(M2ExportFormat.Wave, 1_000_000, 30, 0), Path.Combine(root, "refused")));
+                Check(!Directory.Exists(Path.Combine(root, "refused")), "篡改导入版本后仍产生导出。");
+            }
+        }
+        finally { File.WriteAllBytes(renderPath, original); }
+        Check(Hash(source) == sourceHash && Hash(imported.OriginalPath) == sourceHash && Hash(imported.Mix.WavePath) == imported.Mix.WaveSha256,
+            "版本检查改变了导入原件或可听副本。");
+        static void Verify(JsonElement manifest) => Check(manifest.GetProperty("renderVersion").GetString() == AudioImportService.SchemaVersion &&
+            manifest.GetProperty("timeline").GetString() == "imported_decoded_media_from_zero", "导入音频被标记为mic renderer v3或错误时间轴。");
     }
 
     private static string Source(string root, int rate = 16000, int channels = 2)

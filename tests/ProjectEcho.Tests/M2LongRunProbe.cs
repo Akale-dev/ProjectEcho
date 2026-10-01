@@ -15,17 +15,24 @@ using ProjectEcho.Export;
 /// <summary>Explicit acoustic synchronization test. Never selects a replacement mic or changes output routing/volume.</summary>
 internal static partial class M2LongRunProbe
 {
-    internal const int ShortSeconds = 26, LongSeconds = 7200;
+    internal const int ShortSeconds = 26, StressSeconds = 90, MediumSeconds = 1200, LongSeconds = 7200;
     private const int Rate = 48000, Hop = 240, Window = 960;
     private static readonly int[] Frequencies = [733, 997, 1319, 1699];
     private static readonly int[] ShortMarkers = [2, 12, 22];
     private static readonly int[] LongMarkers = [2, 1802, 3602, 5402, 7192];
+    private static readonly int[] MediumMarkers = [2, 602, 1192];
+    private static readonly int[] StressMarkers = [2, 25, 45, 55, 82];
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
-    internal static float MarkerSample(int frame, bool longRun)
+    internal static float MarkerSample(int frame, bool longRun) => MarkerSampleAt(frame, longRun ? LongMarkers : ShortMarkers);
+
+    internal static float MediumMarkerSample(int frame) => MarkerSampleAt(frame, MediumMarkers);
+    internal static float StressMarkerSample(int frame) => MarkerSampleAt(frame, StressMarkers);
+
+    private static float MarkerSampleAt(int frame, int[] markers)
     {
         int second = frame / Rate;
-        foreach (int marker in longRun ? LongMarkers : ShortMarkers)
+        foreach (int marker in markers)
         {
             if (second < marker || second > marker + 1) continue;
             int offset = frame - marker * Rate;
@@ -458,6 +465,24 @@ internal static partial class M2LongRunProbe
 
     internal static void RunSyntheticChecks()
     {
+        foreach (int position in StressMarkers)
+        {
+            var stressWindow = new float[Rate * 4];
+            for (int frame = 0; frame < stressWindow.Length; frame++)
+                stressWindow[frame] = StressMarkerSample((position - 1) * Rate + frame);
+            var stressMarker = Detect(stressWindow, position - 1);
+            if (!stressMarker.Found || Math.Abs(stressMarker.StartSeconds - position) > .02)
+                throw new InvalidDataException("CPU stress programme marker missing or shifted.");
+        }
+        foreach (int position in MediumMarkers)
+        {
+            var mediumWindow = new float[Rate * 4];
+            for (int frame = 0; frame < mediumWindow.Length; frame++)
+                mediumWindow[frame] = MediumMarkerSample((position - 1) * Rate + frame);
+            var mediumMarker = Detect(mediumWindow, position - 1);
+            if (!mediumMarker.Found || Math.Abs(mediumMarker.StartSeconds - position) > .02)
+                throw new InvalidDataException("Twenty-minute programme marker missing or shifted.");
+        }
         foreach (double offset in new[] { 0, .073, .225 })
         {
             var samples = new float[Rate * 4]; var noise = new Random(2948);

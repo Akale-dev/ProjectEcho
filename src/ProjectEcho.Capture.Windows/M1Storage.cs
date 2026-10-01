@@ -47,7 +47,8 @@ public sealed class M1Storage : IDisposable
         journal.Flush(true);
     }
 
-    public void AddSegment(string segmentId, string sourceId, WaveFormat waveFormat, CapturedPacket? firstPacket = null)
+    public void AddSegment(string segmentId, string sourceId, WaveFormat waveFormat, CapturedPacket? firstPacket = null,
+        string? processingMode = null)
     {
         EnsureOpen(); ValidateId(segmentId); ValidateId(sourceId);
         if (firstPacket is { TimestampValid: true } && firstPacket.QpcPosition100ns < epoch)
@@ -55,7 +56,8 @@ public sealed class M1Storage : IDisposable
         if (segments.Values.Any(s => s.SourceId == sourceId && !s.Closed))
             throw new InvalidOperationException("同一来源必须先确认旧 segment 的停采边界。");
         var format = CaptureSession.Describe(waveFormat); format.Validate();
-        var segment = new Segment(segmentId, sourceId, waveFormat, format);
+        ValidateProcessingMode(processingMode);
+        var segment = new Segment(segmentId, sourceId, waveFormat, format) { ProcessingMode = processingMode };
         segments.Add(segmentId, segment);
         // A successful AddSegment is the writer-readiness barrier. Create the actual
         // original file before AudioClient.Start, even though its first clock anchor
@@ -226,7 +228,7 @@ public sealed class M1Storage : IDisposable
     private void WriteSegment(Segment segment, CapturedPacket? first)
     {
         var format = segment.Format;
-        Append(new { type = "segment", segmentId = segment.Id, sourceId = segment.SourceId,
+        Append(new { type = "segment", segmentId = segment.Id, sourceId = segment.SourceId, processingMode = segment.ProcessingMode,
             format = new { sampleRate = format.SampleRate, channels = format.Channels,
                 encoding = format.IsFloat ? "float32le" : $"pcm_s{format.BitsPerSample}le", blockAlign = format.BlockAlign, channelMask = format.ChannelMask,
                 validBitsPerSample = segment.WaveFormat is WaveFormatExtensible e ? e.ValidBitsPerSample : format.BitsPerSample },
@@ -293,6 +295,12 @@ public sealed class M1Storage : IDisposable
     internal static string U(ulong value) => value.ToString(CultureInfo.InvariantCulture);
     private static string[] Flags(int flags) => new[] { (1, "data_discontinuity"), (2, "silent"), (4, "timestamp_error") }
         .Where(f => (flags & f.Item1) != 0).Select(f => f.Item2).ToArray();
+    internal static void ValidateProcessingMode(string? value)
+    {
+        if (value is not (null or "shared-default" or "shared-raw" or "shared-converted"))
+            throw new InvalidDataException("未知采集处理模式。");
+    }
+
     private static void ValidateId(string id)
     {
         if (string.IsNullOrEmpty(id) || id.Length > 100 || id.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-' && c != '_'))
@@ -310,6 +318,7 @@ public sealed class M1Storage : IDisposable
         public string Id = id, SourceId = sourceId;
         public WaveFormat WaveFormat = waveFormat;
         public PcmFormat Format = format;
+        public string? ProcessingMode;
         public bool Written, Closed;
         public Int128 MaximumEnd;
         public UInt128 MaximumDeviceEnd;

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -39,14 +40,23 @@ internal sealed class RecordingSourceFactory : IRecordingSourceFactory
     {
         using var enumerator = new MMDeviceEnumerator();
         using var device = SourceDiscovery.GetExactDevice(enumerator, deviceId, flow);
+        if (flow == DataFlow.Capture)
+        {
+            var microphone = MicrophoneFormatPolicy.OpenClient(device, initialize: true);
+            // OpenClient has already initialized the shared stream (never started it).
+            // WasapiSource takes ownership and cleans it up if event/capture setup fails.
+            try
+            {
+                return new WasapiSource(id, microphone.Client, microphone.Format, false,
+                    microphone.ConversionFlags, initialized: true, processingMode: microphone.ProcessingMode);
+            }
+            catch { microphone.Dispose(); throw; }
+        }
         var client = device.CreateAudioClient();
         try
         {
             var format = client.MixFormat;
-            var microphone = flow == DataFlow.Capture
-                ? MicrophoneFormatPolicy.Select(format, MicrophoneFormatPolicy.ReadDeviceFormat(device)) : null;
-            return new WasapiSource(id, client, microphone?.Format ?? format, flow == DataFlow.Render,
-                microphone?.ConversionFlags ?? 0);
+            return new WasapiSource(id, client, format, flow == DataFlow.Render);
         }
         catch { client.Dispose(); throw; }
     }
@@ -57,23 +67,37 @@ internal sealed class RecordingSourceFactory : IRecordingSourceFactory
         private readonly AudioCaptureClient capture;
         private readonly AutoResetEvent ready = new(false);
         private readonly CaptureClockHealth clock = new();
+        private readonly CapturePacketScratch scratch;
+        private readonly CaptureReadMetrics readMetrics = new();
+        private readonly int? bufferFrames;
+        private readonly long? streamLatency100ns;
         public string Id { get; }
         public WaveFormat WaveFormat { get; }
         public PcmFormat Format { get; }
+        public string? ProcessingMode { get; }
         public WaitHandle PacketReady => ready;
+        // Snapshot construction is deliberately outside Read's held-buffer path.
+        public RecordingSourceDiagnostics Diagnostics => new(bufferFrames, streamLatency100ns, scratch.Capacity,
+            readMetrics.PollCount, readMetrics.PacketCount, readMetrics.MaximumPollInterval100ns,
+            readMetrics.MaximumBufferHold100ns, readMetrics.PollIntervalsOver20Ms, readMetrics.BufferHoldsOver2Ms);
         public WasapiSource(string id, AudioClient audioClient, WaveFormat waveFormat, bool loopback,
-            AudioClientStreamFlags conversionFlags = 0)
+            AudioClientStreamFlags conversionFlags = 0, bool initialized = false, string? processingMode = null)
         {
-            client = audioClient; Id = id; WaveFormat = waveFormat;
+            client = audioClient; Id = id; WaveFormat = waveFormat; ProcessingMode = processingMode;
             try
             {
                 Format = CaptureSession.Describe(waveFormat);
                 Format.Validate();
                 if (Format.Channels > 2) throw new NotSupportedException("当前只支持单/双声道录音格式。");
                 var flags = AudioClientStreamFlags.EventCallback | (loopback ? AudioClientStreamFlags.Loopback : 0) | conversionFlags;
-                client.Initialize(AudioClientShareMode.Shared, flags, 0, 0, waveFormat, Guid.Empty);
+                if (!initialized) client.Initialize(AudioClientShareMode.Shared, flags, 0, 0, waveFormat, Guid.Empty);
                 client.SetEventHandle(ready.SafeWaitHandle.DangerousGetHandle());
                 capture = client.AudioCaptureClient;
+                try { bufferFrames = client.BufferSize; }
+                catch (Exception ex) when (ex is COMException or InvalidOperationException or NotSupportedException) { }
+                try { streamLatency100ns = client.StreamLatency; }
+                catch (Exception ex) when (ex is COMException or InvalidOperationException or NotSupportedException) { }
+                scratch = new CapturePacketScratch(bufferFrames, Format.BlockAlign);
             }
             catch { ready.Dispose(); client.Dispose(); throw; }
         }
@@ -81,28 +105,49 @@ internal sealed class RecordingSourceFactory : IRecordingSourceFactory
         public void Stop() => client.Stop();
         public RecordingBlock? Read(ulong epochQpc100ns, ulong? cutoffQpc100ns)
         {
+            readMetrics.Poll(Stopwatch.GetTimestamp());
+            scratch.Clear();
             if (capture.GetNextPacketSize() <= 0) return null;
             var pointer = capture.GetBuffer(out int frames, out var flags, out long device, out long qpc);
+            long heldAt = Stopwatch.GetTimestamp();
             try
             {
-                if (frames <= 0) return null;
-                var quality = clock.Observe(device, qpc, frames, (flags & AudioClientBufferFlags.TimestampError) != 0, epochQpc100ns);
-                int keep = cutoffQpc100ns is ulong cutoff
-                    ? quality.QpcValid ? AudioClock.CompleteFramesBefore((ulong)qpc, cutoff, Format.SampleRate, frames) : 0
-                    : frames;
-                int length = checked(keep * Format.BlockAlign);
-                if (length > 1024 * 1024) throw new IOException("音频包超过1MiB限额。");
-                var pcm = new byte[length];
-                if (keep > 0 && (flags & AudioClientBufferFlags.Silent) == 0)
+                CaptureClockObservation quality = default;
+                int keep = 0;
+                ScratchCopyResult copied = ScratchCopyResult.Success;
+                try
                 {
-                    if (pointer == IntPtr.Zero) throw new IOException("非静音包为空指针。");
-                    Marshal.Copy(pointer, pcm, 0, length);
+                    if (frames > 0)
+                    {
+                        quality = clock.Observe(device, qpc, frames, (flags & AudioClientBufferFlags.TimestampError) != 0, epochQpc100ns);
+                        keep = cutoffQpc100ns is ulong cutoff
+                            ? quality.QpcValid ? AudioClock.CompleteFramesBefore((ulong)qpc, cutoff, Format.SampleRate, frames) : 0
+                            : frames;
+                        // No managed arrays, records or error objects while the native
+                        // packet is held. Only the original authorized prefix is copied.
+                        copied = scratch.CopyPrefix(pointer, (long)keep * Format.BlockAlign,
+                            (flags & AudioClientBufferFlags.Silent) != 0);
+                    }
                 }
+                finally
+                {
+                    try { capture.ReleaseBuffer(frames); }
+                    finally { if (frames > 0) readMetrics.Released(heldAt, Stopwatch.GetTimestamp()); }
+                }
+                if (frames <= 0) return null;
+                if (copied == ScratchCopyResult.ExceedsPacketLimit) throw new IOException("音频包超过1MiB限额。");
+                if (copied == ScratchCopyResult.ExceedsScratchCapacity) throw new IOException("音频包超过已协商的预分配采集缓冲区；未扩大采集范围。");
+                if (copied == ScratchCopyResult.MissingPointer) throw new IOException("非静音包为空指针。");
+                byte[] pcm = scratch.MaterializeAndClear();
                 return new(pcm, frames, keep, unchecked((ulong)device), unchecked((ulong)qpc), (int)flags,
                     quality.QpcValid, quality.DevicePositionValid, frames - keep);
             }
-            finally { capture.ReleaseBuffer(frames); }
+            finally { scratch.Clear(); }
         }
-        public void Dispose() { try { client.Dispose(); } finally { ready.Dispose(); } }
+        public void Dispose()
+        {
+            try { scratch.Dispose(); }
+            finally { try { client.Dispose(); } finally { ready.Dispose(); } }
+        }
     }
 }

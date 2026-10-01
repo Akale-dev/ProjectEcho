@@ -109,16 +109,18 @@ public static class SourceDiscovery
             try
             {
                 using var device = GetExactDevice(enumerator, options.MicrophoneDeviceId, DataFlow.Capture);
-                using var client = device.CreateAudioClient();
-                var sharedFormat = client.MixFormat;
-                var selected = MicrophoneFormatPolicy.Select(sharedFormat, MicrophoneFormatPolicy.ReadDeviceFormat(device));
+                using var selected = MicrophoneFormatPolicy.OpenClient(device);
                 var format = selected.Format;
                 CaptureSession.Describe(format).Validate();
                 if (format.Channels > 2) errors.Add("M0 仅支持单/双声道 mic 原轨；不自动修改设备配置。");
                 bytesPerSecond += format.AverageBytesPerSecond;
                 warnings.Add($"麦克风原轨请求 {format.SampleRate} Hz / {format.BitsPerSample}-bit / {format.Channels} 声道" +
-                    (selected.ConversionFlags != 0 ? $"（共享引擎为 {sharedFormat.SampleRate} Hz，将转换到设备帧计数的采样率）" : "") +
+                    (selected.ProcessingMode == MicrophoneFormatPolicy.SharedRaw
+                        ? "（同设备 RAW 共享格式，不加采样率转换；可能与默认处理模式的音色不同）"
+                        : selected.ConversionFlags != 0 ? $"（共享引擎为 {selected.DefaultMixRate} Hz，将转换到设备帧计数的采样率）" : "") +
                     "；不修改系统格式。实际初始化及设备时钟质量需试录核验。");
+                if (selected.FallbackReason is not null)
+                    warnings.Add("所选设备 RAW 模式或格式不可用，预检保留同设备兼容转换方案：" + selected.FallbackReason);
                 warnings.Add("独立 mic 已明确启用；会议平台静音不会关闭本程序 mic，也可能录到回声/多人。");
             }
             catch (Exception ex) { errors.Add($"所选麦克风不可用，不会替换：{ex.Message}"); }

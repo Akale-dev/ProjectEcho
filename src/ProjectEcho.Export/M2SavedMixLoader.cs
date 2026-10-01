@@ -43,9 +43,10 @@ public static class M2SavedMixLoader
             var r = render.RootElement;
             if (!r.TryGetProperty("sourceManifestSha256", out _) || !r.TryGetProperty("sourceIndexSha256", out _))
                 throw new InvalidDataException("旧版完整混音缺少会议与时间索引指纹；请主动生成一次完整混音后再复用。");
+            if (r.GetProperty("renderVersion").GetString() != M2ExportService.RenderVersion)
+                throw new InvalidDataException("旧混音使用更早的时间映射规则；请主动重新生成完整混音，原件和旧混音均保留。");
             if (manifest.RootElement.GetProperty("schemaVersion").GetString() != "m1-recording-1" ||
                 r.GetProperty("schemaVersion").GetString() != "m2-render-1" ||
-                r.GetProperty("renderVersion").GetString() != "m2-qpc-mono-2-rf64-truepeak" ||
                 r.GetProperty("timeline").GetString() != "complete_elapsed_qpc_packet_mapping" ||
                 ReadHash(r, "sourceManifestSha256") != M2FileSafety.Hash(held[0], cancellationToken) ||
                 ReadHash(r, "sourceIndexSha256") != M2FileSafety.Hash(index, cancellationToken))

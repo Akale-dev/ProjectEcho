@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
+using NAudio.CoreAudioApi.Interfaces;
 using NAudio.Wave;
 
 namespace ProjectEcho.Capture.Windows;
@@ -7,10 +9,118 @@ namespace ProjectEcho.Capture.Windows;
 /// <summary>
 /// Chooses a shared capture stream in the endpoint's device-frame rate domain.
 /// The actual captured format, raw device counter and raw QPC remain unmodified.
-/// This class neither changes endpoint settings nor initializes an audio stream.
+/// RAW selection is local to a new client on the same explicitly selected endpoint.
+/// No path changes endpoint settings or starts capture; initialization is explicit.
 /// </summary>
 internal static class MicrophoneFormatPolicy
 {
+    internal const string SharedDefault = "shared-default";
+    internal const string SharedRaw = "shared-raw";
+    internal const string SharedConverted = "shared-converted";
+
+    /// <summary>
+    /// Selects and optionally initializes a microphone client, but never starts it.
+    /// The caller owns the returned client. RAW properties precede its first MixFormat read:
+    /// NAudio caches that property and SetClientProperties does not invalidate the cache.
+    /// </summary>
+    internal static MicrophoneClientSelection<AudioClient> OpenClient(MMDevice device, bool initialize = false)
+    {
+        var deviceFormat = ReadDeviceFormat(device);
+        return OpenClient(device.CreateAudioClient, client => client.MixFormat, client =>
+        {
+            if (!client.SupportsAudioClient2) throw new RawFormatUnavailableException("raw_client2_unavailable");
+            client.SetClientProperties(AudioStreamCategory.Other, AudioClientStreamOptions.Raw);
+        }, deviceFormat, initialize ? InitializeClient : null);
+
+        static void InitializeClient(AudioClient client, WaveFormat format, AudioClientStreamFlags flags) =>
+            client.Initialize(AudioClientShareMode.Shared, AudioClientStreamFlags.EventCallback | flags,
+                0, 0, format, Guid.Empty);
+    }
+
+    /// <summary>
+    /// Injectable negotiation only: callbacks may query/configure/initialize, never Start.
+    /// Every failed or unused client is released; only a successful result transfers ownership.
+    /// </summary>
+    internal static MicrophoneClientSelection<TClient> OpenClient<TClient>(Func<TClient> createClient,
+        Func<TClient, WaveFormat> readMixFormat, Action<TClient> configureRaw, WaveFormat deviceReportedFormat,
+        Action<TClient, WaveFormat, AudioClientStreamFlags>? initializeClient = null) where TClient : IDisposable
+    {
+        ArgumentNullException.ThrowIfNull(createClient); ArgumentNullException.ThrowIfNull(readMixFormat);
+        ArgumentNullException.ThrowIfNull(configureRaw); ArgumentNullException.ThrowIfNull(deviceReportedFormat);
+        ValidateSupportedFormat(deviceReportedFormat);
+        WaveFormat defaultMix;
+        TClient baseline = createClient();
+        try
+        {
+            defaultMix = readMixFormat(baseline); ValidateSupportedFormat(defaultMix);
+            if (defaultMix.SampleRate == deviceReportedFormat.SampleRate)
+            {
+                // Same-rate endpoints retain the original client, format, flags and processing mode.
+                initializeClient?.Invoke(baseline, defaultMix, 0);
+                return new(baseline, defaultMix, 0, SharedDefault, null, defaultMix.SampleRate, deviceReportedFormat.SampleRate);
+            }
+        }
+        catch { baseline.Dispose(); throw; }
+        baseline.Dispose();
+
+        // A new client is essential: setting RAW after reading MixFormat can return NAudio's
+        // cached default format. All factories here close over the same exact MMDevice.
+        string fallbackReason;
+        TClient raw = createClient();
+        string stage = "configure";
+        try
+        {
+            configureRaw(raw);
+            stage = "format";
+            WaveFormat rawMix = readMixFormat(raw);
+            if (!IsUsableRawFormat(rawMix, deviceReportedFormat))
+                throw new RawFormatUnavailableException("raw_format_not_in_device_rate_domain");
+            stage = "initialize";
+            initializeClient?.Invoke(raw, rawMix, 0);
+            return new(raw, rawMix, 0, SharedRaw, null, defaultMix.SampleRate, deviceReportedFormat.SampleRate);
+        }
+        catch (Exception ex)
+        {
+            raw.Dispose();
+            if (!CanFallbackFromRaw(ex)) throw;
+            fallbackReason = ex is RawFormatUnavailableException unavailable ? unavailable.Reason
+                : $"raw_{stage}_unsupported_0x{ex.HResult:X8}";
+        }
+
+        // No client has ever started. An explicitly unsupported RAW mode/format can retry
+        // the old converted configuration, on another fresh client of the SAME endpoint.
+        TClient fallback = createClient();
+        try
+        {
+            WaveFormat fallbackMix = readMixFormat(fallback);
+            var selected = Select(fallbackMix, deviceReportedFormat);
+            initializeClient?.Invoke(fallback, selected.Format, selected.ConversionFlags);
+            return new(fallback, selected.Format, selected.ConversionFlags,
+                selected.ConversionFlags == 0 ? SharedDefault : SharedConverted, fallbackReason,
+                fallbackMix.SampleRate, deviceReportedFormat.SampleRate);
+        }
+        catch { fallback.Dispose(); throw; }
+    }
+
+    internal static bool IsUsableRawFormat(WaveFormat rawMix, WaveFormat deviceReportedFormat)
+    {
+        ArgumentNullException.ThrowIfNull(rawMix); ArgumentNullException.ThrowIfNull(deviceReportedFormat);
+        try { ValidateSupportedFormat(rawMix); return rawMix.SampleRate == deviceReportedFormat.SampleRate; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException or OverflowException)
+        { return false; }
+    }
+
+    // Deliberately excludes E_ACCESSDENIED, DEVICE_INVALIDATED, RESOURCES_INVALIDATED,
+    // endpoint/service failures and generic E_INVALIDARG. Those errors are not format fallback.
+    internal static bool CanFallbackFromRaw(Exception exception) => exception is RawFormatUnavailableException ||
+        exception is COMException && exception.HResult is AudioClientErrorCode.RawModeUnsupported
+            or AudioClientErrorCode.UnsupportedFormat or unchecked((int)0x80004002) or unchecked((int)0x80004001);
+
+    private sealed class RawFormatUnavailableException(string reason) : NotSupportedException(reason)
+    {
+        internal string Reason { get; } = reason;
+    }
+
     internal static MicrophoneStreamFormat Select(WaveFormat mixFormat, WaveFormat deviceReportedFormat)
     {
         ArgumentNullException.ThrowIfNull(mixFormat);
@@ -107,3 +217,10 @@ internal static class MicrophoneFormatPolicy
 }
 
 internal sealed record MicrophoneStreamFormat(WaveFormat Format, AudioClientStreamFlags ConversionFlags);
+
+internal sealed record MicrophoneClientSelection<TClient>(TClient Client, WaveFormat Format,
+    AudioClientStreamFlags ConversionFlags, string ProcessingMode, string? FallbackReason,
+    int DefaultMixRate, int DeviceReportedRate) : IDisposable where TClient : IDisposable
+{
+    public void Dispose() => Client.Dispose();
+}

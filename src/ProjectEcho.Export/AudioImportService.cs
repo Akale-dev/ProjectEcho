@@ -12,6 +12,7 @@ public sealed record ImportedAudioMeeting(string MeetingDirectory, FullMixResult
 public static class AudioImportService
 {
     public const string SchemaVersion = "m3-audio-import-1";
+    internal const string Timeline = "imported_decoded_media_from_zero";
     private const int Rate = 48000;
     private const long MaximumFrames = 12L * 3600 * Rate;
 
@@ -65,7 +66,7 @@ public static class AudioImportService
         {
             schemaVersion = "m2-render-1", renderVersion = SchemaVersion, sourceStorageComplete = true,
             sampleRate = Rate, channels = 1, frameCount = measurement.Frames, duration100ns,
-            timeline = "imported_decoded_media_from_zero", captureClockMetadataAvailable = false,
+            timeline = Timeline, captureClockMetadataAvailable = false,
             sourceHashes = new[] { new { sha256 = originalHash, sourceId = "imported-file", frames = measurement.Frames } },
             wave = new { file = "mixed_full.wav", sha256 = waveHash, truePeak = protection.After,
                 appliedGain = gain * protection.AppliedGain, additionalDelayFrames = 0 }, compressed = (object?)null, warnings
@@ -74,7 +75,7 @@ public static class AudioImportService
         {
             schemaVersion = SchemaVersion, title = SessionDefaults.Title(DateTimeOffset.Now), project = SessionDefaults.DefaultProject,
             importedAt = DateTimeOffset.UtcNow, isSynthetic = false, duration100ns,
-            captureClockMetadataAvailable = false, recordingTimeKnown = false, timeline = "imported_decoded_media_from_zero",
+            captureClockMetadataAvailable = false, recordingTimeKnown = false, timeline = Timeline,
             original = new { file = originalRelative, sha256 = originalHash, byteLength = original.Length },
             mixDirectory = mixRelative
         }, cancellationToken);
@@ -104,7 +105,7 @@ public static class AudioImportService
         var node = manifest.RootElement;
         if (node.GetProperty("schemaVersion").GetString() != SchemaVersion ||
             node.GetProperty("captureClockMetadataAvailable").GetBoolean() ||
-            node.GetProperty("timeline").GetString() != "imported_decoded_media_from_zero")
+            node.GetProperty("timeline").GetString() != Timeline)
             throw new InvalidDataException("这不是受支持的外部录音会议。");
         var original = node.GetProperty("original");
         string originalPath = M2FileSafety.Inside(meeting, original.GetProperty("file").GetString()!);

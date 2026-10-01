@@ -82,6 +82,10 @@
               "type": "string",
               "minLength": 1
             },
+            "processingMode": {
+              "description": "Observed per-stream processing selection; absent/null in legacy records. Does not replace raw clocks or integrity validation.",
+              "enum": [null, "shared-default", "shared-raw", "shared-converted"]
+            },
             "format": {
               "type": "object",
               "additionalProperties": false,

@@ -42,6 +42,7 @@ internal static class M2SavedMixLoaderTests
         byte[] original = File.ReadAllBytes(render);
         var cases = new Action<JsonObject>[]
         {
+            node => node["renderVersion"] = "m2-qpc-mono-2-rf64-truepeak",
             node => node.Remove("sourceIndexSha256"),
             node => node["sourceManifestSha256"] = new string('0', 64),
             node => node["sourceIndexSha256"] = new string('0', 64),

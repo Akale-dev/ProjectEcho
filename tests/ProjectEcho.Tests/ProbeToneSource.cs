@@ -23,8 +23,8 @@ internal static class ProbeToneSource
 
     public static async Task<int> RunAsync(string[] args)
     {
-        if (args.Length is < 2 or > 3 || args[0] != "--probe-tone-source" || args[1] is not ("target" or "control" or "target-m1" or "target-silence" or "target-sync-short" or "target-sync-long") ||
-            (args.Length == 3 && args[1] is not ("target-sync-short" or "target-sync-long" or "target-m1")))
+        if (args.Length is < 2 or > 3 || args[0] != "--probe-tone-source" || args[1] is not ("target" or "control" or "target-m1" or "target-silence" or "target-sync-short" or "target-sync-stress" or "target-sync-medium" or "target-sync-long") ||
+            (args.Length == 3 && args[1] is not ("target-sync-short" or "target-sync-stress" or "target-sync-medium" or "target-sync-long" or "target-m1")))
         {
             Console.Error.WriteLine("Usage: --probe-tone-source target|control|target-m1|target-silence");
             return 2;
@@ -36,13 +36,15 @@ internal static class ProbeToneSource
         var silent = args[1] == "target-silence";
         var sync = args[1].StartsWith("target-sync-", StringComparison.Ordinal);
         var longSync = args[1] == "target-sync-long";
-        var hardTimeoutSeconds = sync ? (longSync ? 7320 : 75) : silent ? 960 : m1 ? 75 : 30;
+        var mediumSync = args[1] == "target-sync-medium";
+        var stressSync = args[1] == "target-sync-stress";
+        var hardTimeoutSeconds = sync ? (longSync ? 7320 : mediumSync ? 1320 : stressSync ? 180 : 75) : silent ? 960 : m1 ? 75 : 30;
         using var hardDeadline = new Timer(_ => Environment.Exit(124), null, TimeSpan.FromSeconds(hardTimeoutSeconds), Timeout.InfiniteTimeSpan);
         using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(silent ? 955 : hardTimeoutSeconds - 2));
         using var outputGate = new SemaphoreSlim(1, 1);
         var token = lifetime.Token;
         var role = args[1];
-        var provider = new ProbeWaveProvider(role == "control", m1, silent, sync, longSync);
+        var provider = new ProbeWaveProvider(role == "control", m1, silent, sync, longSync, mediumSync, stressSync);
         Task? reportDone = null;
         var playbackFailure = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
         try
@@ -250,13 +252,15 @@ internal static class ProbeToneSource
     internal static int ExpectedFrames(string role) => role switch
     {
         "target-sync-short" => M2LongRunProbe.ShortSeconds * SampleRate,
+        "target-sync-medium" => M2LongRunProbe.MediumSeconds * SampleRate,
+        "target-sync-stress" => M2LongRunProbe.StressSeconds * SampleRate,
         "target-sync-long" => M2LongRunProbe.LongSeconds * SampleRate,
         "target-silence" => SilenceFrames,
         "target-m1" => M1ToneFrames,
         _ => ToneFrames
     };
 
-    private sealed class ProbeWaveProvider(bool control, bool m1 = false, bool silent = false, bool sync = false, bool longSync = false) : IWaveProvider
+    private sealed class ProbeWaveProvider(bool control, bool m1 = false, bool silent = false, bool sync = false, bool longSync = false, bool mediumSync = false, bool stressSync = false) : IWaveProvider
     {
         private int _state;
         private int _toneFrame;
@@ -273,7 +277,7 @@ internal static class ProbeToneSource
             var samples = MemoryMarshal.Cast<byte, float>(buffer[..count]);
             if (Volatile.Read(ref _state) == 1)
             {
-                var totalFrames = sync ? (longSync ? M2LongRunProbe.LongSeconds : M2LongRunProbe.ShortSeconds) * SampleRate
+                var totalFrames = sync ? (longSync ? M2LongRunProbe.LongSeconds : mediumSync ? M2LongRunProbe.MediumSeconds : stressSync ? M2LongRunProbe.StressSeconds : M2LongRunProbe.ShortSeconds) * SampleRate
                     : silent ? SilenceFrames : m1 ? M1ToneFrames : ToneFrames;
                 if (silent) _toneFrame = Math.Min(totalFrames, _toneFrame + count / WaveFormat.BlockAlign);
                 for (var sample = 0; !silent && sample < samples.Length && _toneFrame < totalFrames; sample += Channels, _toneFrame++)
@@ -281,7 +285,8 @@ internal static class ProbeToneSource
                     if (Volatile.Read(ref _state) != 1) break;
                     if (sync)
                     {
-                        var marker = M2LongRunProbe.MarkerSample(_toneFrame, longSync);
+                        var marker = mediumSync ? M2LongRunProbe.MediumMarkerSample(_toneFrame)
+                            : stressSync ? M2LongRunProbe.StressMarkerSample(_toneFrame) : M2LongRunProbe.MarkerSample(_toneFrame, longSync);
                         samples[sample] = marker; samples[sample + 1] = marker;
                         continue;
                     }

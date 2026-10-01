@@ -43,7 +43,8 @@ public sealed record CapturedTrack(
     PcmFormat Format,
     long FrameCount,
     IReadOnlyList<CapturedPacket> Packets,
-    string? SegmentId = null);
+    string? SegmentId = null,
+    string? ProcessingMode = null);
 
 public sealed record CaptureResult(
     string SessionDirectory,

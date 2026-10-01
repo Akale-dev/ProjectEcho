@@ -50,6 +50,7 @@ public sealed class CaptureSession : IAsyncDisposable
     {
         var sources = new List<LiveSource>();
         Task<IReadOnlyList<CapturedTrack>>? writerTask = null;
+        CaptureThreadScheduling.Lease? scheduling = null;
         IReadOnlyList<CapturedTrack> tracks = [];
         bool complete = true;
         string directory = Path.GetFullPath(options.SessionDirectory);
@@ -74,6 +75,10 @@ public sealed class CaptureSession : IAsyncDisposable
             _epoch = Now100ns();
             _startedAt = DateTimeOffset.UtcNow;
             writerTask = Task.Run(() => WriteMain(directory, indexPath, sources));
+            _writerReady.Task.GetAwaiter().GetResult();
+            scheduling = CaptureThreadScheduling.TryEnter();
+            if (!scheduling.Diagnostic.Registered || !scheduling.Diagnostic.PriorityApplied)
+                _warnings.Enqueue("试录线程多媒体调度未启用，Win32错误：" + scheduling.Diagnostic.ErrorCode);
             CaptureLifecycle.StartAfterWriterReady(_writerReady.Task, sources.Select(source => (Action)(() =>
             {
                 source.Client.Start();
@@ -121,6 +126,10 @@ public sealed class CaptureSession : IAsyncDisposable
                     _warnings.Enqueue($"{source.Id} {operation}失败：{ex.Message} (0x{ex.HResult:X8})");
                 })).ToArray());
             foreach (var source in sources) ended = Math.Max(ended, source.Cutoff);
+            try { scheduling?.Dispose(); }
+            catch (Exception ex) { _warnings.Enqueue("试录线程调度收尾失败：" + ex.GetType().Name); }
+            if (scheduling?.Diagnostic is { Registered: true, Released: false, ReleaseErrorCode: { } releaseError })
+                _warnings.Enqueue("试录线程多媒体调度释放未确认，Win32错误：" + releaseError);
             _queue.CompleteAdding();
             if (writerTask is not null)
             {
@@ -140,7 +149,7 @@ public sealed class CaptureSession : IAsyncDisposable
             {
                 try
                 {
-                    var manifest = new { schemaVersion = "m0-spike-1", title = options.Title, project = "未分类",
+                    var manifest = new { schemaVersion = "m0-spike-1", title = options.Title, project = "未分类", scheduling = scheduling?.Diagnostic,
                         sourceMode = options.Mode.ToString(), microphoneEnabled = options.MicrophoneEnabled,
                         selection = new {
                             scopeDescription,
@@ -182,20 +191,27 @@ public sealed class CaptureSession : IAsyncDisposable
     {
         using var enumerator = new MMDeviceEnumerator();
         using var device = SourceDiscovery.GetExactDevice(enumerator, deviceId, flow);
+        if (flow == DataFlow.Capture)
+        {
+            var microphone = MicrophoneFormatPolicy.OpenClient(device, initialize: true);
+            try
+            {
+                return Initialize(id, microphone.Client, microphone.Format, false, microphone.ConversionFlags,
+                    initialized: true, processingMode: microphone.ProcessingMode);
+            }
+            catch { microphone.Dispose(); throw; }
+        }
         var client = device.CreateAudioClient();
         try
         {
             var format = client.MixFormat;
-            var microphone = flow == DataFlow.Capture
-                ? MicrophoneFormatPolicy.Select(format, MicrophoneFormatPolicy.ReadDeviceFormat(device)) : null;
-            return Initialize(id, client, microphone?.Format ?? format, flow == DataFlow.Render,
-                microphone?.ConversionFlags ?? 0);
+            return Initialize(id, client, format, flow == DataFlow.Render);
         }
         catch { client.Dispose(); throw; }
     }
 
     private static LiveSource Initialize(string id, AudioClient client, WaveFormat waveFormat, bool loopback,
-        AudioClientStreamFlags conversionFlags = 0)
+        AudioClientStreamFlags conversionFlags = 0, bool initialized = false, string? processingMode = null)
     {
         var ready = new AutoResetEvent(false);
         try
@@ -207,9 +223,9 @@ public sealed class CaptureSession : IAsyncDisposable
             if (loopback) flags |= AudioClientStreamFlags.Loopback;
             // Shared event-driven streams require both durations to be zero (IAudioClient::Initialize).
             // Let the engine select its buffer; a fixed 100 ms request violates that contract.
-            client.Initialize(AudioClientShareMode.Shared, flags, 0, 0, waveFormat, Guid.Empty);
+            if (!initialized) client.Initialize(AudioClientShareMode.Shared, flags, 0, 0, waveFormat, Guid.Empty);
             client.SetEventHandle(ready.SafeWaitHandle.DangerousGetHandle());
-            return new(id, client, client.AudioCaptureClient, ready, waveFormat, format);
+            return new(id, client, client.AudioCaptureClient, ready, waveFormat, format, processingMode);
         }
         catch { ready.Dispose(); client.Dispose(); throw; }
     }
@@ -348,7 +364,7 @@ public sealed class CaptureSession : IAsyncDisposable
             FlushCheckpoint();
             foreach (var track in writers.Values) track.Finish();
             return writers.Values.Select(x => new CapturedTrack(x.Source.Id, x.FinalPath, x.Source.Format,
-                x.Packets.Sum(p => (long)p.FrameCount), x.Packets.ToArray())).ToArray();
+                x.Packets.Sum(p => (long)p.FrameCount), x.Packets.ToArray(), ProcessingMode: x.Source.ProcessingMode)).ToArray();
 
             void FlushCheckpoint()
             {
@@ -377,7 +393,7 @@ public sealed class CaptureSession : IAsyncDisposable
 
     private object Segment(LiveSource source, CapturedPacket? packet) => new
     {
-        type = "segment", segmentId = source.Id + "-1", sourceId = source.Id,
+        type = "segment", segmentId = source.Id + "-1", sourceId = source.Id, processingMode = source.ProcessingMode,
         format = new { sampleRate = source.Format.SampleRate, channels = source.Format.Channels,
             encoding = source.Format.IsFloat ? "float32le" : $"pcm_s{source.Format.BitsPerSample}le",
             blockAlign = source.Format.BlockAlign, channelMask = source.Format.ChannelMask },
@@ -439,7 +455,8 @@ public sealed class CaptureSession : IAsyncDisposable
         _stop.Dispose(); _queue.Dispose();
     }
     private sealed record WriteItem(string Id, byte[] Bytes, CapturedPacket Packet);
-    private sealed class LiveSource(string id, AudioClient client, AudioCaptureClient capture, AutoResetEvent ready, WaveFormat waveFormat, PcmFormat format) : IDisposable
+    private sealed class LiveSource(string id, AudioClient client, AudioCaptureClient capture, AutoResetEvent ready,
+        WaveFormat waveFormat, PcmFormat format, string? processingMode = null) : IDisposable
     {
         public string Id { get; } = id;
         public AudioClient Client { get; } = client;
@@ -447,6 +464,7 @@ public sealed class CaptureSession : IAsyncDisposable
         public AutoResetEvent Ready { get; } = ready;
         public WaveFormat WaveFormat { get; } = waveFormat;
         public PcmFormat Format { get; } = format;
+        public string? ProcessingMode { get; } = processingMode;
         public CaptureClockHealth ClockHealth { get; } = new();
         public bool Started, InvalidTimestamps, Discontinuity, InitialDiscontinuity;
         public long FrameCount, Discarded;

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using NAudio.Wave;
 using ProjectEcho.Capture.Windows;
 using ProjectEcho.Core;
@@ -24,6 +25,47 @@ internal static class M2ExportTests
         run("T28/T29/T32-WINDOWS M2 full mix and M4A parts actually decode within byte and duration limits", () => RealCodecIntegration(root));
         run("T14/T33/T53-SYNTH M2 verified declared-gap recording preserves elapsed mix and incomplete-source flag", () => DeclaredGap(root));
         run("T20/T28-WINDOWS M2 post-rename compressed hash failure preserves usable WAV fallback", () => CompressionHashFailure(root));
+        run("T33/T50-SYNTH export rechecks cached mix renderer version and preserves current source timeline", () => ExportVersion(root));
+    }
+
+    private static void ExportVersion(string root)
+    {
+        string session = Small(root, "export-version", 0.05);
+        var mix = M2ExportService.RenderMeeting(session, encoder: null);
+        var originalHashes = OriginalHashes(session);
+        string metadata = Path.Combine(mix.Directory, "render.json"); byte[] original = File.ReadAllBytes(metadata);
+        string destinationRoot = Path.Combine(root, "export-version-results");
+        var mutations = new (string Name, Action<JsonObject> Apply)[]
+        {
+            ("legacy-v2", value => value["renderVersion"] = "m2-qpc-mono-2-rf64-truepeak"),
+            ("unknown", value => value["renderVersion"] = "unknown-renderer"),
+            ("missing", value => value.Remove("renderVersion")),
+            ("null", value => value["renderVersion"] = null),
+            ("wrong-type", value => value["renderVersion"] = 3),
+            ("missing-timeline", value => value.Remove("timeline")),
+            ("changed-timeline", value => value["timeline"] = AudioImportService.Timeline),
+            ("false-import", value => { value["renderVersion"] = AudioImportService.SchemaVersion; value["timeline"] = AudioImportService.Timeline; })
+        };
+        try
+        {
+            foreach (var mutation in mutations)
+            {
+                var data = JsonNode.Parse(original)!.AsObject(); mutation.Apply(data); File.WriteAllText(metadata, data.ToJsonString());
+                string destination = Path.Combine(destinationRoot, mutation.Name);
+                // Keep the same already-created FullMixResult: export must independently
+                // inspect on-disk provenance instead of trusting its in-memory identity.
+                Reject<InvalidDataException>(() => M2ExportService.ExportParts(mix, new(M2ExportFormat.Wave, 1_000_000, 30, 0, true), destination));
+                Need(!Directory.Exists(destination), "版本拒绝之后仍创建了导出目录。");
+            }
+        }
+        finally { File.WriteAllBytes(metadata, original); }
+        var result = M2ExportService.ExportParts(mix, new(M2ExportFormat.Wave, 1_000_000, 30, 0, true), Path.Combine(destinationRoot, "current"));
+        using var exported = JsonDocument.Parse(File.ReadAllText(result.ManifestPath!));
+        using var receipt = JsonDocument.Parse(File.ReadAllText(result.LocalReceiptPath!));
+        foreach (var manifest in new[] { exported.RootElement, receipt.RootElement.GetProperty("export") })
+            Need(manifest.GetProperty("renderVersion").GetString() == M2ExportService.RenderVersion &&
+                manifest.GetProperty("timeline").GetString() == "complete_elapsed_qpc_packet_mapping", "当前录音的renderer版本或时间轴未传递。");
+        Need(OriginalHashes(session).OrderBy(pair => pair.Key).SequenceEqual(originalHashes.OrderBy(pair => pair.Key)), "导出版本校验修改了原件。");
     }
 
     private static void Timeline(string root)

@@ -21,6 +21,8 @@ public sealed class RecordingSession : IAsyncDisposable
     private readonly TaskCompletionSource<RecordingResult> completed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConcurrentQueue<string> warnings = new();
     private readonly List<Live> sources = [];
+    private readonly List<RecordedSourceDiagnostics> sourceDiagnostics = [];
+    private WaitHandle[]? sourceWaitHandles;
     private long queuedBytes, savedUs, duration100ns, observedSessionUs;
     private long remoteFrames, micFrames;
     private int startOnce, stopping, nextSegment;
@@ -80,6 +82,10 @@ public sealed class RecordingSession : IAsyncDisposable
     private void Main()
     {
         Task<M1StorageResult>? writer = null;
+        CaptureThreadScheduling.Lease? scheduling = null;
+        long allocatedAtStart = GC.GetAllocatedBytesForCurrentThread(), maximumLoopInterval = 0;
+        int gen0AtStart = GC.CollectionCount(0), gen1AtStart = GC.CollectionCount(1), gen2AtStart = GC.CollectionCount(2);
+        TimeSpan gcPauseAtStart = GC.GetTotalPauseDuration();
         CaptureValidationWorker? validation = null;
         string directory = options.Selection.SessionDirectory;
         ulong end = 0;
@@ -104,6 +110,12 @@ public sealed class RecordingSession : IAsyncDisposable
                 }
                 return new(segmentId, remaining, diskFailure, identityFailure);
             });
+            if (!synthetic && options.EnableMultimediaScheduling)
+            {
+                scheduling = CaptureThreadScheduling.TryEnter();
+                if (!scheduling.Diagnostic.Registered || !scheduling.Diagnostic.PriorityApplied)
+                    warnings.Enqueue("录音线程多媒体调度未启用，Win32错误：" + scheduling.Diagnostic.ErrorCode);
+            }
             OpenSources();
             started.TrySetResult();
             ulong checkAt = epoch, healthAt = epoch;
@@ -111,6 +123,7 @@ public sealed class RecordingSession : IAsyncDisposable
             {
                 if (writerError is not null) throw new IOException("原轨写入失败。", writerError);
                 ulong current = now();
+                maximumLoopInterval = Math.Max(maximumLoopInterval, checked((long)(current - lastIteration)));
                 Interlocked.Exchange(ref observedSessionUs, Us(current));
                 if (current - lastIteration > 20_000_000 && !paused)
                 {
@@ -155,6 +168,10 @@ public sealed class RecordingSession : IAsyncDisposable
             validation?.Dispose();
             try { CloseSources(sources.ToArray(), "stop", stopId); }
             catch (Exception ex) { captureFault = true; warnings.Enqueue("停采收尾异常：" + ex.Message); }
+            try { scheduling?.Dispose(); }
+            catch (Exception ex) { warnings.Enqueue("录音线程调度收尾失败：" + ex.GetType().Name); }
+            if (scheduling?.Diagnostic is { Registered: true, Released: false, ReleaseErrorCode: { } releaseError })
+                warnings.Enqueue("录音线程多媒体调度释放未确认，Win32错误：" + releaseError);
             end = Math.Max(epoch, now());
             Interlocked.Exchange(ref duration100ns, checked((long)(end - epoch)));
             Interlocked.Exchange(ref observedSessionUs, Us(end));
@@ -176,7 +193,10 @@ public sealed class RecordingSession : IAsyncDisposable
             while (writes.TryTake(out var remaining)) Clear(remaining.Pcm);
             var result = new RecordingResult(directory, stored?.ManifestPath ?? Path.Combine(directory, "meeting.json"),
                 stored?.StorageComplete == true && writerError is null, Us(end),
-                warnings.Concat(stored?.Warnings ?? []).Distinct().ToArray());
+                warnings.Concat(stored?.Warnings ?? []).Distinct().ToArray(),
+                new(scheduling?.Diagnostic, maximumLoopInterval, GC.GetAllocatedBytesForCurrentThread() - allocatedAtStart,
+                    GC.CollectionCount(0) - gen0AtStart, GC.CollectionCount(1) - gen1AtStart, GC.CollectionCount(2) - gen2AtStart,
+                    (GC.GetTotalPauseDuration() - gcPauseAtStart).TotalMilliseconds, sourceDiagnostics.ToArray()));
             // A writer validation failure may prevent meeting.json from being written.
             // Keep the technical failure separately so the library can explain why the
             // preserved partial originals need inspection after the Host has exited.
@@ -244,6 +264,7 @@ public sealed class RecordingSession : IAsyncDisposable
     {
         var live = new Live(source, source.Id + "-" + (++nextSegment));
         sources.Add(live);
+        sourceWaitHandles = null;
         try
         {
         long actualBytesPerSecond = sources.Sum(x => (long)x.Source.Format.SampleRate * x.Source.Format.BlockAlign);
@@ -254,7 +275,7 @@ public sealed class RecordingSession : IAsyncDisposable
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Enqueue(new(store =>
         {
-            try { store.AddSegment(live.SegmentId, source.Id, source.WaveFormat); store.Checkpoint(); ready.TrySetResult(); }
+            try { store.AddSegment(live.SegmentId, source.Id, source.WaveFormat, processingMode: source.ProcessingMode); store.Checkpoint(); ready.TrySetResult(); }
             catch (Exception ex) { ready.TrySetException(ex); throw; }
         }));
         // The writer task fault must also wake an item waiting behind an earlier failed write.
@@ -268,7 +289,7 @@ public sealed class RecordingSession : IAsyncDisposable
         ready.Task.GetAwaiter().GetResult();
         live.Prepared = true;
         if (Volatile.Read(ref stopping) != 0) throw new OperationCanceledException("启动已取消。");
-        source.Start(); live.Started = true;
+        source.Start(); live.Started = true; sourceWaitHandles = null;
         lastIteration = now();
         }
         catch
@@ -366,10 +387,13 @@ public sealed class RecordingSession : IAsyncDisposable
 
     private void ServiceStartedSources()
     {
-        foreach (var source in sources.Where(source => source.Started).ToArray())
+        for (int index = 0; index < sources.Count;)
         {
+            var source = sources[index];
+            if (!source.Started) { index++; continue; }
             try { Drain(source, null, 32); PublishPending(source, now(), false); }
             catch (Exception ex) { FailSource(source, ex); }
+            if (index < sources.Count && ReferenceEquals(sources[index], source)) index++;
         }
     }
 
@@ -377,7 +401,7 @@ public sealed class RecordingSession : IAsyncDisposable
     {
         // Wait on the actual WASAPI events, not a timer rounded to the system tick.
         // A short timeout still services no-callback health and synthetic sources.
-        var handles = new WaitHandle[] { wake }.Concat(sources.Where(source => source.Started)
+        var handles = sourceWaitHandles ??= new WaitHandle[] { wake }.Concat(sources.Where(source => source.Started)
             .Select(source => source.Source.PacketReady).OfType<WaitHandle>()).ToArray();
         WaitHandle.WaitAny(handles, handles.Length == 1 ? 5 : 20);
     }
@@ -456,10 +480,17 @@ public sealed class RecordingSession : IAsyncDisposable
             catch (Exception ex) { captureFault = true; warnings.Enqueue(source.Source.Id + " 尾包未完整处理：" + ex.Message); }
             finally
             {
+                try
+                {
+                    if (source.Source.Diagnostics is { } timing)
+                        sourceDiagnostics.Add(new(source.SegmentId, source.Source.Id, source.Source.ProcessingMode, timing));
+                }
+                catch (Exception ex) { warnings.Enqueue("采集性能诊断未完成：" + ex.GetType().Name); }
                 try { source.Source.Dispose(); }
                 catch (Exception ex) { captureFault = true; stopUnconfirmed = true; warnings.Enqueue(source.Source.Id + " 释放失败：" + ex.Message); }
                 while (source.Pending.TryDequeue(out var pending)) { source.Discarded += pending.FrameCount; Clear(pending.Pcm); }
                 sources.Remove(source);
+                sourceWaitHandles = null;
             }
             if (source.DeviceLimited) warnings.Enqueue(source.Source.Id + " 设备帧计数不可依赖；保留原值，以实际API QPC标记时间。长时/双轨同步未验收。");
             if (source.Discarded > 0) warnings.Enqueue(source.Source.Id + $" 边界舍弃 {source.Discarded} 帧。");

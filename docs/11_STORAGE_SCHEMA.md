@@ -40,7 +40,7 @@ meeting manifest v2 新增 captureIndexPath 与 chunkId/segmentId/byteLength；f
 | data.type | 内容 |
 |---|---|
 | session | meetingId、epochQpc100ns、UTC 起点、时区；第一条 sequence=0 |
-| segment | segmentId/sourceId、实际 format（含 blockAlign/channelMask）、设备/QPC/session 锚点；启停/重置/格式变化新建 |
+| segment | segmentId/sourceId、实际 format（含 blockAlign/channelMask）、设备/QPC/session 锚点；可选processingMode；启停/重置/格式变化新建 |
 | packet | segment/chunk/path、原 device/QPC/rawFrameCount/flags、保留偏移及帧数、chunk 内帧位置、派生 sessionStartUs 与 timestampQuality |
 | boundary | requestId、stop/pause/mic_off、各 segment 生效时间、首个禁存设备帧（可确定时）、acceptedThroughSequence、边界舍弃说明 |
 | checkpoint | coveredThroughSequence、各 chunk committedFrameCount/committedPcmBytes/dataOffsetBytes；此前数据和索引已刷新 |
@@ -60,6 +60,8 @@ M1增加：`checkpoint.chunks[].segmentId/pcmSha256`、`checkpoint.observedSessi
 writer保留原始QPC、device、PCM和所有Stop/Pause/MicOff截止规则；不把抖动写成来源缺口。reader从磁盘重新计算并验证声明，篡改数值、缺标记负重叠、设备帧不连续均拒绝。同一原包跨30秒块时，只有首个保留子区间声明该偏差，后续子区间必须为0；恢复保留`SegmentId`。混音先按同段原包整体在相邻实际QPC锚点间映射，再按原包保留偏移映射所有chunk片段，不能把全部偏差压进块尾的一个帧；量化容差也遵循同一原包映射，明确mic-off/暂停段间隙不拉伸，末包名义尾点和实际截止不变。
 
 录音开始时未选择mic设备，可由录音中的明确`mic_on`首次指定；只有实际打开成功才固定该ID，后续开关/恢复不得换设备。`events.jsonl`的mic_on事件附`microphoneDeviceId`以保留当时选择；初始`selection.json`保持初始事实。会话结束另存技术诊断`recording-result.json`，即使writer未能生成meeting.json仍尽力保留错误原因；它不是音频完整性权威，不能代替index/checkpoint或提升失败录音状态。
+
+2026-10-01 mic启动修复：segment的可选`processingMode`为`shared-default`、`shared-raw`或`shared-converted`；旧记录缺字段/null表示未知，未知非空值拒绝。manifest轨道与恢复副本保留实际模式，原journal不重写。该模式只解释采集格式协商，不豁免任何时钟、缺口、hash或隐私边界检查。`recording-result.json.Diagnostics`可含MMCSS请求/释放结果、来源缓冲大小/延迟、轮询/持包时长和进程GC计数；这些是调度诊断，绝不代替原始API QPC或构造音频时间轴。详见[54](54_MICROPHONE_STARTUP_GAP_FIX.md)。
 
 `StorageComplete/IsCleanEnd`表示保存验证，与时钟完整性分开；device无效或存在显式未观察区间时，恢复返回的旧`CaptureResult.Complete`不自动提升为true。恢复副本始终保留recovered标记和原件。
 
