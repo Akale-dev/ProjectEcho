@@ -1,5 +1,96 @@
 # Development status
-Updated: 2026-10-01
+Updated: 2026-10-03
+
+## 目录维护：旧版本与测试数据已清理
+
+2026-10-03 按用户明确授权，删除旧包/重复副本、编译缓存及不再需要的测试录音和会议数据：98,958 个文件，磁盘实际增加约 49 GiB 可用空间。保留最新 M3H-Final 目录与 ZIP、识别设置、源码、开发依赖和 73 份自动测试结果；最新 661 个发布文件及保留文件的完整性核验通过。清理后程序重新生成的索引正常保留。历史“原件/旧包保留”状态由本条更新，历史验收结论不变；本轮未运行产品测试。详见 [65 清理记录](docs/65_WORKSPACE_CLEANUP.md)，明细 `.local/Cleanup-20261003/`。
+
+## 最新：M3H会议识别设置、图片按钮与实时电平
+
+**已实现：**CPU/自动/Vulkan（旧CUDA明确不支持）；提示词自动跟随当前会议保存，不进默认、不提醒保存；本场上次识别选项与新会默认分开，新会创建时快照，失败/取消与后台会话隔离。透明成对PNG/固定中心按压、短硬件下拉、去重复标题、刷新主按钮、录音状态/新会计数0。远端选来源即系统峰值预览，mic只在选设备并点击开启后临时预览、不写文件；Off/Start/关闭等待实际释放。连续dB电平按渲染帧快速上升/平滑回落，真实原峰值与录音帧数不改。
+
+**已测试：**Windows11 25H2 26200.9457/x64，SDK10.0.401/runtime10.0.12/NAudio3.1.0；Release零警告，**263默认回归PASS**。真实远端process/明确端点合成tone响应及隔离/PID失败保护通过；实际WPF三语双主题48次切换中心0DIP、会议提示词/默认/坏旧配置隔离、fake preview起停取消与逐帧平滑通过。初轮1DIP布局漂移已修；旧开发启动默认WPF绘制原生崩溃经A/B采用进程内SoftwareOnly规避，未定位精确底层模块，不改系统/驱动，不影响Whisper Vulkan。软件绘制下最终六项WPF及旧混音/回听/Log回归均PASS，旧失败保留，见[63](docs/63_M3H_MEETING_SETTINGS_AND_LEVEL_PREVIEW.md)。
+
+**最终交付：**`artifacts/ProjectEcho-win-x64-20261003-M3H-Final.zip`，**262605661字节**，SHA-256 `a72c46b46950aefbbfeb542db5bec85c1c5a79a7e41061bdec2cb209f7b40664`。661项清单+manifest解压hash、自带Host runtime/IPC、新/旧六项包内WPF、真实包内Vulkan0公开JFK（3939ms）及字幕往返通过；三生产DLL与263测试相同。证据`.local/M3H/zip-verification.json`、`bundled-wpf-final.json`、`tested-components.json`及`vulkan/wpf-final-package/summary.json`。本轮授权全部收尾后正常关机，执行另记`shutdown-*.json`，不强制关闭未保存程序。
+
+**未测试/限制：**真实mic预览/权限/驱动/拔插未主动执行；合成生命周期与PCM清零不冒充真机。真实共享多进程session分支、独占模式、物理键鼠/跨屏DPI、目标旧Windows/自然会议/干净Windows/长期同步和3小时识别仍NOT_RUN。无真实录音/mic/私人音频访问、上传、全局修改或推送。
+
+## 最新：M3G Vulkan联动、百分秒时间与录音UI
+
+**已实现：**随包CPU/Vulkan选项联动真实程序路径、旧错配配置内存修正、外部自配不替换、GPU实际证据检查保留。字幕/回放/控制ACK生效时间显示到0.01秒，原始ms/us不改写。来源改名为从特定应用/从所有应用录音；删除mic勾选与10秒试录，透明矢量mic图标移至设备下拉下方，默认off、点击请求、ACK后状态、跨会清同意。关闭时预选设备不传给Host，保留首次启用前用户显式改选。
+
+**已测试：**Windows11 25H2 **26200.9457/x64**、SDK10.0.401/runtime10.0.12/NAudio3.1.0；Release零警告、**241自动回归PASS**，三语实际WPF图标/默认隐私/来源锁定与模拟ACK通过。M3F随包Vulkan CLI使用真实RX6900XT/Vulkan0成功；同包CPU CLI配GPU参数报告no GPU found，证明配置错配路径。用户原错误未含CLI路径，不武断归因成二进制损坏。证据`.local/M3G/`和`.local/TestResults/M3G/default-01/results.json`；报告[62](docs/62_M3G_VULKAN_TIMING_AND_MIC_UI.md)。
+
+**最终交付/实测：**`artifacts/ProjectEcho-win-x64-20261002-M3G-Final.zip`，260835657字节，SHA-256 `65f95a62466eb6e67c379e87fe70dcff8cc4a521e5f5929a53967df5aedfade9`。659项清单+manifest实际解压hash、Host自带运行时/IPC、包内三语mic与CPU/Vulkan切换/保存/旧配置、百分秒实际静音定位、录音验证/历史回听排队通过。最终包真实WPF/base识别公开JFK报告Vulkan0、4258ms，原件与配置hash不变；三生产DLL与241回归相同。证据`.local/M3G/zip-verification-final.json`、`bundled-wpf-final.json`、`tested-components.json`、`vulkan/wpf-final-package/summary.json`。首轮测试夹具路径比较失败已修复，原包移至.local/M3G/preliminary-package保留；原生WPF仅差1ms定位可能停原位仍保留，10ms步进实际通过，不伪造时钟。
+
+**未测/限制：**新增小数显示不保证模型声学边界10ms准确；自然会议、3小时识别、其他GPU/CUDA、目标机最终复测、干净Windows、真实mic及原M1/M2平台/长期声学同步未验。本轮无录音/mic/入会/上传/全局修改/推送。
+
+## 最新：M3F 字段提示、回听恢复、单实例与按需压缩
+
+**已实现：**删除录音首行说明，SVG矢量Logo与名称/Ver.M3F同行；录音和本地识别的缺字段/非法配置显示红框，纠正清除。缺来源在进入录音状态前拦截，已确认Host退出的错误不再阻止历史回听，未确认停采仍禁播。WAV回听避免无关M4A全解码、重复点击不重跑校验、等待状态可见且显式播放可排队，切会/停止/录音/关闭清请求。M3F同用户同Windows会话单实例，再开恢复原窗口。用户追加采纳：默认录后只生成完整WAV，M4A/MP3按需导出；会议通常≤3小时，暂不做超大文件或自动分段适配，保留限制和提示。
+
+**已测试：**Windows11 25H2 **26200.9457/x64**、SDK10.0.401/runtime10.0.12/NAudio3.1.0，零警告构建、**235自动回归PASS**；实际WPF三语/红框/矢量100%-200%渲染、失败后两场已有字幕会议静音回听、排队10项安全边界和原件hash通过。单实例六项真实多进程/WPF通过，后台自动启动受OS前台规则限制，但最小化恢复可见已验。首轮脚本null与UI过早布局断言失败保留并修复。见[61](docs/61_M3F_VALIDATION_REPLAY_AND_SINGLE_INSTANCE.md)、`.local/M3F/`及`.local/TestResults/M3F/default-01/results.json`。
+
+**交付核验：** `artifacts/ProjectEcho-win-x64-20261002-M3F.zip`，260,806,537字节；SHA-256 `72e387b146f34d65148addcba11a9130fb10a319286345cf02d5f33c0ab5af82`。658文件实际解压hash、自带Host/WPF、新UI/录音失败恢复/回听排队及Log回归、包内6项隔离单实例和普通MainWindow无参数双启动均PASS；所有自建程序正常退出。三生产DLL与235回归hash一致。证据`.local/M3F/zip-verification.json`、`normal-startup.json`、`single-instance-bundled/report.json`。
+
+**未测/范围：**目标新电脑的启动等待实际耗时、物理键鼠/真实跨屏DPI、完整3小时自然会议识别、真正干净Windows及原M1/M2现场/长期双轨同步仍未验。旧M3E需要关闭后再启M3F（旧版没有单实例协议）。无新采集/mic/私人音频访问/上传/全局设置修改/推送。原件和已有压缩副本不删除。
+
+## 最新：M3E 界面、会议 Log 与 Whisper 尾端修复
+
+**已实现：**左上 Ver. M3E、删左下提示/语言置底、转写与字幕命名、端点开始即确认（仍须显式选设备且不自动回退）、识别硬件同行/主按钮、标题跨页保持；每会议时间戳 Log、旧历史读取/错误记录/脱敏 TXT 导出，基本信息不再显示全局最新记录。记录绑定任务原会议，包括回放异步错误；坏行与日志故障隔离。Whisper 仅允许末句≤250ms小幅越界修正，原始SRT/JSON/文字保留，其他非法仍拒绝并显示数值。
+
+**已测试：**Windows11 25H2 **26200.9457/x64**、SDK10.0.401/runtime10.0.12/NAudio3.1.0，Release零警告零错误，**233默认回归PASS**；实际WPF三语最小布局/草稿/Log A-B异步归属/重开/旧错误/导出脱敏及原件hash通过。真实随包CPU/base对既有SAPI中英混合三样本通过管线；中文再次复现39840>39715ms并成功记录125ms修正。首轮229PASS/3FAIL与构建锁冲突保留，修复后通过。证据`.local/TestResults/M3E/default-final/results.json`、`.local/M3E/`和`.local/diagnostics/m3e-asr-sapi-20261002-01/asr-report.json`，报告[60](docs/60_M3E_LOG_UI_AND_ASR_FIX.md)。**最终交付：** `artifacts/ProjectEcho-win-x64-20261002-M3E-Final.zip`，260,783,512字节；SHA-256 `5a3847b0f57215fcc8b39457e87065761d8604a4cc2fe0c0ed3aeb35d770d939`。657文件ZIP实际解压hash/自带runtime/Host IPC、新UI/Log及包内CPU-base公开JFK实际WPF识别/字幕往返PASS；三生产DLL与233回归hash相同。见`.local/M3E/zip-verification.json`及`tested-components.json`。
+
+**用户实测更新：**用户确认M3D-AudioFix2在新电脑回放正确、音质恢复；此前目标为19043.2364/Jabra，本轮未重新检测系统。这只升级混音/回听的用户报告范围，带mic线程交接/完整性/两小时同步不外推。
+
+**未测：**用户32.831秒原识别输出未取得，目标机M3E重试尚未执行；不能认定该样本已经证实同根因。干净Windows、其他GPU/CUDA、自然金融中文长会、既有M1/M2现场闸门继续保留。无录音/mic/私人音频访问/上传/全局修改/推送。
+
+
+## 最新：AudioFix2端点混音/音质与会议处理结果修复
+
+**已实现：**按当前会议显示、保存和恢复处理结果；后台A不会覆盖B，旧v4历史可看但不冒充新版音频。修复保存合同允许的一输入帧内负量化偏差被混音拒绝；设备连续段用有界平稳映射和跨包邻样本插值，避免把短期QPC抖动转为逐包变速；来源改unity增益，浮点真峰值预检后才必要整体衰减，回听音量明确为1。混音版本v5，旧原轨/派生保留，可主动重生成。mic初始化拆为未启动客户端准备+原采集线程服务绑定，remote不再等其同步协商；stop/off/pause及系统缺口自动暂停取消待开mic，迟到客户端不启动。
+
+**已测试：**Windows11 25H2 **26200.9457/x64**，SDK10.0.401/runtime10.0.12/NAudio3.1.0；Release **0警告0错误，221默认回归PASS**。旧Win10Fix二进制7项新音质对照均预期失败，新版正弦/扫频约84dB参考SNR、强双源约93.4dB且真峰值−2.01dBTP；不是设备噪声/听感验收。新增慢mic准备/取消/线程归属、量化重叠/跨块/边界通过。实际WPF会议结果/旧v4元数据/异步归属通过；新ZIP656清单文件+manifest逐一核验，实际解压后WPF默认音量1与隐私启动、Host自带运行时/IPC及包内会议结果流程PASS。测试过的Core/Capture/Export与新包hash一致。
+
+**交付：**`artifacts/ProjectEcho-win-x64-20261002-M3D-AudioFix2.zip`，**260,754,924字节**，SHA-256 `3d5b97c807585765f928463115086cadd3838e1de032632dc9aabe31296aeb24`。CPU/Vulkan/base/默认配置与上个完整包hash一致，无私人Data。报告[59](docs/59_M3D_ENDPOINT_MIX_AND_HISTORY_FIX.md)，证据`.local/M3D-EndpointFollowup/zip-verification.json`、`bundled-history-ui.json`及`.local/TestResults/M3D-EndpointFollowup/default-final/results.json`。
+
+**未测/失败保留：**用户此次均在新机Win10Pro21H1 **19043.2364/JabraLINK860**测试，确认remote原轨正常、派生较差；旧Win10Fix有混音重叠失败及带警告成功，不能记为完整录音通过。**AudioFix2在该目标机的新录音/原生跨MTA交接/实际听感仍NOT_RUN**。后两份日志属于已生成WAV/M4A但有时钟/完整性警告，警告不删除；真实缺口不恢复为音频。旧两小时/平台隔离/干净Windows/声学同步闸门不升级。本轮无采集、mic、回放声音、用户音频访问、上传、设备/全局设置修改或推送。
+
+## 最新：Win10 19043 进程兼容尝试与端点时钟候选修复
+
+**已实现：**用户确认目标机实际为Windows 10 Pro 21H1 **19043.2364**、无兼容模式，并要求进程录音支持此版本。旧20348门槛正确按原策略拒绝；现依据锁定NAudio3.1.0和OBS官方实现，增加19041–20347显式“兼容尝试、待实测”路径，低于19041仍拒绝，失败保留HRESULT且不自动转端点。端点已有范围确认仍保留。remote仅在有效连续设备帧支持下采用与mic相同的有界QPC抖动规则，writer/恢复/混音一致校验；原PCM/时钟/Stop/Pause/MicOff不改，QPC-only不放宽；失败附相对数值诊断。混音v4保留设备证明的真实缺口，旧原件及派生文件不覆盖。
+
+**已测试：**开发机Windows11 25H2 **26200.9457/x64**，SDK10.0.401/runtime10.0.12/NAudio3.1.0。最终Release **0警告0错误，201默认回归PASS**（9组新端点时钟/跨块/Stop/篡改与3组版本/模拟激活测试）；独立代码复审无阻塞。新ZIP **655清单文件+manifest**逐文件hash验证，实际解压至新目录后WPF隐私启动、自带Host运行时/IPC通过；CPU/Vulkan/base/默认配置与上个完整包hash一致。没有采集、mic、入会、上传、全局修改或推送。
+
+**交付：**`artifacts/ProjectEcho-win-x64-20261002-M3D-Win10Fix.zip`，**260,720,845字节**，仍附CPU/Vulkan/base且无私人Data。SHA-256 `3702c260029c2530de7c1d1ea745b301323c1db2c5260ab883a250f7b50104af`；原包保留。见[58](docs/58_M3D_ENDPOINT_RECORDING_FIX.md)与`.local/M3D-EndpointFix/zip-verification.json`、`.local/TestResults/M3D-EndpointFix/default-final/results.json`。
+
+**未测/失败保留：**目标机旧版端点实录失败为用户报告，只有几KB `.wav.partial`，没有取得失败原包，不能确认本修复覆盖其实际抖动幅度或断续。**修复后19043进程激活/范围/完整保存及Jabra端点录音仍NOT_RUN**；旧失败目录恢复、M0严格时钟、长录音/声学同步、干净Windows闭环均不升级。首轮197PASS/1FAIL（旧夹具把合法连续device小抖动当非法）与中间CA1416警告日志保留，最终已修正通过。下一步由用户主动做普通录音30–60秒；若失败仅反馈新错误数值，无需音频或Data上传。
+
+## M3D最终追加交付：RX6900XT Vulkan实测通过，附base的完整ZIP已修复中文路径并复测
+
+**已实现/部署：**保留全部M3D功能及教程；新增真正可搬家的相对引擎/模型配置。项目内从官方b5130源码静态构建独立CPU/Vulkan EXE，免VC/GCC/.NET SDK预装；模型随包base。Vulkan部署在`H:\AI\Whisper\whisper-b5130-vulkan-ProjectEcho-20261002`，原CPU程序、模型及原配置不改。最终包的本机Data配置已选择此Vulkan引擎和用户原large-v3；**ZIP本身仍默认CPU+base且不含本机Data**。
+
+**已测试：**Windows11 25H2 26200.9457/x64，RX6900XT、AMD驱动32.0.21043.10005、Vulkan loader1.4.309.0；C# Release 0警告0错误、**189回归PASS**、开发与最终包各七WPF流程PASS。最终UTF-8引擎：真实Vulkan base/large-v3、识别中取消/进程退出、取消后重试、prompt、原件/版本保留全部PASS。真实本机安装目录经最终包UI使用large-v3，**Vulkan0、9.699秒**完成公开11秒JFK并通过导出往返，设置未改。它是固定样本结果，不作金融质量或通用性能承诺。
+
+**发现并修复：**首个ZIP实际在中文路径识别失败（窄argv把中文变成问号）。给CLI加入进程级UTF-8/longPathAware/asInvoker manifest，不改系统locale；重编两引擎、更新安装和ZIP。新ZIP实际解压至含中文的新目录、不同cwd、无有效外部DOTNET_ROOT；**654文件逐一核验，CPU及Vulkan真实M3D UI识别均PASS**，所有引擎/模型路径来自解压目录。旧失败ZIP已移至`.local/M3D-Vulkan/rejected-package`隔离，旧日志保留。
+
+**最终ZIP：**`artifacts/ProjectEcho-win-x64-20261002-M3D-Complete-Final.zip`，**260,719,760字节（约261 MB）**，解压内容654文件/452,057,087字节。ZIP SHA-256 **`532a24ccd0942e4abb908a46b966a82384508cf37f0db70301d26a0947902737`**；清单SHA **`137da2f07954fef1716a52ba5fca352686979f4d42c8c14f7733f79f02e45027`**。含应用/Host运行时、SQLite、独立CPU/Vulkan、base、16项新增ASR许可与来源。收尾更正旧README说明与报告链接后重新压缩，所有非文档文件与实际测试ZIP哈希相同，最终ZIP逐文件解压流hash再次通过（`documentation-repack.json`）。配套`.zip.sha256`及`.package.json`可验证，程序入口为同名文件夹内`ProjectEcho.exe`。
+
+**未测/限制：**真正另一台干净Windows仍NOT_RUN；本机依赖闭包/无外部runtime/中文目录搬家通过不能替代它。Vulkan需要目标机兼容厂商驱动；CUDA、其他GPU、专业金融/中文混合长会质量仍未验。通用CPU引擎以基础x64兼容优先，2线程大模型可能慢，可调线程或用Vulkan。上游C++存在已记录编译警告，未冒称引擎零警告。M1/M2旧硬件、两小时、声学同步、深路径限制不变。无采集/mic/会议/上传/全局配置改动/推送；用户授权完成后正常关机，不强制关闭未保存应用。
+
+报告[57](docs/57_M3D_VULKAN_AND_COMPLETE_PACKAGE.md)，证据`.local/M3D-Vulkan/gpu-utf8-final/report.json`、`cpu-static-final/report.json`、`zip-relocation.json`、`local-installed-wpf.json`、`wpf-bundle-final.json`、`.local/TestResults/M3D-Vulkan/default-final/results.json`、`.local/diagnostics/portable-20261002-001855/portable-smoke.json`。状态`COMPLETE_PACKAGE_DELIVERED / AMD_VULKAN_AND_RELOCATION_PASS / CLEAN_WINDOWS_PENDING`。下面M3D的CPU-only条目为追加部署之前的历史。
+
+## M3D：本地识别硬件/提示词/多版本与界面、零基础配置教程
+
+**已实现：**用户10项M3D及追加教程按钮：CPU/Auto/Vulkan/CUDA、线程/引擎GPU编号、initial prompt、本地模型SHA预期值比对移除；删三处页面大字/提示栏；侧栏录音状态和对应会议“识别中…”闪烁/跳转；紧凑边框EN/中；同会重复点击及普通录音期间纯会库导航；模型/日期/类型版本选择、旧版不覆盖、会内未保存草稿保持。CLI/模型旁分别有“如何配置”，三语新手教学、正确CPU/CUDA包和Vulkan限制、完整解压/选文件/模型下载与排错、显式官方链接。原音频/原稿完整性与停采/禁播约束保留。
+
+**已测试：**Windows11 25H2 **26200.9457/x64**、SDK10.0.401/runtime10.0.12/NAudio3.1.0，Release **0警告0错误、186组默认回归PASS**。开发版七项WPF、三语设置/教程、录音状态与导航/回放锁定、版本/未存草稿/旧版导出/磁盘重开及最小窗口均通过；自有WPF渲染图已目视检查。真实已有whisper.cpp1.9.4/b5130在11秒公开JFK文件运行base+金融prompt **2.294秒**、large-v3+prompt **41.570秒**、Auto/base **1.942秒**均成功，四个独立版本含测试子修订保留；显式Vulkan在CPU引擎上**明确失败且不生成成功稿**。实际WPF按钮prompt传递/侧栏任务归属/结束清理及字幕往返也通过。耗时不外推，专业词质量提升未验。
+
+**交付：**`artifacts/ProjectEcho-win-x64-20261001-M3D/ProjectEcho.exe`，完整win-x64自包含631文件，清单SHA-256 `9dde0f2b0c38bf25b4b4082a335495e917295335a02d9c4e8a78e6199913b4e5`。包完整性、WPF启动、自带Host运行时/无采集IPC通过。包内七流程最终通过；剪贴板占用首轮FAIL和同包重试PASS分别见`.local/M3D/portable-wpf.json`及`portable-transcript-retry.json`。保持完整目录；已有模型配置在验包后复制到可变Data/settings，模型/引擎不随包分发。新手指南见[53](docs/53_M3C_USER_GUIDE_ZH.md)，完整实施/失败记录见[56](docs/56_M3D_IMPLEMENTATION.md)。
+
+**未测试/限制：**本机现有引擎仅CPU；没有下载或安装Vulkan/CUDA构建，AMD/GPU真实推理和加速**NOT_RUN**。官方b5130无Windows Vulkan预编译资产，教学已明确说明需相应构建；不是选下拉即可加速。真实金融/中文/混合长会质量、物理鼠标/人工听感、干净Windows、原M1/M2现场闸门未因本轮升级通过。保留旧mic/两小时/深路径限制；没有录音、启mic、入会、computer-use、上传、全局环境更改或远端推送。
+
+**失败及修复：**首次WPF启动器缺项目DOTNET_ROOT未运行；导航初测record可变通知字段影响ListBox身份，改稳定引用class后通过；真实UI新增测试初轮误读JSON字段大小写，生产ASR已成功，修正断言后通过。旧日志全部保留。证据：`.local/M3D/environment.json`、`build-help-final.log`、`.local/TestResults/M3D/default-final/results.json`、`wpf-final.json`、`wpf-help-final.json`、`real-01/report.json`、`real-ui-02.json`、`.local/diagnostics/portable-20261001-233406/portable-smoke.json`。状态`IMPLEMENTED / WINDOWS_FILE_AND_UI_VALIDATED / GPU_HARDWARE_PENDING`。以下为历史记录。
 
 ## 最新跟进：导航对齐、回听字幕跟随与large-v3进度显示已修正
 
@@ -148,12 +239,17 @@ Updated: 2026-10-01
 | M3 local ASR/import | IMPLEMENTED / PUBLIC_ENGLISH_MODEL_AND_REPLAY_VALIDATED | docs/45–47；真实base英文/UI识别、取消重试、外部录音、字幕点击回听及SRT/VTT往返通过；中文/混合语言/长会议仍未验；无SQLite |
 | M3b meeting UI / formats / ASR boundary | FIX_IMPLEMENTED / WINDOWS_AUTOMATED_VALIDATED / REAL_MIC_RETEST_PENDING | docs/48–51；141组通过；七项反馈修复与WPF/公开base通过；修复后16k mic+Zoom和44.1k硬件待验，Qwen仅准备 |
 | M3C SQLite / localized workspace | IMPLEMENTED / AUTOMATED_TESTING_COMPLETED / DOCUMENTED_LIMITATIONS | docs/52–53；154默认回归、最终包WPF通过；实际两小时mic连续性FAIL保留；完整有警告导出、静音和故障恢复通过 |
+| M3D local ASR hardware / prompt / versions / setup help | COMPLETE_PACKAGE_DELIVERED / AUDIOFIX2_FIELD_RETEST_PENDING | docs/56–59；ASR既有证据保留；AudioFix2有221回归/实际WPF/656文件ZIP通过，用户Win10Fix失败和AudioFix2新机待验分列；CUDA/其他GPU和干净Windows未验 |
+| M3E meeting Log / UI / Whisper timestamp | IMPLEMENTED / 233_REGRESSIONS_AND_REAL_CPU_BASE_PASS / TARGET_RETEST_PENDING | docs/60；按会议持久历史/导出/三语界面；目标32.831秒录音需用户重试 |
+| M3F input validation / replay / single instance | IMPLEMENTED / 235_AUTOMATED_AND_WINDOWS_UI_PASS / TARGET_PENDING | docs/61；按需压缩；超大适配暂缓 |
+| M3G Vulkan / timeline / mic UI | DELIVERED / 241_REGRESSIONS_AND_BUNDLED_VULKAN_WPF_PASS | docs/62；百分秒定位/新mic/659文件完整ZIP通过，声学准确率和旧现场闸门未替代 |
+| M3H meeting ASR / mic images / level preview | DELIVERED / 263_REGRESSIONS_AND_BUNDLED_WPF_VULKAN_PASS | docs/63；本场自动prompt/默认隔离、原生remote及合成mic边界、661文件ZIP；真实mic与旧现场闸门不升级 |
 | M4 project analysis | NOT_STARTED | none |
 | M5 optional tab extension | OPTIONAL_NOT_STARTED | none |
 | M6 release verification | NOT_STARTED | none |
 
 ## Next task
-使用M3C-Final完整便携包，在设置选择原Data读取旧会议。下一步人工核对Jabra/其他真实设备的断续、Zoom/Webex和专用浏览器范围，评估中文/混合ASR时间边界与质量策略；不要自动修补原始缺口或放宽合同来制造通过。干净Windows、声学同步和物理系统状态保持未验。
+使用保留的M3H-Final目录；旧测试会议已清空，现有识别设置保留。提示词自动跟随当前会；保存为默认配置只影响以后新会。由用户主动验证真实mic开启预览、关闭边界和所用目标设备；新录音继续保留原件与完整性警告，长期同步/干净Windows等旧闸门不变。
 
 ## Per-stage reporting template
 Implemented:

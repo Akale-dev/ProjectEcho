@@ -12,6 +12,15 @@ internal static class M3SentenceSegmentationTests
         run("T35/T38-SYNTH missing invalid or mismatched token times preserve original cues", () => Fallback(root));
         run("T35/T38-SYNTH unfinished sentences join without crossing pauses or losing tail", () => Join(root));
         run("T35/T38-SYNTH raw/manual import and historical revisions remain untouched", () => OriginalAndRerun(root));
+        run("T35/T38-SYNTH M3G Whisper hundredth token boundaries survive normalization", () => Hundredths(root));
+    }
+
+    private static void Hundredths(string root)
+    {
+        var (_, result) = Run(root, "hundredths"); var cues = result.Revision!.Segments;
+        Need(cues.Count == 2 && cues[0].StartMs == 1230 && cues[0].EndMs == 1370 &&
+            cues[1].StartMs == 1380 && cues[1].EndMs == 1490 &&
+            cues.All(value => value.TimestampQuality == "approximate"), "Whisper 百分秒 token 边界被截断或被宣称为声学精确。");
     }
 
     private static void Sentences(string root)
@@ -103,6 +112,8 @@ internal static class M3SentenceSegmentationTests
         string variant = behavior["synthetic-sentence-".Length..];
         var cues = new List<Cue> { new(100, 900, "第一句。第二句！“Third sentence?”",
             [T("第一句", 100, 340), T("。", 350, 350), T("第二句", 400, 590), T("！", 600, 600), T("“Third", 650, 720), T(" sentence", 720, 880), T("?”", 890, 900)]) };
+        if (variant == "hundredths") cues = [new(1230, 1490, "百分秒第一句。百分秒第二句。",
+            [T("百分秒第一句。", 1230, 1370), T("百分秒第二句。", 1380, 1490)])];
         if (variant == "english") cues = [new(100, 900, "Dr. Lee paid 3.14 dollars. Next sentence!",
             [T("Dr", 100, 120), T(".", 120, 120), T(" Lee paid ", 120, 250), T("3", 250, 280), T(".", 280, 280),
                 T("14 dollars", 280, 480), T(".", 500, 500), T(" Next sentence", 550, 880), T("!", 900, 900)])];

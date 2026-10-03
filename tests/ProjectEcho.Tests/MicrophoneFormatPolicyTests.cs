@@ -127,8 +127,8 @@ internal static class MicrophoneFormatPolicyTests
         {
             Require(mix.FrameCount == 168000, "Different mic rate/ending truncated the complete 3.5-second meeting.");
             float At(double seconds) => mix.ReadFrames((long)(seconds * 48000), 1)[0];
-            Require(Math.Abs(At(.1) - .04) < .0001 && Math.Abs(At(.5) - .12) < .0001 &&
-                Math.Abs(At(1.5) - .04) < .0001 && Math.Abs(At(2.3) - .12) < .0001 && Math.Abs(At(3.49) - .04) < .0001,
+            Require(Math.Abs(At(.1) - .1 * M2TimelineRenderer.SourceGain) < .0001 && Math.Abs(At(.5) - .3 * M2TimelineRenderer.SourceGain) < .0001 &&
+                Math.Abs(At(1.5) - .1 * M2TimelineRenderer.SourceGain) < .0001 && Math.Abs(At(2.3) - .3 * M2TimelineRenderer.SourceGain) < .0001 && Math.Abs(At(3.49) - .1 * M2TimelineRenderer.SourceGain) < .0001,
                 "Multi-rate mixing moved the mic boundary, filled the pause or lost the remote tail.");
         }
         var asr = AsrAudioPreparation.Prepare(mixed, Hash(mixed), Path.Combine(root, "asr"));

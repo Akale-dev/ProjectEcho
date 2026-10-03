@@ -262,20 +262,31 @@ public sealed class M1Storage : IDisposable
         }
         if (previous.RetainedFrameOffset + previous.FrameCount != previous.RawFrameCount)
             throw new InvalidDataException("被截断原包之后必须先建立边界及新segment。");
-        if (packet.QpcPosition100ns <= previous.QpcPosition100ns) throw new InvalidDataException("原始QPC不递增，拒绝写入PCM。");
+        if (packet.QpcPosition100ns <= previous.QpcPosition100ns)
+            throw ClockFailure("原始QPC不递增，拒绝写入PCM。", segment, previous, packet);
         var difference = ((Int128)packet.QpcPosition100ns - previous.QpcPosition100ns) * segment.Format.SampleRate -
             (Int128)previous.RawFrameCount * AudioClock.UnitsPerSecond;
-        clockJitter = MicrophonePacketClock.BoundedJitter100ns(segment.SourceId, segment.Format.SampleRate, previous, packet);
+        clockJitter = DevicePacketClock.BoundedJitter100ns(segment.SourceId, segment.Format.SampleRate, previous, packet);
         if (clockJitter == 0 && difference < -AudioClock.UnitsPerSecond)
-            throw new InvalidDataException("原包QPC重叠超过一帧，且没有连续设备帧的小幅抖动证据，拒绝写入PCM。");
+            throw ClockFailure("原包QPC重叠超过一帧，且没有连续设备帧的小幅抖动证据，拒绝写入PCM。", segment, previous, packet);
         ulong gap = clockJitter == 0 && difference > AudioClock.UnitsPerSecond ? checked((ulong)(difference / segment.Format.SampleRate)) : 0;
         if (packet.DevicePositionValid && previous.DevicePositionValid)
         {
             var expected = (UInt128)previous.DevicePosition + (uint)previous.RawFrameCount;
             if (packet.DevicePosition < expected || (packet.DevicePosition != expected && gap == 0 && (packet.Flags & 1) == 0))
-                throw new InvalidDataException("设备帧倒退或出现未报告缺口，拒绝写入PCM。");
+                throw ClockFailure("设备帧倒退或出现未报告缺口，拒绝写入PCM。", segment, previous, packet);
         }
         return gap;
+    }
+    private static InvalidDataException ClockFailure(string message, Segment segment, CapturedPacket previous, CapturedPacket current)
+    {
+        // Relative numeric evidence only: no audio, source identity, absolute QPC,
+        // endpoint name or process details. Includes the rejected packet's clocks.
+        Int128 qpcDelta = (Int128)current.QpcPosition100ns - previous.QpcPosition100ns;
+        Int128 deviceDelta = (Int128)current.DevicePosition - previous.DevicePosition;
+        Int128 deviation = qpcDelta * segment.Format.SampleRate - (Int128)previous.RawFrameCount * AudioClock.UnitsPerSecond;
+        return new InvalidDataException(message + FormattableString.Invariant(
+            $" rate={segment.Format.SampleRate}; rawFrames={previous.RawFrameCount}->{current.RawFrameCount}; qpcDelta100ns={qpcDelta}; nominalDeviation100ns={deviation / segment.Format.SampleRate}; deviceDeltaFrames={deviceDelta}; deviceValid={previous.DevicePositionValid}->{current.DevicePositionValid}; flags={previous.Flags}->{current.Flags}."));
     }
     private void Append(object data) => WriteLine(journal, sequence++, data, synthetic);
     internal static void WriteLine(FileStream stream, long seq, object data, bool synthetic)

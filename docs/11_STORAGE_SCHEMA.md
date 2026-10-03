@@ -57,6 +57,10 @@ M1增加：`checkpoint.chunks[].segmentId/pcmSha256`、`checkpoint.observedSessi
 
 2026-09-30 M3b修复补充：对同一mic段，相邻原包设备位置有效且严格连续、QPC有效递增、当前无discontinuity/timestamp-error时，允许声明有独立设备帧证据的小幅QPC间隔偏差。可选整数`packet.clockJitter100ns`保存有符号的`(本包QPC−前包QPC)−前包原始帧数/采样率`（100ns，向零取整）；非零偏差须大于一输入帧、不超过±20000个100ns（2ms），且不超过前包时长的25%。超过范围或缺少连续设备帧证据的负重叠仍拒绝；正向大缺口仍保留gap。零/缺字段维持旧校验，不回填或改写旧索引。此规则只处理短期包时钟抖动，不代表真实双设备长时同步通过。
 
+2026-10-02 端点修复将同样的有界规则用于具有有效连续设备帧的 remote 段；阈值不变、原始时钟不改。写入/恢复/混音共同使用 `DevicePacketClock` 校验；QPC-only 来源没有新增豁免。混音 v4 对有设备计数的 remote 同样保留真实微小缺口，旧原件/索引不改，旧派生缓存不自动冒充 v4。目标机复测边界见[58](58_M3D_ENDPOINT_RECORDING_FIX.md)。
+
+同日AudioFix2派生混音升级v5：合法一帧内负量化重叠与存储合同一致；设备连续段作有界平稳映射，清单`deviceClockSmoothing`记录窗口、包数和最大校正，`wave.appliedGain`记录写PCM前和后置保护的总固定增益。原packet/边界索引不改。新增每会`processing-result.json`是带源manifest指纹的界面历史记录，绝不取代原件校验、不是最小音频导出内容；旧v4历史仅显示，不能当成v5可播放缓存。详见[59](59_M3D_ENDPOINT_MIX_AND_HISTORY_FIX.md)。
+
 writer保留原始QPC、device、PCM和所有Stop/Pause/MicOff截止规则；不把抖动写成来源缺口。reader从磁盘重新计算并验证声明，篡改数值、缺标记负重叠、设备帧不连续均拒绝。同一原包跨30秒块时，只有首个保留子区间声明该偏差，后续子区间必须为0；恢复保留`SegmentId`。混音先按同段原包整体在相邻实际QPC锚点间映射，再按原包保留偏移映射所有chunk片段，不能把全部偏差压进块尾的一个帧；量化容差也遵循同一原包映射，明确mic-off/暂停段间隙不拉伸，末包名义尾点和实际截止不变。
 
 录音开始时未选择mic设备，可由录音中的明确`mic_on`首次指定；只有实际打开成功才固定该ID，后续开关/恢复不得换设备。`events.jsonl`的mic_on事件附`microphoneDeviceId`以保留当时选择；初始`selection.json`保持初始事实。会话结束另存技术诊断`recording-result.json`，即使writer未能生成meeting.json仍尽力保留错误原因；它不是音频完整性权威，不能代替index/checkpoint或提升失败录音状态。

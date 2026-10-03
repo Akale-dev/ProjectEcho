@@ -34,6 +34,9 @@ public sealed class RecordingSession : IAsyncDisposable
     private RecordingOptions options = null!;
     private string? fixedMicrophoneDeviceId;
     private string remoteFault = "", micFault = "";
+    private MicrophonePreparation? microphonePreparation;
+    private Control? pendingMicrophoneControl;
+    private long microphonePreparationStarted;
     public Task<RecordingResult> Completion => completed.Task;
     public event Action<RecordingHealth>? HealthChanged;
     public event Action<RecordingAck>? Acknowledged;
@@ -127,6 +130,7 @@ public sealed class RecordingSession : IAsyncDisposable
                 Interlocked.Exchange(ref observedSessionUs, Us(current));
                 if (current - lastIteration > 20_000_000 && !paused)
                 {
+                    CancelPendingMicrophone("检测到系统/调度时间缺口，等待中的麦克风未启动。");
                     ulong pauseBoundary = CloseSources(sources.ToArray(), "pause", "system-gap");
                     paused = true;
                     warnings.Enqueue("检测到系统/调度时间缺口；已暂停，需明确恢复。未更改电源策略。");
@@ -136,6 +140,7 @@ public sealed class RecordingSession : IAsyncDisposable
                 lastIteration = current;
                 while (controls.TryDequeue(out var control)) Execute(control);
                 if (Volatile.Read(ref stopping) != 0) break;
+                CompletePendingMicrophone();
                 if (validation.TryTake(out var validationResult))
                 {
                     if (validationResult!.Elapsed >= TimeSpan.FromSeconds(2))
@@ -165,6 +170,7 @@ public sealed class RecordingSession : IAsyncDisposable
         finally
         {
             lock (controlGate) Volatile.Write(ref stopping, 1);
+            CancelPendingMicrophone("会话已停止，麦克风未启动。");
             validation?.Dispose();
             try { CloseSources(sources.ToArray(), "stop", stopId); }
             catch (Exception ex) { captureFault = true; warnings.Enqueue("停采收尾异常：" + ex.Message); }
@@ -252,15 +258,41 @@ public sealed class RecordingSession : IAsyncDisposable
 
     private void OpenSources()
     {
+        IRecordingAudioSource? remote = null, microphone = null;
         try
         {
-            Open(factory.OpenRemote(options.Selection));
-            if (micEnabled) Open(factory.OpenMicrophone(fixedMicrophoneDeviceId
-                ?? throw new InvalidOperationException("未选择固定麦克风。")));
+            remote = factory.OpenRemote(options.Selection);
+            if (micEnabled)
+            {
+                BeginMicrophonePreparation(fixedMicrophoneDeviceId ?? throw new InvalidOperationException("未选择固定麦克风。"));
+                IPreparedRecordingSource? prepared;
+                Exception? failure;
+                while (!microphonePreparation!.TryTake(out prepared, out failure))
+                {
+                    if (Volatile.Read(ref stopping) != 0) throw new OperationCanceledException("启动已取消。");
+                    if (Stopwatch.GetElapsedTime(microphonePreparationStarted) > TimeSpan.FromSeconds(10))
+                        throw new TimeoutException("麦克风初始化超过10秒；尚未启动采集。");
+                    WaitForSourceOrControl();
+                }
+                microphonePreparation = null;
+                using (prepared)
+                {
+                    if (failure is not null) throw new IOException("麦克风初始化失败：" + failure.Message, failure);
+                    if (Volatile.Read(ref stopping) != 0) throw new OperationCanceledException("启动已取消。");
+                    microphone = prepared!.CompleteOnCaptureThread();
+                }
+            }
+            // Both native clients and both disk segments must be prepared before
+            // either starts. Slow microphone activation cannot fill an unread
+            // remote buffer during initial Start or Resume.
+            var readyRemote = remote; remote = null; Open(readyRemote, start: false);
+            if (microphone is not null) { var readyMic = microphone; microphone = null; Open(readyMic, start: false); }
+            foreach (var live in sources.Where(source => !source.Started).ToArray()) StartPreparedSource(live);
         }
-        catch { CloseSources(sources.ToArray(), "stop", "start-failed"); throw; }
+        catch { CancelPendingMicrophone("启动已取消，麦克风未启动。"); CloseSources(sources.ToArray(), "stop", "start-failed"); throw; }
+        finally { microphone?.Dispose(); remote?.Dispose(); }
     }
-    private void Open(IRecordingAudioSource source)
+    private void Open(IRecordingAudioSource source, bool start = true)
     {
         var live = new Live(source, source.Id + "-" + (++nextSegment));
         sources.Add(live);
@@ -288,15 +320,70 @@ public sealed class RecordingSession : IAsyncDisposable
         }
         ready.Task.GetAwaiter().GetResult();
         live.Prepared = true;
-        if (Volatile.Read(ref stopping) != 0) throw new OperationCanceledException("启动已取消。");
-        source.Start(); live.Started = true; sourceWaitHandles = null;
-        lastIteration = now();
+        if (start) StartPreparedSource(live);
         }
         catch
         {
             try { CloseSources([live], "stop", "open-failed"); }
             catch (Exception ex) { warnings.Enqueue("启动来源清理失败：" + ex.Message); Interlocked.Exchange(ref stopping, 1); }
             throw;
+        }
+    }
+
+    private void StartPreparedSource(Live live)
+    {
+        if (Volatile.Read(ref stopping) != 0) throw new OperationCanceledException("启动已取消。");
+        live.Source.Start(); live.Started = true; sourceWaitHandles = null;
+        lastIteration = now();
+    }
+
+    private void BeginMicrophonePreparation(string deviceId)
+    {
+        if (microphonePreparation is { HasExited: false })
+            throw new InvalidOperationException("上次麦克风初始化尚未退出；不会重复创建或更换设备。");
+        microphonePreparationStarted = Stopwatch.GetTimestamp();
+        microphonePreparation = new(() => factory.PrepareMicrophone(deviceId));
+    }
+
+    private void CancelPendingMicrophone(string reason)
+    {
+        microphonePreparation?.Cancel();
+        pendingMicrophoneControl?.Done.TrySetException(new OperationCanceledException(reason));
+        pendingMicrophoneControl = null;
+    }
+
+    private void CompletePendingMicrophone()
+    {
+        if (pendingMicrophoneControl is not { } control) return;
+        if (paused || Volatile.Read(ref stopping) != 0)
+        {
+            CancelPendingMicrophone("会话已暂停或停止，等待中的麦克风未启动。");
+            return;
+        }
+        if (Stopwatch.GetElapsedTime(microphonePreparationStarted) > TimeSpan.FromSeconds(10))
+        {
+            CancelPendingMicrophone("麦克风初始化超过10秒；麦克风未启动，现有录音继续。");
+            warnings.Enqueue("控制未完成：mic_on：麦克风初始化超过10秒。");
+            return;
+        }
+        if (!microphonePreparation!.TryTake(out var prepared, out var failure)) return;
+        microphonePreparation = null; pendingMicrophoneControl = null;
+        using (prepared)
+        {
+            try
+            {
+                if (failure is not null) throw new IOException("麦克风初始化失败：" + failure.Message, failure);
+                if (Volatile.Read(ref stopping) != 0) throw new OperationCanceledException("会话已停止，麦克风未启动。");
+                Open(prepared!.CompleteOnCaptureThread());
+                fixedMicrophoneDeviceId ??= control.DeviceId;
+                micEnabled = true; micFault = "";
+                AcknowledgeControl(control);
+            }
+            catch (Exception ex)
+            {
+                control.Done.TrySetException(ex);
+                warnings.Enqueue("控制未完成：mic_on：" + ex.Message);
+            }
         }
     }
 
@@ -309,12 +396,14 @@ public sealed class RecordingSession : IAsyncDisposable
             switch (control.Operation)
             {
                 case "pause":
+                    CancelPendingMicrophone("已暂停，等待中的麦克风未启动。");
                     if (!paused) { boundaryAt = CloseSources(sources.ToArray(), "pause", control.Id); paused = true; }
                     break;
                 case "resume":
                     if (paused) { OpenSources(); paused = false; remoteFault = ""; micFault = ""; }
                     break;
                 case "mic_off":
+                    CancelPendingMicrophone("麦克风开启已取消；没有启动或采集麦克风 PCM。");
                     boundaryAt = CloseSources(sources.Where(x => x.Source.Id == "mic").ToArray(), "mic_off", control.Id);
                     micEnabled = false;
                     break;
@@ -325,34 +414,39 @@ public sealed class RecordingSession : IAsyncDisposable
                         throw new InvalidOperationException("仅允许本场明确选定的固定麦克风；不会替换设备。");
                     if (!micEnabled)
                     {
-                        Open(factory.OpenMicrophone(control.DeviceId));
+                        BeginMicrophonePreparation(control.DeviceId);
                         // Initial MicOff/null is not a permanent prohibition: the first
                         // explicit MicOn selects the exact device. A failed open does not
                         // commit the selection, and later toggles/resumes never replace it.
-                        fixedMicrophoneDeviceId ??= control.DeviceId;
-                        micEnabled = true; micFault = "";
+                        pendingMicrophoneControl = control;
+                        return; // The capture loop keeps servicing remote PCM until ready.
                     }
                     break;
                 case "bookmark": message = "已标记此刻"; break;
                 default: throw new InvalidOperationException("未知录音控制命令。");
             }
-            long effective = Us(boundaryAt ?? now());
-            if (control.Operation == "mic_on")
-            {
-                string? confirmedDevice = fixedMicrophoneDeviceId;
-                Enqueue(new(store => store.WriteEvent(control.Operation, control.Id, effective, confirmedDevice)));
-            }
-            else Event(control.Operation, control.Id, effective);
-            var ack = new RecordingAck(control.Id, control.Operation, paused, micEnabled, effective, message);
-            control.Done.TrySetResult(ack);
-            NotifyAck(ack);
-            RaiseHealth(now());
+            AcknowledgeControl(control, boundaryAt, message);
         }
         catch (Exception ex)
         {
             control.Done.TrySetException(ex);
             warnings.Enqueue("控制未完成：" + control.Operation + "：" + ex.Message);
         }
+    }
+
+    private void AcknowledgeControl(Control control, ulong? boundaryAt = null, string? message = null)
+    {
+        long effective = Us(boundaryAt ?? now());
+        if (control.Operation == "mic_on")
+        {
+            string? confirmedDevice = fixedMicrophoneDeviceId;
+            Enqueue(new(store => store.WriteEvent(control.Operation, control.Id, effective, confirmedDevice)));
+        }
+        else Event(control.Operation, control.Id, effective);
+        var ack = new RecordingAck(control.Id, control.Operation, paused, micEnabled, effective, message);
+        control.Done.TrySetResult(ack);
+        NotifyAck(ack);
+        RaiseHealth(now());
     }
 
     private void Drain(Live source, ulong? cutoff, int limit)
@@ -552,7 +646,8 @@ public sealed class RecordingSession : IAsyncDisposable
         }
         try { HealthChanged?.Invoke(new(Us(current), paused, micEnabled, remote?.Peak ?? 0, mic?.Peak ?? 0,
             Interlocked.Read(ref remoteFrames), Interlocked.Read(ref micFrames), Status(remote, remoteFault, true),
-            Status(mic, micFault, micEnabled), Interlocked.Read(ref savedUs), available)); } catch { }
+            pendingMicrophoneControl is not null ? "麦克风正在初始化，尚未开始采集" : Status(mic, micFault, micEnabled),
+            Interlocked.Read(ref savedUs), available)); } catch { }
     }
     internal static bool PacketHealthTimedOut(ulong current, ulong lastPacketAt)
     {

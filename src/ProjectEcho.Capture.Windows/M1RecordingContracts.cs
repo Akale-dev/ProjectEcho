@@ -43,5 +43,25 @@ internal interface IRecordingSourceFactory
     void Preflight(RecordingOptions options);
     IRecordingAudioSource OpenRemote(CaptureOptions options);
     IRecordingAudioSource OpenMicrophone(string deviceId);
+    // Preparation must not obtain IAudioCaptureClient, Start or read PCM. The
+    // returned handle transfers an initialized client to the capture MTA; service
+    // acquisition, buffer access and service release remain on that one thread.
+    IPreparedRecordingSource PrepareMicrophone(string deviceId) => new DeferredRecordingSource(() => OpenMicrophone(deviceId));
     void ValidateRemote(CaptureOptions options);
+}
+
+internal interface IPreparedRecordingSource : IDisposable
+{
+    IRecordingAudioSource CompleteOnCaptureThread();
+}
+
+// Existing synthetic factories can defer their source creation. The actual
+// Windows factory overrides PrepareMicrophone to move native negotiation out
+// of the packet servicing loop without transferring a capture service.
+internal sealed class DeferredRecordingSource(Func<IRecordingAudioSource> complete) : IPreparedRecordingSource
+{
+    private Func<IRecordingAudioSource>? pending = complete;
+    public IRecordingAudioSource CompleteOnCaptureThread() =>
+        (Interlocked.Exchange(ref pending, null) ?? throw new ObjectDisposedException(nameof(DeferredRecordingSource)))();
+    public void Dispose() => Interlocked.Exchange(ref pending, null);
 }

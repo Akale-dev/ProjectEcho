@@ -75,7 +75,7 @@ internal static class M3bMicrophoneClockTests
         {
             var pcm = reader.ReadFrames(0, checked((int)reader.FrameCount));
             int micEnd = checked((int)Math.Ceiling((double)(cutoff - Epoch) * 48000 / AudioClock.UnitsPerSecond));
-            Need(pcm.Take(micEnd).All(v => Math.Abs(v - .1f) < .001f), "Packet jitter created a hole, duplicate mix or lost valid tail.");
+            Need(pcm.Take(micEnd).All(v => Math.Abs(v - .25f * M2TimelineRenderer.SourceGain) < .001f), "Packet jitter created a hole, duplicate mix or lost valid tail.");
             Need(pcm.Skip(micEnd).All(v => v == 0), "Mix contains post-MicOff PCM.");
         }
         Need(Hash(track.WavePath) == sourceHash, "Jitter rendering modified an original.");
@@ -127,7 +127,7 @@ internal static class M3bMicrophoneClockTests
             using var reader = new M2WaveReader(destination);
             var pcm = reader.ReadFrames(0, (int)reader.FrameCount);
             int end = checked((int)Math.Ceiling((double)(cutoff - Epoch) * 48000 / AudioClock.UnitsPerSecond));
-            Need(pcm.Take(end).All(v => Math.Abs(v - .1f) < .001f) && pcm.Skip(end).All(v => v == 0),
+            Need(pcm.Take(end).All(v => Math.Abs(v - .25f * M2TimelineRenderer.SourceGain) < .001f) && pcm.Skip(end).All(v => v == 0),
                 "Whole-packet mapping across chunks lost/duplicated audio or crossed MicOff.");
         }
         Need(originalHashes.All(p => Hash(p.Key) == p.Value), "Recovery or cross-chunk mix modified originals.");
@@ -152,7 +152,7 @@ internal static class M3bMicrophoneClockTests
         M2TimelineRenderer.Render(read.Capture, destination, CancellationToken.None);
         using var reader = new M2WaveReader(destination);
         Need(reader.ReadFrames(480, 3).All(v => v == 0), "Quantization interpolation filled an explicit MicOff interval.");
-        Need(Math.Abs(reader.ReadFrames(479, 1)[0] - .1f) < .001f && Math.Abs(reader.ReadFrames(483, 1)[0] - .1f) < .001f,
+        Need(Math.Abs(reader.ReadFrames(479, 1)[0] - .25f * M2TimelineRenderer.SourceGain) < .001f && Math.Abs(reader.ReadFrames(483, 1)[0] - .25f * M2TimelineRenderer.SourceGain) < .001f,
             "Tiny off gap moved the saved microphone audio.");
     }
 

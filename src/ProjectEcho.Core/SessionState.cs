@@ -8,15 +8,18 @@ public enum SessionState
     Stopping,
     Saved,
     Faulted,
-    SavedIncomplete
+    SavedIncomplete,
+    // An error whose capture process has already been confirmed stopped. Historical
+    // audio remains usable; Faulted still means capture ownership is not proven safe.
+    StoppedWithError
 }
 
 public static class SessionRules
 {
     // A paused capture still owns the session: playback could otherwise be recaptured.
-    public static bool CanPlayback(SessionState state) => state is SessionState.Idle or SessionState.Saved or SessionState.SavedIncomplete;
+    public static bool CanPlayback(SessionState state) => state is SessionState.Idle or SessionState.Saved or SessionState.SavedIncomplete or SessionState.StoppedWithError;
 
-    public static bool CanStart(SessionState state) => state is SessionState.Idle or SessionState.Saved or SessionState.Faulted or SessionState.SavedIncomplete;
+    public static bool CanStart(SessionState state) => state is SessionState.Idle or SessionState.Saved or SessionState.Faulted or SessionState.SavedIncomplete or SessionState.StoppedWithError;
 }
 
 public static class SessionDefaults

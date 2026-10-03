@@ -26,7 +26,10 @@ public static class TranscriptService
         var segments = TranscriptParser.Parse(original, extension, request.MeetingId, warnings);
         TranscriptFiles.ValidateSegments(segments, TranscriptFiles.MaximumDurationMs);
         if (whisperTokenJsonPath is not null)
+        {
             segments = WhisperSentenceSegmenter.Normalize(segments, whisperTokenJsonPath, warnings, cancellationToken);
+            segments = WhisperTimestampBoundary.Normalize(segments, request.MeetingDurationMs, warnings);
+        }
         // Local subtitle ranges are checked before and after applying a manifest. Untimed text stays untimed.
         TranscriptFiles.ValidateSegments(segments, TranscriptFiles.MaximumDurationMs);
         TranscriptMapping? mapping = null;

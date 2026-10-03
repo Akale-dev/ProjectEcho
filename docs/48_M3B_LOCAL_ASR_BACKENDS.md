@@ -1,5 +1,7 @@
 # 48｜M3b 会后本地 ASR 后端接口
 
+2026-10-01 M3D更新：配置追加硬件模式、引擎GPU编号、initial prompt，CPU默认兼容；GPU不再强制`-ng`，显式Vulkan/CUDA核对实际后端日志。移除预期模型SHA比对（旧字段仅兼容），音频/原稿完整性保留。当前合同/真实测试及GPU未验边界见[56](56_M3D_IMPLEMENTATION.md)。下文CPU-only字段叙述为原M3b历史。
+
 本轮为未来更换本地识别引擎准备边界。当前默认并且唯一能运行的实现仍为 **whisper.cpp**；**Qwen3-ASR 未部署、未实现适配器、未验收**。没有下载模型、引入 Python/Node、增加网络服务、密钥、上传或数据库。本接口不进入 CaptureHost 或录音回调。
 
 ## 调用合同

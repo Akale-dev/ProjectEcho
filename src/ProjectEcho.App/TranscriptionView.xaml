@@ -1,20 +1,34 @@
 <UserControl x:Class="ProjectEcho.App.TranscriptionView"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
- <Grid>
+ <AdornerDecorator><Grid>
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <TextBlock x:Name="MeetingText" Text="{DynamicResource Loc517D4FE75F371071}" FontWeight="SemiBold" Margin="0,0,0,12"/>
+  <TextBlock x:Name="MeetingText" Visibility="Collapsed" Text="{DynamicResource Loc517D4FE75F371071}" FontWeight="SemiBold" Margin="0,0,0,8"/>
   <TabControl x:Name="WorkspaceTabs" Grid.Row="1" Padding="12" SelectedIndex="1">
    <TabItem Header="{DynamicResource Loc3E6500E922D730FF}">
     <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,12,0,0">
      <TextBlock Text="{DynamicResource LocDA6102899924EA60}" FontSize="19" FontWeight="SemiBold"/>
      <TextBlock Text="{DynamicResource LocFB7E5BA263A597EC}" Margin="0,6,0,14"/>
-     <WrapPanel><Button x:Name="WhisperExeButton" Content="{DynamicResource Loc280BFFE6F9DED972}"/><TextBlock x:Name="WhisperExeText" Text="{DynamicResource Loc37310B8A853FF4C0}" VerticalAlignment="Center" MaxWidth="500"/></WrapPanel>
-     <WrapPanel><Button x:Name="WhisperModelButton" Content="{DynamicResource Loc4607FBFD0551A50F}"/><TextBlock x:Name="WhisperModelText" Text="{DynamicResource Loc4B50C9FA24DCAFA3}" VerticalAlignment="Center" MaxWidth="500"/></WrapPanel>
-     <TextBlock Text="{DynamicResource Loc1B74BE5576E6704A}"/><TextBox x:Name="ModelHashBox" MaxLength="64" Margin="0,4,0,10"/>
+     <TextBlock x:Name="AudioReadinessText" Margin="0,0,0,12" Padding="5" Visibility="Collapsed"/>
+     <WrapPanel><Button x:Name="WhisperExeButton" Content="{DynamicResource Loc280BFFE6F9DED972}"/><Button x:Name="WhisperExeHelpButton" Content="{DynamicResource Loc39009BBBE3C31B17}"/><TextBlock x:Name="WhisperExeText" Text="{DynamicResource Loc37310B8A853FF4C0}" VerticalAlignment="Center" MaxWidth="500"/></WrapPanel>
+     <WrapPanel><Button x:Name="WhisperModelButton" Content="{DynamicResource Loc4607FBFD0551A50F}"/><Button x:Name="WhisperModelHelpButton" Content="{DynamicResource Loc39009BBBE3C31B17}"/><TextBlock x:Name="WhisperModelText" Text="{DynamicResource Loc4B50C9FA24DCAFA3}" VerticalAlignment="Center" MaxWidth="500"/></WrapPanel>
      <CheckBox x:Name="ModelLicenseBox" Content="{DynamicResource Loc784058B1A566C2AD}" Margin="0,0,0,12"/>
      <WrapPanel><TextBlock Text="{DynamicResource Loc3E2D73736FAA4C00}" VerticalAlignment="Center"/><ComboBox x:Name="LanguageBox" Width="150" SelectedIndex="0"><ComboBoxItem Content="{DynamicResource Loc7EB336E42CB5076B}" Tag="auto"/><ComboBoxItem Content="{DynamicResource Loc72726D8818F69306}" Tag="zh"/><ComboBoxItem Content="English" Tag="en"/></ComboBox></WrapPanel>
-     <WrapPanel><Button x:Name="SaveConfigurationButton" Content="{DynamicResource LocFB5D666499AA1425}"/><Button x:Name="RunWhisperButton" Content="{DynamicResource Loc1604C67349FD2F04}"/></WrapPanel>
+     <Grid x:Name="HardwareConfigurationRow" Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="300"/><ColumnDefinition Width="110"/><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+     <StackPanel Margin="0,0,16,0"><TextBlock Text="{DynamicResource Loc3A32252F83C3D832}" Margin="0,0,0,4"/>
+     <ComboBox x:Name="HardwareBox" SelectedIndex="0" MinWidth="220" Margin="0">
+      <ComboBoxItem Content="{DynamicResource Loc846778FD8A2A9FE1}" Tag="Cpu"/>
+      <ComboBoxItem Content="{DynamicResource LocE8F1E35A015D94B6}" Tag="Auto"/>
+      <ComboBoxItem Content="{DynamicResource LocFE390A806EDE6FF2}" Tag="Vulkan"/>
+     </ComboBox></StackPanel>
+     <StackPanel Grid.Column="1" Margin="0,0,16,0"><TextBlock Text="{DynamicResource Loc290505A7FF3514D5}" Margin="0,0,0,4"/><TextBox x:Name="ThreadsBox" Text="2" MaxLength="2" AutomationProperties.Name="{DynamicResource Loc290505A7FF3514D5}"/></StackPanel>
+     <StackPanel Grid.Column="2"><TextBlock Text="{DynamicResource LocC2A624809303D3A9}" Margin="0,0,0,4"/><TextBox x:Name="GpuDeviceBox" Text="0" MaxLength="2" AutomationProperties.Name="{DynamicResource LocC2A624809303D3A9}"/></StackPanel>
+     </Grid>
+     <TextBlock Text="{DynamicResource LocDB5B6205EA938F57}" TextWrapping="Wrap" Margin="0,4,0,8" Opacity="0.75"/>
+     <TextBlock Text="{DynamicResource LocD4F9EBF68D497070}" Margin="0,12,0,4"/>
+     <TextBox x:Name="InitialPromptBox" AcceptsReturn="True" TextWrapping="Wrap" Height="76" VerticalScrollBarVisibility="Auto" MaxLength="4000" AutomationProperties.Name="{DynamicResource LocD4F9EBF68D497070}"/>
+     <TextBlock Text="{DynamicResource LocEC13F98115D9D5DB}" TextWrapping="Wrap" Margin="0,4,0,10" Opacity="0.75"/>
+     <WrapPanel><Button x:Name="RunWhisperButton" Content="{DynamicResource Loc1604C67349FD2F04}" Style="{StaticResource PrimaryButton}"/><Button x:Name="SaveConfigurationButton" Content="{DynamicResource LocFB64D98E27D48E95}"/></WrapPanel>
      <TextBlock Text="{DynamicResource Loc0130625C09E98F25}"/>
     </StackPanel></ScrollViewer>
    </TabItem>
@@ -41,7 +55,7 @@
      </ScrollViewer>
      <Border Grid.Row="1" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="0,1,0,0" Padding="0,7,0,0">
       <StackPanel>
-       <DockPanel><TextBlock x:Name="PlaybackTimeText" Text="00:00:00 / 00:00:00" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0"/><Slider x:Name="PlaybackPositionSlider" Minimum="0" Maximum="1" IsMoveToPointEnabled="True" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource Loc83EF2AD3A861021A}"/></DockPanel>
+       <DockPanel><TextBlock x:Name="PlaybackTimeText" Text="00:00:00.00 / 00:00:00.00" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0"/><Slider x:Name="PlaybackPositionSlider" Minimum="0" Maximum="1" SmallChange="0.01" LargeChange="1" IsMoveToPointEnabled="True" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource Loc83EF2AD3A861021A}"/></DockPanel>
        <WrapPanel Margin="0,5,0,0">
         <Button x:Name="PlayListeningButton" Width="42" ToolTip="{DynamicResource LocB696D803A6D75012}" AutomationProperties.Name="{DynamicResource LocB696D803A6D75012}"><Path Data="M 2 0 L 15 8 L 2 16 Z" Width="14" Height="14" Stretch="Uniform" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
         <Button x:Name="PauseListeningButton" Width="42" ToolTip="{DynamicResource Loc17CC2D94EDAE7CFD}" AutomationProperties.Name="{DynamicResource Loc17CC2D94EDAE7CFD}"><Path x:Name="PauseListeningIcon" Data="M 1 0 H 6 V 16 H 1 Z M 10 0 H 15 V 16 H 10 Z" Width="14" Height="14" Stretch="Uniform" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
@@ -80,5 +94,5 @@
    </StackPanel><TextBox x:Name="StatusText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Height="58" Text="{DynamicResource Loc298FB5928CE13BEB}"/></StackPanel>
    <Button Grid.Column="1" x:Name="CancelButton" Content="{DynamicResource Loc911ABCEFE1EA8CED}" IsEnabled="False" VerticalAlignment="Bottom" Margin="8,0,0,0"/>
   </Grid>
- </Grid>
+ </Grid></AdornerDecorator>
 </UserControl>

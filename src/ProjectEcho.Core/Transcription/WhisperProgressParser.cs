@@ -3,10 +3,10 @@ using System.Text;
 
 namespace ProjectEcho.Core.Transcription;
 
-/// <summary>Bounded streaming parser for b5130's actual stderr progress callback, never transcript text.</summary>
+/// <summary>Bounded parser for the checked ggml-org b5130 and Lemonade v1.8.4 stderr progress callback, never transcript text.</summary>
 public sealed class WhisperProgressParser(Action<int> report, Action<LocalTranscriptionStage>? reportStage = null)
 {
-    public const string Policy = "b5130-stderr-window-percent-at-token-and-loading-stage-v2";
+    public const string Policy = "whisper-stderr-window-percent-at-token-and-loading-stage-v3";
     private const string Prefix = "whisper_print_progress_callback: progress =";
     private const string ProcessingPrefix = "main: processing '";
     private readonly StringBuilder line = new();

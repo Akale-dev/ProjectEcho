@@ -142,8 +142,12 @@ internal static class TranscriptFiles
                 if (segment.StartMs is not null || segment.EndMs is not null || segment.TimestampQuality != "untimed")
                     throw new InvalidDataException("无时间段必须同时省略起止时间并标记 untimed。");
             }
-            else if (segment.StartMs < 0 || segment.EndMs <= segment.StartMs || segment.EndMs > durationMs || segment.TimestampQuality is not ("approximate" or "verified"))
-                throw new InvalidDataException("转写起止时间倒置、越界或质量标记无效。");
+            else if (segment.StartMs < 0 || segment.EndMs <= segment.StartMs)
+                throw new InvalidDataException($"转写段 {segment.SegmentId} 起止时间无效：{segment.StartMs}–{segment.EndMs} ms；开始须非负，结束须晚于开始。");
+            else if (segment.EndMs > durationMs)
+                throw new InvalidDataException($"转写段 {segment.SegmentId} 结束时间 {segment.EndMs} ms 超过完整会议时长 {durationMs} ms（超出 {segment.EndMs - durationMs} ms）。");
+            else if (segment.TimestampQuality is not ("approximate" or "verified"))
+                throw new InvalidDataException($"转写段 {segment.SegmentId} 的时间质量标记无效；定时段须为 approximate 或 verified。");
         }
     }
 }

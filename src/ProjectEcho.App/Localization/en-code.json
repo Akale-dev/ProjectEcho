@@ -117,7 +117,7 @@
   "录音会话尚未保存。是否停止并保存后关闭窗口？\n选择“否”将保持窗口和当前录音状态。": "This recording has not been saved. Stop and save before closing the window?\nChoose “No” to keep the window and current recording state.",
   "录音原件已保留，不能称作完整录音。": "Recording originals are preserved; the recording cannot be considered complete.",
   "录音原轨已保存。": "Recording source tracks saved.",
-  "录音导入完成：{0:F3} 秒。原件副本和完整回放已校验。\n可前往“转写与搜索”导入字幕或运行本地识别。": "Audio import complete: {0:F3} seconds. The original copy and complete playback are verified.\nOpen “Transcription & search” to import subtitles or run local transcription.",
+  "录音导入完成：{0:F3} 秒。原件副本和完整回放已校验。\n可前往“转写与字幕”导入字幕或运行本地识别。": "Audio import complete: {0:F3} seconds. The original copy and complete playback are verified.\nOpen “Transcription & subtitles” to import subtitles or run local transcription.",
   "录音导入已取消；没有发布完成的会议，源文件保留。": "Audio import cancelled. No completed meeting was published; the source file is preserved.",
   "录音导入未完成；源文件保留：": "Audio import incomplete. Source file preserved: ",
   "录音异常 · 保存状态请查看详情": "Recording error · See details for save status",

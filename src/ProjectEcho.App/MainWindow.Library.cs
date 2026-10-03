@@ -4,6 +4,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
 using ProjectEcho.Core;
 using ProjectEcho.Core.Library;
 
@@ -13,11 +15,76 @@ public partial class MainWindow
 {
     private MeetingLibraryQuery libraryQuery = new();
     private bool deletingMeeting;
+    private string? recognitionMeetingDirectory;
+    private readonly Dictionary<string, Filing> filingDrafts = new(StringComparer.OrdinalIgnoreCase);
+    private Filing? selectedFilingBaseline;
     private Action<string> openDataDirectory = path => Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
     private Func<string, bool>? deletionConfirmationOverride;
     private bool LibraryFilterActive => libraryQuery != new MeetingLibraryQuery();
     private bool CanDeleteMeeting => SessionRules.CanStart(state) && !WindowCloseRequested && !recoveryBusy &&
         !exportBusy && !transcriptBusy && pendingMixes.Count == 0;
+    // Browsing saved meetings is independent of the ordinary CaptureHost session.
+    // A short M0 trial owns the single preview slot until its result has settled.
+    private bool CanNavigateMeetings => !WindowCloseRequested && !deletingMeeting && !recoveryBusy &&
+        (!isTrial || SessionRules.CanStart(state));
+
+    // The recognition lifecycle passes its captured directory, never the currently selected row.
+    private void SetRecognitionMeeting(string? directory)
+    {
+        recognitionMeetingDirectory = directory is null ? null : ValidateRecordingDirectory(directory);
+        foreach (var entry in RecoveryBox.Items.Cast<RecordingDirectory>()) entry.IsRecognizing = IsRecognitionMeeting(entry.Path);
+    }
+
+    private bool IsRecognitionMeeting(string directory) => string.Equals(directory, recognitionMeetingDirectory, StringComparison.OrdinalIgnoreCase);
+
+    private void RememberFilingDraft()
+    {
+        if (selectedMeetingDirectory is not { } directory || selectedFilingBaseline is null) return;
+        var current = new Filing(FiledTitleBox.Text, FiledProjectBox.Text);
+        if (current != selectedFilingBaseline) filingDrafts[directory] = current;
+        else filingDrafts.Remove(directory);
+    }
+
+    private void NavigateToMeeting(RecordingDirectory entry, bool recognition)
+    {
+        if (!initialized || !CanNavigateMeetings) return;
+        if (recognition && !IsRecognitionMeeting(entry.Path)) return;
+        // Reselecting a highlighted meeting is navigation only: keep both editors and playback intact.
+        if (!string.Equals(entry.Path, selectedMeetingDirectory, StringComparison.OrdinalIgnoreCase))
+            SelectMeeting(entry.Path, loadSavedMix: SessionRules.CanPlayback(state));
+        if (!string.Equals(entry.Path, selectedMeetingDirectory, StringComparison.OrdinalIgnoreCase)) return;
+        if (recognition)
+        {
+            transcriptionView!.WorkspaceTabs.SelectedIndex = 0;
+            NavigateTo(3);
+        }
+        else NavigateTo(1);
+    }
+
+    private void MeetingNavigation_Click(object sender, MouseButtonEventArgs e)
+    {
+        // Let the menu and recognition button handle their own navigation, even on an unselected row.
+        for (DependencyObject? source = e.OriginalSource as DependencyObject; source is not null && source != sender;
+             source = source is Visual ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source))
+            if (source is ButtonBase) return;
+        if (sender is ListBoxItem { DataContext: RecordingDirectory entry }) NavigateToMeeting(entry, recognition: false);
+    }
+
+    private void MeetingNavigation_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space) || e.OriginalSource is ButtonBase) return;
+        if (RecoveryBox.SelectedItem is RecordingDirectory entry)
+        {
+            NavigateToMeeting(entry, recognition: false);
+            e.Handled = true;
+        }
+    }
+
+    private void RecognitionMeeting_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is Button { DataContext: RecordingDirectory entry }) NavigateToMeeting(entry, recognition: true);
+    }
 
     private void OpenDataRoot_Click(object sender, RoutedEventArgs e)
     {
@@ -89,7 +156,10 @@ public partial class MainWindow
             await replayLoadWork;
             string deleted = await Task.Run(() => new MeetingLibraryIndex(root).MoveToTrash(source));
             renderedMeetings.Remove(source);
+            meetingExportStatuses.Remove(source);
+            savedMixStatuses.Remove(source);
             if (string.Equals(selectedMeetingDirectory, source, StringComparison.OrdinalIgnoreCase)) ClearMeetingForNewRecording();
+            filingDrafts.Remove(source);
             outcome = UiText.T("会议已移入可恢复删除目录：") + deleted;
         }
         catch (Exception ex) { outcome = UiText.T("删除未完成，原件保留：") + ex.Message; }

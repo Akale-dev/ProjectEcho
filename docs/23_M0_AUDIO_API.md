@@ -48,6 +48,8 @@
 
 ## 时间、flags 与最低 build
 
+2026-10-02 用户追加要求支持 Win10 19043：下文 20348 为旧保守门槛；现增加 19041–20347 的显式兼容尝试，以锁定 NAudio 3.1.0 与 OBS 官方代码为依据，保留实际API失败和不扩大范围规则。目标电脑尚未实测；见[58](58_M3D_ENDPOINT_RECORDING_FIX.md)。
+
 `GetBuffer` 给出的 device position 是包首帧位置；QPC 已转换为 **100 ns**，不是原始 `Stopwatch` ticks。代码用 `AudioClock.CounterTo100ns` 把会话 epoch 转为相同尺度，并逐包保存原始 device/QPC、原始帧数与 flags；device/QPC 在 JSONL 中为十进制字符串。[Microsoft GetBuffer 文档](https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudiocaptureclient-getbuffer)
 
 - `SILENT`：不读取原生指针内容，生成相同帧数的零 PCM，保留标志；无包保持无包。

@@ -292,7 +292,9 @@ internal static class M1StorageTests
         {
             storage.AddSegment("remote-1", "remote", WaveFormat.CreateIeeeFloatWaveFormat(8000, 1));
             storage.WritePacket("remote-1", new byte[640], Packet(0, 160, 8000));
-            var invalid = Packet(160, 160, 8000) with { QpcPosition100ns = Epoch + 197499 };
+            // QPC-only remote packets have no independent contiguous-device
+            // evidence; even a small >one-frame overlap must still be rejected.
+            var invalid = Packet(160, 160, 8000) with { QpcPosition100ns = Epoch + 197499, DevicePositionValid = false };
             Reject<InvalidDataException>(() => storage.WritePacket("remote-1", new byte[640], invalid));
             storage.WriteBoundary("remote-1", "stop", "stop", End(160, 8000), 160, 0, null);
             Need(storage.Finish(200000, true, []).Chunks.Single().FrameCount == 160, "非法包在拒绝前已写入PCM。");

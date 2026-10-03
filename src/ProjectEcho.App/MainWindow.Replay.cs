@@ -30,6 +30,8 @@ public partial class MainWindow
     private bool revealReplaySubtitleOnNextUpdate;
     private bool updatingPlaybackTransport;
     private double playbackSpeed = 1;
+    private (string Directory, long Milliseconds)? savedMixPlaybackRequest;
+    private string? lastSavedMixReadinessText;
     private static readonly Geometry ReplayPlayGeometry = Geometry.Parse("M 2 0 L 15 8 L 2 16 Z");
     private static readonly Geometry ReplayPauseGeometry = Geometry.Parse("M 1 0 H 6 V 16 H 1 Z M 10 0 H 15 V 16 H 10 Z");
 
@@ -60,6 +62,7 @@ public partial class MainWindow
     private void UpdateReplayControls()
     {
         bool canPlay = !WindowCloseRequested && !deletingMeeting && SessionRules.CanPlayback(state);
+        if (!canPlay) ClearSavedMixPlaybackRequest();
         PausePlaybackButton.IsEnabled = canPlay && playbackOpened;
         ReplayPositionSlider.IsEnabled = canPlay && playbackOpened;
         PlaybackSpeedBox.IsEnabled = canPlay;
@@ -74,7 +77,7 @@ public partial class MainWindow
         ReplayCopyButton.IsEnabled = !WindowCloseRequested && ReplaySegmentsBox.SelectedItem is TranscriptRow;
         if (transcriptionView is { } view)
         {
-            view.PlayListeningButton.IsEnabled = canPlay && mixedPath is not null;
+            view.PlayListeningButton.IsEnabled = canPlay && (mixedPath is not null || CanRequestSavedMixPlayback);
             view.PauseListeningButton.IsEnabled = canPlay && playbackOpened;
             view.PlaybackPositionSlider.IsEnabled = canPlay && playbackOpened;
             view.PlaybackSpeedBox.IsEnabled = canPlay;
@@ -82,6 +85,73 @@ public partial class MainWindow
         UpdatePlaybackTransport();
         // All consumers share the one playback session, including full-file play.
         if (!canPlay && (player.Source is not null || pendingTranscriptSeek is not null)) ResetTranscriptPlayback();
+        UpdateSavedMixReadinessDisplay();
+    }
+
+    private bool IsLoadingSavedMix(string directory) => savedMixCancellation is { IsCancellationRequested: false } &&
+        string.Equals(savedMixLoadingDirectory, directory, StringComparison.OrdinalIgnoreCase);
+
+    private bool CanRequestSavedMixPlayback => !WindowCloseRequested && !deletingMeeting && SessionRules.CanPlayback(state) &&
+        mixedPath is null && selectedMeetingDirectory is { } directory && IsLoadingSavedMix(directory);
+
+    // Remember only the latest explicit play/seek request. A pending validation is
+    // never itself permission to play, and every capture/navigation boundary clears it.
+    private bool TryQueueSavedMixPlayback(long milliseconds, string? directory = null)
+    {
+        directory ??= selectedMeetingDirectory;
+        if (!CanRequestSavedMixPlayback || directory is null ||
+            !string.Equals(directory, selectedMeetingDirectory, StringComparison.OrdinalIgnoreCase)) return false;
+        savedMixPlaybackRequest = (directory, milliseconds);
+        UpdateSavedMixReadinessDisplay();
+        if (transcriptionView is { } view) view.StatusText.Text = UiText.T("正在校验回听文件；完成后将播放，无需重复点击。");
+        return true;
+    }
+
+    private void ClearSavedMixPlaybackRequest() => savedMixPlaybackRequest = null;
+
+    private void CompleteSavedMixPlaybackRequest(string directory)
+    {
+        if (savedMixPlaybackRequest is not { } request ||
+            !string.Equals(request.Directory, directory, StringComparison.OrdinalIgnoreCase)) return;
+        savedMixPlaybackRequest = null;
+        if (WindowCloseRequested || deletingMeeting || !SessionRules.CanPlayback(state) ||
+            !string.Equals(selectedMeetingDirectory, directory, StringComparison.OrdinalIgnoreCase) ||
+            mixedPath is null || currentMix is null) return;
+        try
+        {
+            if (request.Milliseconds < 0 || request.Milliseconds >= currentMix.DurationUs / 1000)
+                throw new InvalidDataException(UiText.T("这条文字时间不在可回听范围内。"));
+            RejectReparseAncestors(mixedPath);
+            OpenListeningPosition(mixedPath, request.Milliseconds, currentMix.DurationUs, directory);
+        }
+        catch (Exception ex)
+        {
+            ResetTranscriptPlayback();
+            string message = UiText.T("回放未启动：") + ex.Message;
+            ReplayStatusText.Text = message;
+            if (transcriptionView is { } view) view.StatusText.Text = message;
+            LogMeeting(directory, "diagnostic", message, "error");
+        }
+    }
+
+    private string? SavedMixReadinessText => selectedMeetingDirectory is not { } directory || mixedPath is not null ? null :
+        IsLoadingSavedMix(directory)
+            ? UiText.T(savedMixPlaybackRequest is null
+                ? "正在校验回听文件；可点击播放，校验完成后开始。"
+                : "正在校验回听文件；完成后将播放，无需重复点击。")
+            : currentMix is not null ? UiText.T("完整 WAV 已校验；此超大文件暂不支持程序内回听，可按需导出 M4A。")
+            : savedMixStatuses.ContainsKey(directory) ? UiText.T("回听文件尚未就绪；请查看本会议 Log 或重新生成混音。") : null;
+
+    private void UpdateSavedMixReadinessDisplay()
+    {
+        string? status = SavedMixReadinessText;
+        if (!playbackOpened && status is not null) CurrentSubtitleText.Text = status;
+        else if (!playbackOpened && lastSavedMixReadinessText is { } previous && CurrentSubtitleText.Text == previous)
+            CurrentSubtitleText.Text = UiText.T("播放时在这里显示当前字幕");
+        lastSavedMixReadinessText = status;
+        string help = status ?? "";
+        AutomationProperties.SetHelpText(PlaybackButton, help);
+        if (transcriptionView is { } view) AutomationProperties.SetHelpText(view.PlayListeningButton, help);
     }
 
     private void UpdatePlaybackTransport()
@@ -128,7 +198,7 @@ public partial class MainWindow
         ReplaySegmentsBox.ItemsSource = null;
         updatingReplay = false;
         CurrentSubtitleText.Text = UiText.T("播放时在这里显示当前字幕");
-        ReplayStatusText.Text = UiText.T("尚无字幕也能回听；可在“转写与搜索”导入字幕或运行本地识别。");
+        ReplayStatusText.Text = UiText.T("尚无字幕也能回听；可在“转写与字幕”导入字幕或运行本地识别。");
     }
 
     private void EnsureMeetingSubtitles()
@@ -250,7 +320,7 @@ public partial class MainWindow
         if (ReplayRevisionBox.SelectedItem is not RevisionRow row || replayMeetingDirectory is not { } directory)
         {
             ReplaySegmentsBox.ItemsSource = null;
-            ReplayStatusText.Text = UiText.T("尚无字幕。可直接播放，或前往“转写与搜索”生成 / 导入文字。");
+            ReplayStatusText.Text = UiText.T("尚无字幕。可直接播放，或前往“转写与字幕”生成 / 导入文字。");
         }
         else
         {
@@ -280,7 +350,7 @@ public partial class MainWindow
         SeekTranscriptRow(row); e.Handled = true;
     }
 
-    private void OpenListeningPosition(string path, long milliseconds, long? durationUs = null)
+    private void OpenListeningPosition(string path, long milliseconds, long? durationUs = null, string? meetingDirectory = null)
     {
         if (WindowCloseRequested || deletingMeeting || !SessionRules.CanPlayback(state)) return;
         InvalidateReplaySubtitleFollow();
@@ -290,7 +360,7 @@ public partial class MainWindow
             if (playbackOpened) { pendingTranscriptSeek = null; PlayTranscriptPosition(milliseconds); return; }
             pendingTranscriptSeek = (path, milliseconds); return;
         }
-        ReplaceTranscriptPlayer();
+        ReplaceTranscriptPlayer(meetingDirectory);
         playbackDurationMs = durationUs is { } duration ? duration / 1000 : currentMix?.DurationUs / 1000;
         pendingTranscriptSeek = (path, milliseconds);
         player.Open(new Uri(path));
@@ -309,10 +379,21 @@ public partial class MainWindow
     private void ReplayPosition_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (updatingPlaybackPosition || !initialized || !playbackOpened || !SessionRules.CanPlayback(state) || WindowCloseRequested || deletingMeeting) return;
-        player.Position = TimeSpan.FromMilliseconds(Math.Max(0, Math.Min(e.NewValue * 1000, Math.Max(0, (playbackDurationMs ?? 0) - 1))));
+        // A decimal slider value such as 1.38 may multiply to 1379.9999999999998.
+        // Quantize to the existing transcript millisecond clock before passing it
+        // to MediaPlayer, which otherwise truncates and selects the preceding cue.
+        long requestedMs = (long)Math.Round(e.NewValue * 1000, MidpointRounding.AwayFromZero);
+        long seekMs = Math.Clamp(requestedMs, 0, Math.Max(0, (playbackDurationMs ?? 0) - 1));
+        SeekPlaybackMilliseconds(seekMs);
         InvalidateReplaySubtitleFollow();
         ResetDisplayPlaybackClock();
         UpdatePlaybackPosition();
+    }
+
+    private void SeekPlaybackMilliseconds(long milliseconds)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(milliseconds);
+        player.Position = TimeSpan.FromTicks(checked(milliseconds * TimeSpan.TicksPerMillisecond));
     }
 
     private void ResetDisplayPlaybackClock()
@@ -374,7 +455,7 @@ public partial class MainWindow
             }
         }
         finally { updatingPlaybackPosition = false; }
-        string time = $"{TimeSpan.FromMilliseconds(milliseconds):hh\\:mm\\:ss} / {TimeSpan.FromMilliseconds(duration):hh\\:mm\\:ss}";
+        string time = $"{TimelineTimestamp.FromMilliseconds((long)milliseconds)} / {TimelineTimestamp.FromMilliseconds(duration)}";
         if (ReplayTimeText.Text != time) ReplayTimeText.Text = time;
         if (transcriptionView is { } transcript && transcript.PlaybackTimeText.Text != time) transcript.PlaybackTimeText.Text = time;
         if (MainTabs.SelectedIndex != 1 || MeetingTabs.SelectedIndex != 2) return;
@@ -391,7 +472,7 @@ public partial class MainWindow
             && string.Equals(player.Source?.LocalPath, Path.GetFullPath(mixedPath), StringComparison.OrdinalIgnoreCase)
             ? rows.Where(row => row.Segment.StartMs <= milliseconds && row.Segment.EndMs > milliseconds).ToArray() : [];
         string subtitle = active.Length > 0 ? string.Join("\n", active.Select(row => row.Segment.Text))
-            : playbackOpened ? UiText.T("此处没有字幕") : UiText.T("播放时在这里显示当前字幕");
+            : playbackOpened ? UiText.T("此处没有字幕") : SavedMixReadinessText ?? UiText.T("播放时在这里显示当前字幕");
         if (CurrentSubtitleText.Text != subtitle) CurrentSubtitleText.Text = subtitle;
         // Rows are ordered by start time. With overlapping cues, select the most
         // recently started one while retaining every active cue in the text display.

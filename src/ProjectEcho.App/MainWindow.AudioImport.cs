@@ -27,7 +27,11 @@ public partial class MainWindow
     {
         try { await ImportAudioFileAsync(sourcePath); }
         catch (OperationCanceledException) { RecoveryStatus.Text = UiText.T("录音导入已取消；没有发布完成的会议，源文件保留。"); }
-        catch (Exception ex) { RecoveryStatus.Text = UiText.T("录音导入未完成；源文件保留：") + ex.Message; }
+        catch (Exception ex)
+        {
+            RecoveryStatus.Text = UiText.T("录音导入未完成；源文件保留：") + ex.Message;
+            NavigateTo(4); // The failed import has no published meeting to own a Log.
+        }
     }
 
     // Shared by the user action and the real WPF integration test; no synthetic meeting metadata.
@@ -39,12 +43,13 @@ public partial class MainWindow
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         exportCancellation = cancellation;
         string targetRoot = RecordingsRoot;
+        var snapshotWhisperDefaults = PrepareNewMeetingWhisperDefaults();
         RecoveryStatus.Text = UiText.T("正在复制原件、读取至音频末尾并生成完整回放文件…可取消。");
-        ExportStatus.Text = UiText.T("正在导入本地录音；不会启动采集或上传。");
         UpdateControls();
         try
         {
             var result = await Task.Run(() => AudioImportService.Import(sourcePath, targetRoot, cancellation.Token), cancellation.Token);
+            snapshotWhisperDefaults(result.MeetingDirectory);
             renderedMeetings[result.MeetingDirectory] = result.Mix;
             if (!WindowCloseRequested && SessionRules.CanStart(state))
             {
@@ -53,8 +58,9 @@ public partial class MainWindow
                 if (RecoveryBox.ItemsSource is IEnumerable<RecordingDirectory> entries)
                     RecoveryBox.SelectedItem = entries.FirstOrDefault(x => x.Path == result.MeetingDirectory);
             }
-            RecoveryStatus.Text = UiText.F($"录音导入完成：{result.Mix.DurationUs / 1_000_000d:F3} 秒。原件副本和完整回放已校验。\n可前往“转写与搜索”导入字幕或运行本地识别。");
-            ExportStatus.Text = UiText.T("外部录音已导入；回放时间从文件 0 秒开始。\n") + string.Join(Environment.NewLine, result.Mix.Warnings);
+            RecoveryStatus.Text = UiText.F($"录音导入完成：{result.Mix.DurationUs / 1_000_000d:F3} 秒。原件副本和完整回放已校验。\n可前往“转写与字幕”导入字幕或运行本地识别。");
+            SetMeetingExportStatus(result.MeetingDirectory,
+                UiText.T("外部录音已导入；回放时间从文件 0 秒开始。\n") + string.Join(Environment.NewLine, result.Mix.Warnings), persist: true);
             return result;
         }
         finally

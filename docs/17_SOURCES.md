@@ -7,6 +7,8 @@ https://learn.microsoft.com/en-us/samples/microsoft/windows-classic-samples/appl
 
 进程及子进程边界；不绑定物理端点；sample要求build 20348+。并非Zoom/Webex兼容认证。
 
+2026-10-02 补充：微软 sample/结构文档仍列20348；[OBS官方指南](https://obsproject.com/kb/application-audio-capture-guide)与[官方源码](https://github.com/obsproject/obs-studio/blob/master/plugins/win-wasapi/plugin-main.cpp)采用Win10 2004/19041+，锁定NAudio3.1.0包内XML一致。用户要求后项目允许19041–20347兼容尝试，明确标待验，不将任何一方文档当作19043实测结果。见[58](58_M3D_ENDPOINT_RECORDING_FIX.md)。
+
 ## S02｜Microsoft Loopback Recording
 https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording
 

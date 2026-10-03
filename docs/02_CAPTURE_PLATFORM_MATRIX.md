@@ -15,6 +15,7 @@
 
 ## Windows 能力而不是版本名称
 微软 sample 指明 process-tree loopback 需要 build 20348+，API 激活还须实际成功；仅 build 大不代表客户端/权限/设备都能正常工作。[S01]
+2026-10-02 用户要求 Windows 10 19043 支持后，增加 19041–20347 的透明兼容尝试，依据锁定 NAudio 3.1.0 与 OBS 官方实现；低于19041仍拒绝，实际激活失败不自动改录端点。此例外不代表旧 Windows 的完整支持承诺；具体证据和目标机待验范围见[58](58_M3D_ENDPOINT_RECORDING_FIX.md)。
 常见旧 Windows 10 环境可能没有这项能力。不要简单给整个 Windows 10 标签打勾，也不要擅自升级用户系统。端点 loopback 是明确同意后的兼容路径，其范围更宽。[S02]
 .NET 支持的 OS/CPU 与音频 API 能力分开验证；Windows x64 是首要发行目标，ARM64 不在本版承诺里。[S08,S09]
 

@@ -28,30 +28,30 @@ internal sealed class RecordingSourceFactory : IRecordingSourceFactory
             if (!options.EndpointScopeConfirmed) throw new InvalidOperationException("端点范围未确认。");
             return OpenEndpoint("remote", options.RenderDeviceId, DataFlow.Render);
         }
-        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348))
-            throw new PlatformNotSupportedException("进程回环需要Windows build 20348+。");
         ValidateRemote(options);
-        var client = AudioClient.ActivateProcessLoopbackAsync((uint)options.ProcessSource!.Root.ProcessId,
-            ProcessLoopbackMode.IncludeTargetProcessTree).GetAwaiter().GetResult();
-        return new WasapiSource("remote", client, WaveFormat.CreateIeeeFloatWaveFormat(48000, 2), true);
+        return ProcessLoopbackSupport.Activate(() =>
+        {
+            if (!ProcessLoopbackSupport.CanAttemptCurrent) throw new PlatformNotSupportedException(ProcessLoopbackSupport.Current.PreflightMessage);
+            var client = AudioClient.ActivateProcessLoopbackAsync((uint)options.ProcessSource!.Root.ProcessId,
+                ProcessLoopbackMode.IncludeTargetProcessTree).GetAwaiter().GetResult();
+            return new WasapiSource("remote", client, WaveFormat.CreateIeeeFloatWaveFormat(48000, 2), true);
+        });
     }
-    public IRecordingAudioSource OpenMicrophone(string deviceId) => OpenEndpoint("mic", deviceId, DataFlow.Capture);
+    public IRecordingAudioSource OpenMicrophone(string deviceId)
+    {
+        using var prepared = PrepareMicrophone(deviceId);
+        return prepared.CompleteOnCaptureThread();
+    }
+    public IPreparedRecordingSource PrepareMicrophone(string deviceId)
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        using var device = SourceDiscovery.GetExactDevice(enumerator, deviceId, DataFlow.Capture);
+        return new PreparedMicrophone(MicrophoneFormatPolicy.OpenClient(device, initialize: true));
+    }
     private static IRecordingAudioSource OpenEndpoint(string id, string? deviceId, DataFlow flow)
     {
         using var enumerator = new MMDeviceEnumerator();
         using var device = SourceDiscovery.GetExactDevice(enumerator, deviceId, flow);
-        if (flow == DataFlow.Capture)
-        {
-            var microphone = MicrophoneFormatPolicy.OpenClient(device, initialize: true);
-            // OpenClient has already initialized the shared stream (never started it).
-            // WasapiSource takes ownership and cleans it up if event/capture setup fails.
-            try
-            {
-                return new WasapiSource(id, microphone.Client, microphone.Format, false,
-                    microphone.ConversionFlags, initialized: true, processingMode: microphone.ProcessingMode);
-            }
-            catch { microphone.Dispose(); throw; }
-        }
         var client = device.CreateAudioClient();
         try
         {
@@ -59,6 +59,22 @@ internal sealed class RecordingSourceFactory : IRecordingSourceFactory
             return new WasapiSource(id, client, format, flow == DataFlow.Render);
         }
         catch { client.Dispose(); throw; }
+    }
+
+    private sealed class PreparedMicrophone(MicrophoneClientSelection<AudioClient> selection) : IPreparedRecordingSource
+    {
+        private MicrophoneClientSelection<AudioClient>? pending = selection;
+        public IRecordingAudioSource CompleteOnCaptureThread()
+        {
+            var microphone = Interlocked.Exchange(ref pending, null)
+                ?? throw new ObjectDisposedException(nameof(PreparedMicrophone));
+            // WasapiSource owns the client even when its constructor fails. Its
+            // AudioCaptureClient/GetService and later Release both occur on the
+            // capture thread, per the WASAPI service lifetime contract.
+            return new WasapiSource("mic", microphone.Client, microphone.Format, false,
+                microphone.ConversionFlags, initialized: true, processingMode: microphone.ProcessingMode);
+        }
+        public void Dispose() => Interlocked.Exchange(ref pending, null)?.Dispose();
     }
 
     private sealed class WasapiSource : IRecordingAudioSource

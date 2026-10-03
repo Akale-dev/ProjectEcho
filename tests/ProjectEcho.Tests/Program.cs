@@ -33,6 +33,15 @@ if (args.Length > 0 && args[0] == "--m2-endurance-probe")
 if (args.Length > 0 && args[0] == "--m2-concurrent-export-probe")
     return await M2ConcurrentExportProbe.RunAsync(args);
 
+if (args.Length > 0 && args[0] == "--m3d-real-whisper-probe")
+    return await M3dRealWhisperProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m3d-vulkan-full-probe")
+    return await M3dVulkanFullProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m3h-meter-preview-probe")
+    return await M3hAudioLevelPreviewProbe.RunAsync(args);
+
 if (args.Length > 0 && args[0] == "--m2-revalidate-long-run")
     return await M2LongRunProbe.RunRevalidationAsync(args);
 
@@ -107,6 +116,11 @@ Run("T54-SYNTH health snapshot ordering never underflows", RecordingHealthTests.
 Run("M1-SYNTH microphone reported/client rate policy", MicrophoneFormatPolicyTests.Run);
 MicrophoneFormatPolicyTests.RegisterTimelineTests(Run, output);
 M3bMicrophoneClockTests.Register(Run, output);
+EndpointPacketClockTests.Register(Run, output);
+M2PacketOverlapTests.Register(Run, output);
+EndpointAudioQualityTests.Register(Run, output);
+MicrophonePreparationTests.Register(Run, output);
+ProcessLoopbackSupportTests.Register(Run);
 M3cMicrophoneGapRenderTests.Register(Run, output);
 MicrophoneProcessingMetadataTests.Register(Run, output);
 MicrophoneRawNegotiationTests.Register(Run);
@@ -126,6 +140,15 @@ M3cSqliteTests.Register(Run, output);
 M3cTranscriptTests.Register(Run, output);
 M3WhisperTests.Register(Run, output);
 M3LocalTranscriberTests.Register(Run, output);
+M3dTranscriptVersionTests.Register(Run, output);
+M3dWhisperTests.Register(Run, output);
+M3dPortableWhisperTests.Register(Run, output);
+M3eWhisperTimestampTests.Register(Run, output);
+M3gTimelinePrecisionTests.Register(Run, output);
+M3hMeetingWhisperTests.Register(Run, output);
+M3hAudioLevelPreviewTests.Register(Run);
+M3hMeterDisplayTests.Register(Run);
+M3eMeetingLogTests.Register(Run, output);
 M4aTimelineTests.Register(Run, output);
 TruePeakTests.Register(Run, output);
 M2ExportTests.Register(Run, output);
@@ -162,6 +185,8 @@ Run("T55-SYNTH playback denied in Recording/Paused/Stopping/Faulted", () =>
     Check(SessionRules.CanPlayback(SessionState.Idle) && SessionRules.CanPlayback(SessionState.Saved), "Idle/Saved should permit playback.");
     Check(SessionRules.CanPlayback(SessionState.SavedIncomplete) && SessionRules.CanStart(SessionState.SavedIncomplete),
         "A finalized incomplete preview must allow audition and a fresh meeting.");
+    Check(SessionRules.CanPlayback(SessionState.StoppedWithError) && SessionRules.CanStart(SessionState.StoppedWithError),
+        "A confirmed stopped failed capture must not disable historical playback.");
 });
 Run("M0 default title and unclassified project", () =>
 {

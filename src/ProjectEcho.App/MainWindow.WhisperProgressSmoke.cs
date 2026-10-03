@@ -20,7 +20,8 @@ public partial class MainWindow
         const string publicJfkSha256 = "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e";
         var view = transcriptionView ?? throw new InvalidOperationException("转写界面未初始化。");
         var config = CurrentWhisperConfiguration();
-        string configPath = WhisperConfigurationPath;
+        string configPath = File.Exists(WhisperConfigurationPath) ? WhisperConfigurationPath
+            : Path.Combine(AppContext.BaseDirectory, PortableWhisperConfiguration.BundledFileName);
         if (!WhisperTranscriber.Inspect(config).Ready || !File.Exists(configPath) || config.Threads != 2)
             throw new InvalidDataException("大模型进度测试需要已保存的可信本地配置及2线程。");
         if (!Path.GetFileName(config.ModelPath).Equals("ggml-large-v3.bin", StringComparison.OrdinalIgnoreCase))
@@ -45,9 +46,12 @@ public partial class MainWindow
             "Four unmodified copies of the public whisper.cpp JFK speech sample, each followed by 0.75 seconds of digital silence. Total 47 seconds. This is a constructed test fixture, not a natural meeting. No audio playback or capture.");
 
         dataRoot = fixture; DataRootText.Text = fixture;
+        MeetingWhisperSettingsStore.SaveDefaults(WhisperConfigurationPath, config, AppContext.BaseDirectory);
         if (CurrentWhisperConfiguration() != config) throw new InvalidDataException("隔离测试目录改变了已加载模型配置。");
         var imported = await ImportAudioFileAsync(repeated, token);
         var originalHashes = Directory.EnumerateFiles(imported.MeetingDirectory, "*", SearchOption.AllDirectories)
+            .Where(path => Path.GetFileName(path) != ProjectEcho.Core.Diagnostics.MeetingLogStore.FileName &&
+                !path.EndsWith(MeetingWhisperSettingsStore.RelativePath.Replace('/', Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
             .ToDictionary(path => path, CloseFixtureHash, StringComparer.OrdinalIgnoreCase);
         if (!imported.OriginalSha256.Equals(repeatedHash, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("导入原件与构造夹具不同。");

@@ -174,7 +174,7 @@ internal static class M3cMicrophoneGapRenderTests
         for (int i = 0; i < frames; i++) BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), 8192);
         return pcm;
     }
-    private static bool Signal(float value) => Math.Abs(value - .1f) < .001f;
+    private static bool Signal(float value) => Math.Abs(value - .25f * M2TimelineRenderer.SourceGain) < .001f;
     private static string Hash(string path) => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)));
     private static void Need(bool condition, string message) { if (!condition) throw new InvalidDataException(message); }
 }

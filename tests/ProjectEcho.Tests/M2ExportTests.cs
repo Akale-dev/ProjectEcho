@@ -21,7 +21,7 @@ internal static class M2ExportTests
         run("T29/T32-SYNTH M2 actual encoded byte and decoded duration limits retry finitely", () => SizeRetries(root));
         run("T20/T33/T50-SYNTH M2 rejects corrupt originals changed mixes paths and cancelled exports", () => Safety(root));
         run("T14/T24-SYNTH M2 empty callback session keeps elapsed placeholder and rejects zero time", () => Empty(root));
-        run("T27-SYNTH M2 fixed gain sample and 4x windowed-sinc peak fixture", () => Peak(root));
+        run("T27-SYNTH M2 uniform peak protection and independent 4x windowed-sinc peak fixture", () => Peak(root));
         run("T28/T29/T32-WINDOWS M2 full mix and M4A parts actually decode within byte and duration limits", () => RealCodecIntegration(root));
         run("T14/T33/T53-SYNTH M2 verified declared-gap recording preserves elapsed mix and incomplete-source flag", () => DeclaredGap(root));
         run("T20/T28-WINDOWS M2 post-rename compressed hash failure preserves usable WAV fallback", () => CompressionHashFailure(root));
@@ -38,6 +38,8 @@ internal static class M2ExportTests
         var mutations = new (string Name, Action<JsonObject> Apply)[]
         {
             ("legacy-v2", value => value["renderVersion"] = "m2-qpc-mono-2-rf64-truepeak"),
+            ("legacy-v3", value => value["renderVersion"] = "m2-qpc-mono-3-mic-gap-preserving"),
+            ("legacy-v4", value => value["renderVersion"] = "m2-qpc-mono-4-device-clock-preserving"),
             ("unknown", value => value["renderVersion"] = "unknown-renderer"),
             ("missing", value => value.Remove("renderVersion")),
             ("null", value => value["renderVersion"] = null),
@@ -82,9 +84,9 @@ internal static class M2ExportTests
         Need(result.FrameCount == 3_120_624 && result.DurationUs == 65_013_000, "完整时间轴帧数改变。");
         using var wav = new WaveFileReader(result.WavePath);
         Need(wav.WaveFormat.Channels == 1 && wav.WaveFormat.SampleRate == 48000, "不是完整 mono mix。");
-        Near(Sample(wav, 1), 0.1f); Near(Sample(wav, 5), 0.15f);
-        Near(Sample(wav, 32), 0.05f); Near(Sample(wav, 35), 0.25f);
-        Near(Sample(wav, 64), 0.2f); Near(Sample(wav, duration - 0.0001), 0.2f);
+        Near(Sample(wav, 1), 0.25f * M2TimelineRenderer.SourceGain); Near(Sample(wav, 5), 0.375f * M2TimelineRenderer.SourceGain);
+        Near(Sample(wav, 32), 0.125f * M2TimelineRenderer.SourceGain); Near(Sample(wav, 35), 0.625f * M2TimelineRenderer.SourceGain);
+        Near(Sample(wav, 64), 0.5f * M2TimelineRenderer.SourceGain); Near(Sample(wav, duration - 0.0001), 0.5f * M2TimelineRenderer.SourceGain);
         Need(OriginalHashes(session).OrderBy(x => x.Key).SequenceEqual(hashes.OrderBy(x => x.Key)), "渲染修改了原始轨或索引。");
     }
 
@@ -118,7 +120,7 @@ internal static class M2ExportTests
         using var wav = new WaveFileReader(result.WavePath);
         foreach (double marker in markers)
         {
-            Near(Sample(wav, marker + 0.005), 0.4f, 0.004f);
+            Near(Sample(wav, marker + 0.005), (float)(M2TimelineRenderer.SourceGain * result.WaveAppliedGain), 0.004f);
             Near(Sample(wav, marker - 0.020), 0, 0.0001f);
             Near(Sample(wav, marker + 0.030), 0, 0.0001f);
         }
@@ -265,7 +267,8 @@ internal static class M2ExportTests
             }
         Need(samplePeak <= 0.801 && peak4x < Math.Pow(10, -1.0 / 20), "此合成夹具超过-1dB插值峰值目标。");
         File.WriteAllText(Path.Combine(root, "peak-fixture-evidence.json"), JsonSerializer.Serialize(new
-        { sourceGain = 0.4, samplePeak, windowedSinc4xPeak = peak4x, estimatedDb = 20 * Math.Log10(peak4x), realProgramTruePeak = "NOT_VERIFIED" }));
+        { sourceGain = M2TimelineRenderer.SourceGain, appliedGain = mix.WaveAppliedGain, samplePeak,
+            windowedSinc4xPeak = peak4x, estimatedDb = 20 * Math.Log10(peak4x), realProgramTruePeak = "NOT_VERIFIED" }));
     }
 
     private static void RealCodecIntegration(string root)
@@ -310,7 +313,7 @@ internal static class M2ExportTests
         var original = OriginalHashes(session); var mix = M2ExportService.RenderMeeting(session, encoder: null);
         Need(!mix.SourceStorageComplete && mix.FrameCount == 2304 && mix.Warnings.Any(w => w.Contains("不代表完整捕获")), "来源不完整状态被清洗。");
         using (var wav = new WaveFileReader(mix.WavePath))
-        { Near(Sample(wav, 0.01), 0.2f); Near(Sample(wav, 0.024), 0); Near(Sample(wav, 0.0479), 0.2f); }
+        { Near(Sample(wav, 0.01), 0.5f * M2TimelineRenderer.SourceGain); Near(Sample(wav, 0.024), 0); Near(Sample(wav, 0.0479), 0.5f * M2TimelineRenderer.SourceGain); }
         var export = M2ExportService.ExportParts(mix, new(M2ExportFormat.Wave, 10000, 1, 0, true), Path.Combine(root, "declared-gap-export"));
         using var render = JsonDocument.Parse(File.ReadAllText(Path.Combine(mix.Directory, "render.json")));
         string manifest = File.ReadAllText(export.ManifestPath!); using var exported = JsonDocument.Parse(manifest);

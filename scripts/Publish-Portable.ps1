@@ -36,17 +36,26 @@ foreach ($runtimeConfig in @('ProjectEcho.runtimeconfig.json','CaptureHost\Proje
 }
 New-Item -ItemType Directory -Path (Join-Path $output 'LICENSES'), (Join-Path $output 'tests') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'tests\audio_probe.html') -Destination (Join-Path $output 'tests\audio_probe.html')
-$readme = (Get-Content -LiteralPath (Join-Path $root 'docs\38_PORTABLE_GUIDE.md') -Raw).Replace('(53_M3C_USER_GUIDE_ZH.md)', '(使用说明.zh-CN.md)')
+$readme = (Get-Content -LiteralPath (Join-Path $root 'docs\38_PORTABLE_GUIDE.md') -Raw).Replace('(53_M3C_USER_GUIDE_ZH.md)', '(使用说明.zh-CN.md)').Replace('(57_M3D_VULKAN_AND_COMPLETE_PACKAGE.md)', '(Vulkan与完整包验证.zh-CN.md)').Replace('(58_M3D_ENDPOINT_RECORDING_FIX.md)', '(端点录音修复说明.zh-CN.md)').Replace('(59_M3D_ENDPOINT_MIX_AND_HISTORY_FIX.md)', '(混音与处理结果修复.zh-CN.md)').Replace('(60_M3E_LOG_UI_AND_ASR_FIX.md)', '(M3E更新与验证.zh-CN.md)').Replace('(61_M3F_VALIDATION_REPLAY_AND_SINGLE_INSTANCE.md)', '(M3F更新与验证.zh-CN.md)').Replace('(62_M3G_VULKAN_TIMING_AND_MIC_UI.md)', '(M3G更新与验证.zh-CN.md)').Replace('(63_M3H_MEETING_SETTINGS_AND_LEVEL_PREVIEW.md)', '(M3H更新与验证.zh-CN.md)')
 [IO.File]::WriteAllText((Join-Path $output 'README.zh-CN.md'), $readme)
-$guide = (Get-Content -LiteralPath (Join-Path $root 'docs\53_M3C_USER_GUIDE_ZH.md') -Raw).Replace('(../STATUS.md)', '(README.zh-CN.md)').Replace('(38_PORTABLE_GUIDE.md)', '(README.zh-CN.md)')
+$guide = (Get-Content -LiteralPath (Join-Path $root 'docs\53_M3C_USER_GUIDE_ZH.md') -Raw).Replace('(../STATUS.md)', '(README.zh-CN.md)').Replace('(38_PORTABLE_GUIDE.md)', '(README.zh-CN.md)').Replace('(56_M3D_IMPLEMENTATION.md)', '(验证说明.zh-CN.md)').Replace('(60_M3E_LOG_UI_AND_ASR_FIX.md)', '(M3E更新与验证.zh-CN.md)').Replace('(61_M3F_VALIDATION_REPLAY_AND_SINGLE_INSTANCE.md)', '(M3F更新与验证.zh-CN.md)').Replace('(62_M3G_VULKAN_TIMING_AND_MIC_UI.md)', '(M3G更新与验证.zh-CN.md)').Replace('(63_M3H_MEETING_SETTINGS_AND_LEVEL_PREVIEW.md)', '(M3H更新与验证.zh-CN.md)').Replace('(57_M3D_VULKAN_AND_COMPLETE_PACKAGE.md)', '(Vulkan与完整包验证.zh-CN.md)')
 [IO.File]::WriteAllText((Join-Path $output '使用说明.zh-CN.md'), $guide)
+[IO.File]::WriteAllText((Join-Path $output '验证说明.zh-CN.md'), (Get-Content -LiteralPath (Join-Path $root 'docs\56_M3D_IMPLEMENTATION.md') -Raw).Replace('(57_M3D_VULKAN_AND_COMPLETE_PACKAGE.md)', '(Vulkan与完整包验证.zh-CN.md)'))
+Copy-Item -LiteralPath (Join-Path $root 'docs\57_M3D_VULKAN_AND_COMPLETE_PACKAGE.md') -Destination (Join-Path $output 'Vulkan与完整包验证.zh-CN.md')
+Copy-Item -LiteralPath (Join-Path $root 'docs\58_M3D_ENDPOINT_RECORDING_FIX.md') -Destination (Join-Path $output '端点录音修复说明.zh-CN.md')
+Copy-Item -LiteralPath (Join-Path $root 'docs\59_M3D_ENDPOINT_MIX_AND_HISTORY_FIX.md') -Destination (Join-Path $output '混音与处理结果修复.zh-CN.md')
+Copy-Item -LiteralPath (Join-Path $root 'docs\60_M3E_LOG_UI_AND_ASR_FIX.md') -Destination (Join-Path $output 'M3E更新与验证.zh-CN.md')
+Copy-Item -LiteralPath (Join-Path $root 'docs\61_M3F_VALIDATION_REPLAY_AND_SINGLE_INSTANCE.md') -Destination (Join-Path $output 'M3F更新与验证.zh-CN.md')
+Copy-Item -LiteralPath (Join-Path $root 'docs\62_M3G_VULKAN_TIMING_AND_MIC_UI.md') -Destination (Join-Path $output 'M3G更新与验证.zh-CN.md')
+[IO.File]::WriteAllText((Join-Path $output 'M3H更新与验证.zh-CN.md'), (Get-Content -LiteralPath (Join-Path $root 'docs\63_M3H_MEETING_SETTINGS_AND_LEVEL_PREVIEW.md') -Raw).Replace('(64_M3H_MIC_IMAGE_PROVENANCE.md)', '(麦克风图片来源.zh-CN.md)'))
+Copy-Item -LiteralPath (Join-Path $root 'docs\64_M3H_MIC_IMAGE_PROVENANCE.md') -Destination (Join-Path $output '麦克风图片来源.zh-CN.md')
 Get-ChildItem -LiteralPath (Join-Path $root 'tools\licenses') -File | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $output ('LICENSES\' + $_.Name))
 }
 @{
-    schemaVersion = 1; application = 'ProjectEcho'; milestone = 'M3C'; releaseStatus = 'IMPLEMENTED_ACCEPTANCE_IN_PROGRESS'
+    schemaVersion = 1; application = 'ProjectEcho'; milestone = 'M3H'; releaseStatus = 'IMPLEMENTED_WITH_DOCUMENTED_HARDWARE_LIMITATIONS'
     runtime = 'self-contained'; rid = 'win-x64'; defaultDataDirectory = 'Data'; compressedFormat = 'AAC in M4A; MPEG-1 Layer III in MP3'
-    transcription = 'Local file import and optional user-configured whisper.cpp; no bundled executable/model'
+    transcription = 'Local import and user-configured whisper.cpp; CPU/Auto/Vulkan; per-meeting settings and automatic prompt drafts; immutable model versions; no bundled executable/model; actual GPU depends on configured backend'
     library = 'Bundled SQLite metadata and FTS5 search indexes; originals and immutable transcript JSON remain authoritative'
     interfaceLanguages = @('zh-CN','en','zh-Hant')
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'portable.json') -Encoding utf8

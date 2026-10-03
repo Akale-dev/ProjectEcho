@@ -7,7 +7,7 @@ namespace ProjectEcho.Export;
 /// <summary>Offline derived files only. No device capture, playback, networking or original-file writes.</summary>
 public static class M2ExportService
 {
-    internal const string RenderVersion = "m2-qpc-mono-3-mic-gap-preserving";
+    internal const string RenderVersion = "m2-qpc-mono-5-stable-device-unity";
     private const string CaptureTimeline = "complete_elapsed_qpc_packet_mapping";
     private const int MaximumSizeRetries = 8;
     private const int MaximumParts = 10000;
@@ -52,7 +52,7 @@ public static class M2ExportService
             outputDirectory = M2FileSafety.Inside(derived, "mix-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(outputDirectory);
             string wave = M2FileSafety.Inside(outputDirectory, "mixed_full.wav"), partial = wave + ".partial";
             generated.Add(partial); generated.Add(wave);
-            M2TimelineRenderer.Render(capture, partial, cancellationToken);
+            var renderLevel = M2TimelineRenderer.Render(capture, partial, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             using (var check = new M2WaveReader(partial, MixFormat))
                 if (check.FrameCount != frames) throw new InvalidDataException("混音 WAV 解码帧数与完整时间轴不同。");
@@ -65,8 +65,8 @@ public static class M2ExportService
             string waveHash = M2FileSafety.Hash(wave, cancellationToken);
             var warnings = capture.Warnings.Concat(new[]
             {
-                "依据每个原始包的 API QPC 重新锚定并在线性重采样时校正相邻包时间；真实两小时双轨同步尚待验收。",
-                "混音保留全部经过时间和缺口；固定来源增益及整文件峰值保护只改变派生文件，不改变原始音轨或时间位置。"
+                "混音依据原始 API QPC 和设备帧重建时间；连续设备帧采用有界平稳映射，保留断续与真实缺口。真实两小时双轨同步尚待验收。",
+                "混音保持来源原有音量，仅在合成峰值过高时整体衰减；保留全部经过时间，不改原轨。"
             }).ToList();
             if (capture.Tracks.Sum(track => track.FrameCount) == 0) warnings.Add("来源未收到 PCM；输出为已确认经过时间的占位静音，不代表已采到静音。");
             if (!recovery.IsCleanEnd)
@@ -102,9 +102,12 @@ public static class M2ExportService
                 sourceStorageComplete = recovery.IsCleanEnd,
                 sampleRate = MixFormat.SampleRate, channels = 1, frameCount = frames, duration100ns = capture.Duration100ns,
                 sourceGain = M2TimelineRenderer.SourceGain, peakCeiling = M2TimelineRenderer.PeakCeiling,
+                deviceClockSmoothing = new { nominalWindow100ns = AudioClock.UnitsPerSecond,
+                    maximumAllowedCorrection100ns = DevicePacketClock.MaximumJitter100ns,
+                    packets = renderLevel.SmoothedPackets, maximumCorrection100ns = renderLevel.MaximumClockCorrection100ns },
                 timeline = CaptureTimeline, sourceHashes,
                 wave = new { file = "mixed_full.wav", sha256 = waveHash, truePeak = peakProtection.After,
-                    beforeTruePeakDbTp = peakProtection.Before.DbTp, appliedGain = peakProtection.AppliedGain,
+                    beforeTruePeakDbTp = renderLevel.Before.DbTp, appliedGain = renderLevel.AppliedGain * peakProtection.AppliedGain,
                     processingCeilingDbTp = TruePeakProtection.ProcessingCeilingDbTp, additionalDelayFrames = 0 },
                 compressed = compressed is null ? null : new { file = Path.GetFileName(compressed), sha256 = compressedHash,
                     decodedFrames = encoded!.DecodedFrames, encoderDelayFrames = encoded.EncoderDelayFrames, trailingPaddingFrames = encoded.TrailingPaddingFrames,
@@ -113,7 +116,7 @@ public static class M2ExportService
             }, cancellationToken);
             return new(wave, compressed, outputDirectory, MixFormat.SampleRate, frames, capture.Duration100ns / 10, warnings)
                 { WaveSha256 = waveHash, CompressedSha256 = compressedHash, SourceStorageComplete = recovery.IsCleanEnd,
-                    WaveTruePeak = peakProtection.After, WaveAppliedGain = peakProtection.AppliedGain };
+                    WaveTruePeak = peakProtection.After, WaveAppliedGain = renderLevel.AppliedGain * peakProtection.AppliedGain };
         }
         catch
         {
@@ -208,15 +211,18 @@ public static class M2ExportService
                     string fileName = $"part-{parts.Count + 1:D4}" + extension;
                     string target = M2FileSafety.Inside(output, fileName), temporary = compressed
                         ? M2FileSafety.Inside(output, $"part-{parts.Count + 1:D4}.pending" + extension) : target + ".partial";
-                    string pcm = compressed ? M2FileSafety.Inside(output, $"work-{parts.Count + 1:D4}.wav") : temporary;
-                    generated.Add(pcm); generated.Add(temporary); generated.Add(target);
-                    WriteWaveRange(reader, pcm, start, count, cancellationToken);
+                    bool fullRange = compressed && start == 0 && count == fullMix.FrameCount;
+                    string pcm = fullRange ? wave : compressed ? M2FileSafety.Inside(output, $"work-{parts.Count + 1:D4}.wav") : temporary;
+                    // The unchanged full WAV is already hash-checked and held open.
+                    // Encoding all of it needs no extra (potentially multi-GB) PCM copy.
+                    if (!fullRange) { generated.Add(pcm); WriteWaveRange(reader, pcm, start, count, cancellationToken); }
+                    generated.Add(temporary); generated.Add(target);
                     AudioEncodingResult? encoded = null;
                     TruePeakProtectionResult? waveProtection = null;
                     if (compressed)
                     {
                         try { encoded = encoder!.Encode(pcm, temporary, cancellationToken); ValidateEncoded(encoded, count, temporary); }
-                        finally { M2FileSafety.DeleteGenerated(output, pcm); }
+                        finally { if (!fullRange) M2FileSafety.DeleteGenerated(output, pcm); }
                     }
                     else
                     {

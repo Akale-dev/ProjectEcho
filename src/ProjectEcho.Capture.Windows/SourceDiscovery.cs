@@ -59,9 +59,10 @@ public static class SourceDiscovery
                 microphones.Add(new(device.ID, device.FriendlyName));
             }
         }
-        int build = Environment.OSVersion.Version.Build;
+        var capability = ProcessLoopbackSupport.Current;
+        int build = capability.WindowsVersion.Build;
         return new(render, microphones, sources.DistinctBy(x => (x.Root.ProcessId, x.AudioProcess.ProcessId, x.EndpointId)).ToArray(),
-            warnings, build, OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348));
+            warnings, build, capability.CanAttempt);
     }
 
     public static PreflightResult Preflight(CaptureOptions options)
@@ -78,7 +79,9 @@ public static class SourceDiscovery
         using var enumerator = new MMDeviceEnumerator();
         if (options.Mode == SourceMode.ProcessTree)
         {
-            if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348)) errors.Add("当前 build 未达到项目采用的进程回环最低 20348；请自行明确选择端点兼容模式。");
+            var capability = ProcessLoopbackSupport.Current;
+            if (!capability.CanAttempt) errors.Add(capability.PreflightMessage);
+            else warnings.Add(capability.PreflightMessage);
             if (options.ProcessSource is null) errors.Add("请从真实音频会话候选中选择进程树。");
             else
             {
@@ -170,7 +173,7 @@ public static class SourceDiscovery
         return device;
     }
 
-    private static ProcessIdentity? TryIdentity(int pid)
+    internal static ProcessIdentity? TryIdentity(int pid)
     {
         try
         {
@@ -199,7 +202,7 @@ public static class SourceDiscovery
         }
     }
 
-    private static Dictionary<int, int> ReadParents()
+    internal static Dictionary<int, int> ReadParents()
     {
         var parents = new Dictionary<int, int>();
         using var snapshot = CreateToolhelp32Snapshot(2, 0);

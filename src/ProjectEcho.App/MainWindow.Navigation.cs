@@ -1,12 +1,35 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using ProjectEcho.Core;
 
 namespace ProjectEcho.App;
 
 public partial class MainWindow
 {
     private bool useDarkTheme;
+    private string recordingIndicatorState = "hidden";
+
+    private void UpdateRecordingIndicator()
+    {
+        string next = state == SessionState.Paused ? "paused"
+            : state == SessionState.Stopping || starting ? "pending"
+            : state == SessionState.Recording ? "recording" : "hidden";
+        string description = StateDescription();
+        RecordingIndicator.ToolTip = PausedRecordingIndicator.ToolTip = description;
+        System.Windows.Automation.AutomationProperties.SetHelpText(RecordNavigationButton, description);
+        if (recordingIndicatorState == next) return;
+        recordingIndicatorState = next;
+        RecordingIndicator.BeginAnimation(OpacityProperty, null);
+        RecordingIndicator.Opacity = 1;
+        RecordingIndicator.Visibility = next is "recording" or "pending" ? Visibility.Visible : Visibility.Collapsed;
+        PausedRecordingIndicator.Visibility = next == "paused" ? Visibility.Visible : Visibility.Collapsed;
+        if (next == "pending") RecordingIndicator.Fill = Brushes.Goldenrod;
+        else RecordingIndicator.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "DangerBrush");
+        if (next == "recording") RecordingIndicator.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(1, 0.3, TimeSpan.FromSeconds(0.65)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
+    }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -47,6 +70,7 @@ public partial class MainWindow
         RecordNavigationButton.Background = (Brush)FindResource(MainTabs.SelectedIndex == 0 ? "SidebarSelectedBrush" : "SidebarBrush");
         LibraryNavigationButton.Background = (Brush)FindResource(MainTabs.SelectedIndex == 1 ? "SidebarSelectedBrush" : "SidebarBrush");
         SettingsNavigationButton.Background = (Brush)FindResource(MainTabs.SelectedIndex == 2 ? "SidebarSelectedBrush" : "SidebarBrush");
+        if (initialized) UpdateLevelPreview();
     }
 
     private void LibraryNavigation_Click(object sender, RoutedEventArgs e)
@@ -60,6 +84,7 @@ public partial class MainWindow
 
     private void MeetingTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (initialized && ReferenceEquals(e.Source, MeetingTabs) && MeetingTabs.SelectedIndex == 4) RefreshMeetingLog();
         if (initialized && ReferenceEquals(e.Source, MeetingTabs) && MeetingTabs.SelectedIndex is 2 or 3)
         {
             EnsureMeetingSubtitles();
@@ -79,6 +104,10 @@ public partial class MainWindow
     private void ClearMeetingForNewRecording()
     {
         if (!ProjectEcho.Core.SessionRules.CanStart(state) || WindowCloseRequested) return;
+        FlushMeetingWhisperPrompt();
+        ResetRecordingLevelCounters();
+        elapsedUs = 0;
+        RememberFilingDraft();
         savedMixCancellation?.Cancel();
         ResetTranscriptPlayback();
         ClearReplaySubtitles();
@@ -91,7 +120,11 @@ public partial class MainWindow
         SelectedMeetingText.Text = UiText.T("选择一场会议");
         MeetingMetadataText.Text = UiText.T("点击左侧会议选择历史记录。");
         FiledTitleBox.Clear(); FiledProjectBox.Text = "未分类";
-        TitleBox.Text = ProjectEcho.Core.SessionDefaults.Title(DateTimeOffset.Now);
+        selectedFilingBaseline = null;
+        // This is navigation back to the recording draft. Only completing a session
+        // resets its title; changing pages or browsing an older meeting does not.
+        RefreshSelectedExportStatus();
+        RefreshMeetingLog();
         UpdateControls();
     }
 

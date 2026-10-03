@@ -179,12 +179,15 @@ public sealed class CaptureSession : IAsyncDisposable
     private static LiveSource OpenRemote(CaptureOptions options)
     {
         if (options.Mode == SourceMode.EndpointLoopback) return OpenEndpoint("remote", options.RenderDeviceId, DataFlow.Render);
-        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348)) throw new PlatformNotSupportedException("进程回环需要 build 20348+。");
         SourceDiscovery.ValidateSource(options.ProcessSource!);
-        var client = AudioClient.ActivateProcessLoopbackAsync((uint)options.ProcessSource!.Root.ProcessId,
-            ProcessLoopbackMode.IncludeTargetProcessTree).GetAwaiter().GetResult();
-        // Process loopback has no MixFormat and cannot use AutoConvertPcm. Explicit shared float format.
-        return Initialize("remote", client, WaveFormat.CreateIeeeFloatWaveFormat(48000, 2), true);
+        return ProcessLoopbackSupport.Activate(() =>
+        {
+            if (!ProcessLoopbackSupport.CanAttemptCurrent) throw new PlatformNotSupportedException(ProcessLoopbackSupport.Current.PreflightMessage);
+            var client = AudioClient.ActivateProcessLoopbackAsync((uint)options.ProcessSource!.Root.ProcessId,
+                ProcessLoopbackMode.IncludeTargetProcessTree).GetAwaiter().GetResult();
+            // Process loopback has no MixFormat and cannot use AutoConvertPcm. Explicit shared float format.
+            return Initialize("remote", client, WaveFormat.CreateIeeeFloatWaveFormat(48000, 2), true);
+        });
     }
 
     private static LiveSource OpenEndpoint(string id, string? deviceId, DataFlow flow)

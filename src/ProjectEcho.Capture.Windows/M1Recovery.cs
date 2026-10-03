@@ -122,7 +122,7 @@ public static class M1Recovery
                                     (Int128)previous.RawFrameCount * AudioClock.UnitsPerSecond;
                                 // Raw clocks can drift relative to nominal sample rate. A single-frame
                                 // tolerance covers quantization; larger unreported gaps/overlaps do not.
-                                if (clockJitter != 0 && clockJitter != MicrophonePacketClock.BoundedJitter100ns(
+                                if (clockJitter != 0 && clockJitter != DevicePacketClock.BoundedJitter100ns(
                                     segment.SourceId, segment.Format.SampleRate, previous, packet))
                                     throw new InvalidDataException("QPC 抖动声明与原始时钟、连续设备帧或允许范围不一致。");
                                 if (clockJitter == 0 && valid && previous.TimestampValid && clockDifference < -AudioClock.UnitsPerSecond)

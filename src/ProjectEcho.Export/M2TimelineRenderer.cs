@@ -6,29 +6,47 @@ namespace ProjectEcho.Export;
 internal static class M2TimelineRenderer
 {
     internal const int SampleRate = 48000;
-    internal const float SourceGain = 0.4f;
+    internal const float SourceGain = 1f;
     internal const float PeakCeiling = 0.8912509f;
     private const int BlockFrames = 8192;
 
-    internal static void Render(CaptureResult capture, string destination, CancellationToken token)
+    internal static TimelineRenderLevel Render(CaptureResult capture, string destination, CancellationToken token)
     {
         long frames = FramesForDuration(capture.Duration100ns);
-        using var output = new MonoPcmWriter(destination, frames);
         var sourceGroups = capture.Tracks.GroupBy(t => t.SourceId, StringComparer.Ordinal).ToArray();
         if (sourceGroups.Length > 2 || sourceGroups.Any(g => g.Key is not ("remote" or "mic")))
             throw new NotSupportedException("完整混音只接受独立的 remote 与可选 mic 来源。");
-        var sources = sourceGroups.Select(group => new SourceCursor(group.ToArray(), capture.EpochQpc100ns, frames)).ToArray();
+        var sources = new List<SourceCursor>();
         try
         {
+            foreach (var group in sourceGroups) sources.Add(new SourceCursor(group.ToArray(), capture.EpochQpc100ns, frames));
             var mix = new float[BlockFrames];
+            // Measure the floating-point sum before PCM16 conversion. A fixed
+            // 0.4 gain lowered every quiet recording, while unity followed by
+            // PCM clipping would irreversibly distort overlapping loud tracks.
+            var meter = new TruePeakMeter(SampleRate);
             for (long start = 0; start < frames; start += BlockFrames)
             {
                 token.ThrowIfCancellationRequested(); int count = (int)Math.Min(BlockFrames, frames - start);
                 Array.Clear(mix);
                 foreach (var source in sources) source.Add(start, count, mix, token);
+                meter.AppendSamples(mix.AsSpan(0, count));
+            }
+            var peak = meter.Complete();
+            double ceiling = Math.Pow(10, (TruePeakProtection.ProcessingCeilingDbTp - 0.01) / 20);
+            double gain = peak.TruePeakLinear > ceiling ? ceiling / peak.TruePeakLinear : 1;
+            foreach (var source in sources) source.Reset();
+            using var output = new MonoPcmWriter(destination, frames);
+            for (long start = 0; start < frames; start += BlockFrames)
+            {
+                token.ThrowIfCancellationRequested(); int count = (int)Math.Min(BlockFrames, frames - start);
+                Array.Clear(mix);
+                foreach (var source in sources) source.Add(start, count, mix, token);
+                if (gain < 1) for (int i = 0; i < count; i++) mix[i] *= (float)gain;
                 output.Write(mix.AsSpan(0, count));
             }
             output.Finish();
+            return new(gain, peak, sources.Sum(source => source.SmoothedPackets), sources.Select(source => source.MaximumCorrection100ns).DefaultIfEmpty().Max());
         }
         finally { foreach (var source in sources) source.Dispose(); }
     }
@@ -57,6 +75,8 @@ internal static class M2TimelineRenderer
         private int cursor;
         private CapturedTrack? currentTrack;
         private M2WaveReader? reader;
+        internal int SmoothedPackets { get; private set; }
+        internal double MaximumCorrection100ns { get; private set; }
 
         internal SourceCursor(CapturedTrack[] tracks, ulong epoch, long totalFrames)
         {
@@ -95,7 +115,7 @@ internal static class M2TimelineRenderer
                 var a = previous[^1]; var b = current[0];
                 bool declaredJitter = b.Packet.ClockJitter100ns != 0;
                 if (declaredJitter && (a.Track.Format != b.Track.Format || a.Track.SegmentId != b.Track.SegmentId ||
-                    b.Packet.ClockJitter100ns != MicrophonePacketClock.BoundedJitter100ns(
+                    b.Packet.ClockJitter100ns != DevicePacketClock.BoundedJitter100ns(
                         a.Track.SourceId, a.Track.Format.SampleRate, a.Packet, b.Packet)))
                     throw new InvalidDataException("混音的时钟抖动声明缺少连续设备帧/原始QPC证据。");
                 double rawStart = (double)((Int128)a.Packet.QpcPosition100ns - epoch) * SampleRate / AudioClock.UnitsPerSecond;
@@ -104,27 +124,49 @@ internal static class M2TimelineRenderer
                 // Apply the existing quantization tolerance to the complete raw
                 // packet too; even a one-input-frame correction can reverse a
                 // one-frame chunk fragment if adjusted after splitting.
-                // A microphone's valid device counter is independent evidence:
+                // A valid device counter is independent evidence:
                 // a small real loss must not be stretched away as QPC rounding.
                 // Discontinuity describes the interval before that packet, so
                 // A's flag must not forbid an independently continuous A->B pair.
-                // Keep the existing process-loopback QPC-only policy unchanged.
-                bool microphoneDeviceContiguous = a.Track.SourceId != "mic" ||
+                // Keep the existing process-loopback QPC-only policy unchanged;
+                // endpoint remote streams with valid counters get the same gap
+                // protection as microphone streams.
+                bool deviceContiguous = (a.Track.SourceId != "mic" &&
+                    !(a.Packet.DevicePositionValid && b.Packet.DevicePositionValid)) ||
                     (a.Packet.DevicePositionValid && b.Packet.DevicePositionValid &&
                      (b.Packet.Flags & 5) == 0 &&
                      (UInt128)a.Packet.DevicePosition + (uint)a.Packet.RawFrameCount == b.Packet.DevicePosition);
                 bool quantizedContiguous = a.Track.Format == b.Track.Format && a.Track.SegmentId == b.Track.SegmentId &&
-                    microphoneDeviceContiguous &&
+                    deviceContiguous &&
                     b.Packet.RetainedFrameOffset == 0 &&
                     a.Packet.RetainedFrameOffset + (long)a.Packet.FrameCount == a.Packet.RawFrameCount &&
                     Math.Abs(rawDuration - nominal) <= 2.0 * SampleRate / a.Track.Format.SampleRate + .0001;
-                if (!declaredJitter && !quantizedContiguous) continue;
+                // Storage/recovery permit up to one input frame of negative QPC
+                // quantization even at a reported discontinuity or a change in
+                // device-clock validity. Such a packet is not evidence of a
+                // continuous run, but rejecting its already-validated PCM here
+                // made otherwise recoverable endpoint sessions unrenderable.
+                // Only shorten the preceding complete raw packet to the next
+                // anchor: never fill a positive gap or cross a segment/cutoff.
+                Int128 deviation = ((Int128)b.Packet.QpcPosition100ns - a.Packet.QpcPosition100ns) * a.Track.Format.SampleRate
+                    - (Int128)a.Packet.RawFrameCount * AudioClock.UnitsPerSecond;
+                UInt128 expectedDevice = (UInt128)a.Packet.DevicePosition + (uint)a.Packet.RawFrameCount;
+                bool deviceOrderValid = !(a.Packet.DevicePositionValid && b.Packet.DevicePositionValid) ||
+                    (b.Packet.DevicePosition >= expectedDevice &&
+                     (b.Packet.DevicePosition == expectedDevice || (b.Packet.Flags & 1) != 0));
+                bool negativeQuantization = a.Track.Format == b.Track.Format && a.Track.SegmentId == b.Track.SegmentId &&
+                    b.Packet.QpcPosition100ns > a.Packet.QpcPosition100ns &&
+                    b.Packet.RetainedFrameOffset == 0 &&
+                    a.Packet.RetainedFrameOffset + (long)a.Packet.FrameCount == a.Packet.RawFrameCount &&
+                    deviceOrderValid && deviation < 0 && deviation >= -AudioClock.UnitsPerSecond;
+                if (!declaredJitter && !quantizedContiguous && !negativeQuantization) continue;
                 foreach (var fragment in previous)
                 {
                     fragment.Start = rawStart + rawDuration * fragment.Packet.RetainedFrameOffset / fragment.Packet.RawFrameCount;
                     fragment.End = rawStart + rawDuration * (fragment.Packet.RetainedFrameOffset + fragment.Packet.FrameCount) / fragment.Packet.RawFrameCount;
                 }
             }
+            SmoothDeviceRuns(rawPackets, epoch);
             spans = prepared.OrderBy(p => p.Start).ToArray();
             for (int i = 0; i + 1 < spans.Length; i++)
             {
@@ -132,6 +174,87 @@ internal static class M2TimelineRenderer
                 // Whole raw packets were already mapped. Only floating-point
                 // roundoff remains permissible between their chunk fragments.
                 if (difference < -0.0001) throw new InvalidDataException("同一路来源时间范围重叠；拒绝重复混入 PCM。");
+            }
+        }
+
+        private void SmoothDeviceRuns(Span[][] packets, ulong epoch)
+        {
+            // QPC jitter is not evidence that the actual sample clock speeds up
+            // and slows down every packet. Within proven continuous device runs,
+            // use shared window endpoints instead of modulating pitch per packet.
+            // Keep raw clocks untouched and bound every mapped edge to 2 ms from
+            // its raw position. Never smooth across a gap, discontinuity or segment.
+            int start = 0;
+            while (start < packets.Length)
+            {
+                int last = start;
+                while (last + 1 < packets.Length && DeviceContinuous(packets[last][^1], packets[last + 1][0])) last++;
+                int window = start;
+                while (window < last)
+                {
+                    int boundary = window + 1;
+                    while (boundary <= last &&
+                        packets[boundary][0].Packet.QpcPosition100ns - packets[window][0].Packet.QpcPosition100ns < AudioClock.UnitsPerSecond)
+                        boundary++;
+                    int end = boundary <= last ? boundary - 1 : last;
+                    MapWindow(window, end, boundary <= last ? packets[boundary][0] : null);
+                    window = end + 1;
+                }
+                start = last + 1;
+            }
+
+            bool DeviceContinuous(Span a, Span b)
+            {
+                if (a.Track.Format != b.Track.Format || a.Track.SegmentId != b.Track.SegmentId ||
+                    !a.Packet.DevicePositionValid || !b.Packet.DevicePositionValid ||
+                    (b.Packet.Flags & 5) != 0 || b.Packet.QpcPosition100ns <= a.Packet.QpcPosition100ns ||
+                    a.Packet.RetainedFrameOffset + (long)a.Packet.FrameCount != a.Packet.RawFrameCount ||
+                    b.Packet.RetainedFrameOffset != 0 ||
+                    (UInt128)a.Packet.DevicePosition + (uint)a.Packet.RawFrameCount != b.Packet.DevicePosition)
+                    return false;
+                Int128 difference = ((Int128)b.Packet.QpcPosition100ns - a.Packet.QpcPosition100ns) * a.Track.Format.SampleRate
+                    - (Int128)a.Packet.RawFrameCount * AudioClock.UnitsPerSecond;
+                return b.Packet.ClockJitter100ns != 0 || Int128.Abs(difference) <= AudioClock.UnitsPerSecond;
+            }
+
+            void MapWindow(int first, int last, Span? next)
+            {
+                if (last <= first) return;
+                var a = packets[first][0]; var b = packets[last][^1];
+                Int128 firstDevice = (Int128)a.Packet.DevicePosition + a.Packet.RetainedFrameOffset;
+                Int128 endDevice = next is null ? (Int128)b.Packet.DevicePosition + b.Packet.RetainedFrameOffset + b.Packet.FrameCount
+                    : (Int128)next.Packet.DevicePosition + next.Packet.RetainedFrameOffset;
+                double startTime = a.Start, endTime = next?.Start ?? b.End;
+                if (endDevice <= firstDevice || endTime <= startTime) return;
+                double step = (endTime - startTime) / (double)(endDevice - firstDevice);
+                double maximum = 0;
+                for (int index = first; index <= last; index++)
+                    foreach (var span in packets[index])
+                    {
+                        double mapped = startTime + (double)((Int128)span.Packet.DevicePosition + span.Packet.RetainedFrameOffset - firstDevice) * step;
+                        double raw = (double)((Int128)span.Packet.QpcPosition100ns - epoch) * SampleRate / AudioClock.UnitsPerSecond
+                            + (double)span.Packet.RetainedFrameOffset * SampleRate / span.Track.Format.SampleRate;
+                        maximum = Math.Max(maximum, Math.Max(Math.Abs(mapped - raw),
+                            Math.Abs(mapped + span.Packet.FrameCount * step - raw - (double)span.Packet.FrameCount * SampleRate / span.Track.Format.SampleRate)));
+                    }
+                if (maximum > DevicePacketClock.MaximumJitter100ns * (double)SampleRate / AudioClock.UnitsPerSecond + .00001)
+                {
+                    // An unstable clock must not acquire an unbounded correction.
+                    // Split using another real anchor, ultimately retaining the
+                    // already-validated packet mapping when no window fits.
+                    int middle = first + (last - first + 1) / 2;
+                    MapWindow(first, middle - 1, packets[middle][0]);
+                    MapWindow(middle, last, next);
+                    return;
+                }
+                for (int index = first; index <= last; index++)
+                    foreach (var span in packets[index])
+                    {
+                        span.Start = startTime + (double)((Int128)span.Packet.DevicePosition + span.Packet.RetainedFrameOffset - firstDevice) * step;
+                        span.End = span.Start + span.Packet.FrameCount * step;
+                    }
+                SmoothedPackets += last - first + 1;
+                MaximumCorrection100ns = Math.Max(MaximumCorrection100ns, maximum * AudioClock.UnitsPerSecond / SampleRate);
             }
         }
 
@@ -155,20 +278,52 @@ internal static class M2TimelineRenderer
                 int readEnd = Math.Clamp((int)Math.Floor((end - 1 - span.Start) * step) + 2, readFirst + 1, span.Packet.FrameCount);
                 var pcm = reader!.ReadFrames(span.Packet.WaveFrameOffset + readFirst, readEnd - readFirst);
                 int channels = span.Track.Format.Channels;
+                float[]? following = null;
+                if (readEnd == span.Packet.FrameCount && index + 1 < spans.Length && SharesNextSample(span, spans[index + 1]))
+                {
+                    var next = spans[index + 1];
+                    if (ReferenceEquals(span.Track, next.Track)) following = reader.ReadFrames(next.Packet.WaveFrameOffset, 1);
+                    else
+                    {
+                        using var nextReader = new M2WaveReader(next.Track.WavePath, next.Track.Format);
+                        if (nextReader.FrameCount != next.Track.FrameCount) throw new InvalidDataException("相邻原 WAV 帧数改变。");
+                        following = nextReader.ReadFrames(next.Packet.WaveFrameOffset, 1);
+                    }
+                }
                 for (long frame = first; frame < end; frame++)
                 {
-                    double position = Math.Clamp((frame - span.Start) * step - readFirst, 0, readEnd - readFirst - 1);
-                    int low = (int)position, high = Math.Min(low + 1, readEnd - readFirst - 1); float fraction = (float)(position - low);
+                    int available = readEnd - readFirst;
+                    double position = Math.Clamp((frame - span.Start) * step - readFirst, 0, available - (following is null ? 1 : 0));
+                    int low = Math.Min((int)position, available - 1), high = Math.Min(low + 1, available - (following is null ? 1 : 0));
+                    float fraction = (float)(position - low);
                     float mono = 0;
-                    for (int ch = 0; ch < channels; ch++) mono += pcm[low * channels + ch] * (1 - fraction) + pcm[high * channels + ch] * fraction;
+                    for (int ch = 0; ch < channels; ch++)
+                        mono += pcm[low * channels + ch] * (1 - fraction)
+                            + (high == available ? following![ch] : pcm[high * channels + ch]) * fraction;
                     mix[frame - blockStart] += Math.Clamp(mono / channels, -1f, 1f) * SourceGain;
                 }
             }
         }
 
+        private static bool SharesNextSample(Span a, Span b)
+        {
+            if (a.Track.Format != b.Track.Format || a.Track.SegmentId != b.Track.SegmentId || Math.Abs(a.End - b.Start) > .0001)
+                return false;
+            // Chunk fragments of the same raw packet are always adjacent PCM.
+            if (a.Packet.QpcPosition100ns == b.Packet.QpcPosition100ns && a.Packet.DevicePosition == b.Packet.DevicePosition &&
+                a.Packet.RawFrameCount == b.Packet.RawFrameCount && a.Packet.Flags == b.Packet.Flags)
+                return a.Packet.RetainedFrameOffset + a.Packet.FrameCount == b.Packet.RetainedFrameOffset;
+            return a.Packet.DevicePositionValid && b.Packet.DevicePositionValid && (b.Packet.Flags & 5) == 0 &&
+                a.Packet.RetainedFrameOffset + (long)a.Packet.FrameCount == a.Packet.RawFrameCount && b.Packet.RetainedFrameOffset == 0 &&
+                (UInt128)a.Packet.DevicePosition + (uint)a.Packet.RawFrameCount == b.Packet.DevicePosition;
+        }
+
+        internal void Reset() => cursor = 0;
         public void Dispose() => reader?.Dispose();
     }
 }
+
+internal sealed record TimelineRenderLevel(double AppliedGain, TruePeakMeasurement Before, int SmoothedPackets, double MaximumClockCorrection100ns);
 
 internal sealed class MonoPcmWriter : IDisposable
 {

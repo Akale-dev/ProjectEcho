@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <InformationalVersion>M3H</InformationalVersion>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
@@ -10,6 +11,8 @@
     <EmbeddedResource Include="Localization/*.json" LogicalName="ProjectEcho.Localization.%(Filename)%(Extension)" />
     <Resource Include="Assets/ProjectEcho.ico" />
     <Resource Include="Assets/ProjectEcho.png" />
+    <Resource Include="Assets/MicOn-M3H.png" />
+    <Resource Include="Assets/MicOff-M3H.png" />
     <ProjectReference Include="../ProjectEcho.Core/ProjectEcho.Core.csproj" />
     <ProjectReference Include="../ProjectEcho.Capture.Windows/ProjectEcho.Capture.Windows.csproj" />
     <ProjectReference Include="../ProjectEcho.Export/ProjectEcho.Export.csproj" />

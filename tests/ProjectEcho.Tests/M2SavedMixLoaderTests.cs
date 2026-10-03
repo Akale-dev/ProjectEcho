@@ -17,6 +17,8 @@ internal static class M2SavedMixLoaderTests
         run("M3b/T22/T50-SYNTH saved mix cannot reuse same PCM with another meeting timeline", () => OtherMeeting(root));
         run("M3b/T20-SYNTH saved mix no-cache and cancellation are read-only", () => NoCache(root));
         run("M3b/T28-WINDOWS saved M4A mix reopens with full EOF verification", () => Compressed(root));
+        run("M3F/T25/T50-WINDOWS WAV listening validates sources without decoding an unused compressed copy", () => ListeningWave(root));
+        run("M3F/T28/T50-WINDOWS RF64 listening still requires verified compressed EOF", () => ListeningRf64(root));
     }
 
     private static void RoundTrip(string root)
@@ -43,6 +45,8 @@ internal static class M2SavedMixLoaderTests
         var cases = new Action<JsonObject>[]
         {
             node => node["renderVersion"] = "m2-qpc-mono-2-rf64-truepeak",
+            node => node["renderVersion"] = "m2-qpc-mono-3-mic-gap-preserving",
+            node => node["renderVersion"] = "m2-qpc-mono-4-device-clock-preserving",
             node => node.Remove("sourceIndexSha256"),
             node => node["sourceManifestSha256"] = new string('0', 64),
             node => node["sourceIndexSha256"] = new string('0', 64),
@@ -124,6 +128,70 @@ internal static class M2SavedMixLoaderTests
             "Reopened M4A association changed.");
         var bytes = File.ReadAllBytes(generated.CompressedPath!); bytes[^1] ^= 0x40; File.WriteAllBytes(generated.CompressedPath!, bytes);
         Reject<InvalidDataException>(() => M2SavedMixLoader.LoadLatest(meeting));
+    }
+
+    private static void ListeningWave(string root)
+    {
+        string meeting = Session(root, "listening-wave");
+        var generated = M2ExportService.RenderMeeting(meeting);
+        Need(generated.CompressedPath is not null, "Actual compressed fixture did not encode.");
+        var before = Fingerprints(meeting);
+        var listening = M2SavedMixLoader.LoadLatestForListening(meeting)!;
+        Need(listening.WavePath == generated.WavePath && listening.WaveSha256 == generated.WaveSha256 &&
+            listening.FrameCount == generated.FrameCount && listening.SourceStorageComplete == generated.SourceStorageComplete &&
+            listening.CompressedPath is null && listening.CompressedSha256 is null,
+            "Listening result must retain verified WAV provenance and omit unverified compressed audio.");
+        Need(before.OrderBy(x => x.Key).SequenceEqual(Fingerprints(meeting).OrderBy(x => x.Key)), "Listening validation mutated originals.");
+        File.WriteAllBytes(generated.CompressedPath!, [1, 2, 3]);
+        Need(M2SavedMixLoader.LoadLatestForListening(meeting)?.WavePath == generated.WavePath,
+            "A separate unused compressed copy delayed/rejected an independently valid WAV.");
+        Reject<InvalidDataException>(() => M2SavedMixLoader.LoadLatest(meeting));
+        var exported = M2ExportService.ExportParts(listening, new(M2ExportFormat.Wave, 1000000, 10, 0, false),
+            Path.Combine(root, "listening-wave-export"));
+        Need(exported.Parts.Count == 1, "Independently verified WAV failed the normal export checks.");
+        var compressedExport = M2ExportService.ExportParts(listening, new(M2ExportFormat.M4a, 1000000, 10, 0, true),
+            Path.Combine(root, "listening-m4a-export"));
+        Need(compressedExport.Parts.Count == 1 && compressedExport.Parts[0].EndFrame == listening.FrameCount &&
+            Hash(generated.WavePath) == generated.WaveSha256,
+            "On-demand full M4A export failed complete decoding or modified its source WAV.");
+        byte[] wave = File.ReadAllBytes(generated.WavePath); var damaged = wave.ToArray(); damaged[^1] ^= 0x40;
+        File.WriteAllBytes(generated.WavePath, damaged);
+        Reject<InvalidDataException>(() => M2SavedMixLoader.LoadLatestForListening(meeting));
+        File.WriteAllBytes(generated.WavePath, wave);
+        string source = Directory.EnumerateFiles(Path.Combine(meeting, "sources"), "*.wav", SearchOption.AllDirectories).Single();
+        byte[] original = File.ReadAllBytes(source); original[^1] ^= 0x40; File.WriteAllBytes(source, original);
+        Reject<InvalidDataException>(() => M2SavedMixLoader.LoadLatestForListening(meeting));
+    }
+
+    private static void ListeningRf64(string root)
+    {
+        string meeting = Session(root, "listening-rf64");
+        var generated = M2ExportService.RenderMeeting(meeting);
+        byte[] pcm;
+        using (var reader = new M2WaveReader(generated.WavePath))
+        {
+            pcm = new byte[checked((int)reader.DataLength)];
+            reader.ReadExactly(pcm);
+        }
+        // Small RF64 fixture exercises the actual WPF fallback contract without a multi-GB allocation.
+        using (var stream = File.Create(generated.WavePath))
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(0x34364652u); writer.Write(uint.MaxValue); writer.Write(0x45564157u);
+            writer.Write(0x34367364u); writer.Write(28u); writer.Write((ulong)(72 + pcm.Length));
+            writer.Write((ulong)pcm.Length); writer.Write((ulong)generated.FrameCount); writer.Write(0u);
+            writer.Write(0x20746d66u); writer.Write(16u); writer.Write((ushort)1); writer.Write((ushort)1);
+            writer.Write(48000); writer.Write(96000); writer.Write((ushort)2); writer.Write((ushort)16);
+            writer.Write(0x61746164u); writer.Write(uint.MaxValue); writer.Write(pcm);
+        }
+        string renderPath = Path.Combine(generated.Directory, "render.json");
+        var render = JsonNode.Parse(File.ReadAllBytes(renderPath))!.AsObject();
+        render["wave"]!["sha256"] = Hash(generated.WavePath); File.WriteAllText(renderPath, render.ToJsonString());
+        var loaded = M2SavedMixLoader.LoadLatestForListening(meeting)!;
+        Need(loaded.CompressedPath == generated.CompressedPath && loaded.CompressedSha256 == generated.CompressedSha256,
+            "RF64 listening omitted its required decoded/validated compressed fallback.");
+        File.WriteAllBytes(generated.CompressedPath!, [1, 2, 3]);
+        Reject<InvalidDataException>(() => M2SavedMixLoader.LoadLatestForListening(meeting));
     }
 
     private static string Session(string root, string name, ulong start = 0)

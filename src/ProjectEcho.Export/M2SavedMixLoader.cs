@@ -15,6 +15,18 @@ public static class M2SavedMixLoader
     /// throws: the caller can offer explicit regeneration, never silently re-render.
     /// </summary>
     public static FullMixResult? LoadLatest(string meetingDirectory, CancellationToken cancellationToken = default)
+        => LoadLatest(meetingDirectory, validateUnusedCompressed: true, cancellationToken);
+
+    /// <summary>
+    /// Validates the actual listening file and every source/timeline dependency.
+    /// A normal WAV does not depend on the separate compressed copy: that copy is
+    /// omitted from this result rather than being represented as verified. RF64
+    /// still requires the complete compressed hash/decode checks for WPF playback.
+    /// </summary>
+    public static FullMixResult? LoadLatestForListening(string meetingDirectory, CancellationToken cancellationToken = default)
+        => LoadLatest(meetingDirectory, validateUnusedCompressed: false, cancellationToken);
+
+    private static FullMixResult? LoadLatest(string meetingDirectory, bool validateUnusedCompressed, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         string meeting = M2FileSafety.FullPath(meetingDirectory);
@@ -87,8 +99,12 @@ public static class M2SavedMixLoader
             string wavePath = M2FileSafety.Inside(mix, "mixed_full.wav"), waveHash = ReadHash(wave, "sha256");
             if (M2FileSafety.Hash(Hold(wavePath), cancellationToken) != waveHash)
                 throw new InvalidDataException("完整混音 WAV 已改变或损坏。");
+            bool requiresCompressedPlayback;
             using (var reader = new M2WaveReader(wavePath, Format))
+            {
                 if (reader.FrameCount != frames) throw new InvalidDataException("完整混音 WAV 的实际帧数不完整。");
+                requiresCompressedPlayback = reader.IsRf64;
+            }
             var peak = wave.GetProperty("truePeak").Deserialize<TruePeakMeasurement>();
             ValidatePeak(peak, frames);
             double gain = wave.GetProperty("appliedGain").GetDouble();
@@ -96,7 +112,7 @@ public static class M2SavedMixLoader
 
             string? compressedPath = null, compressedHash = null;
             var compressed = r.GetProperty("compressed");
-            if (compressed.ValueKind != JsonValueKind.Null)
+            if (compressed.ValueKind != JsonValueKind.Null && (validateUnusedCompressed || requiresCompressedPlayback))
             {
                 string name = compressed.GetProperty("file").GetString()!;
                 if (name is not ("mixed_full.m4a" or "mixed_full.mp3")) throw new InvalidDataException("压缩混音路径无效。");

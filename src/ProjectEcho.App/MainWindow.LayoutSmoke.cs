@@ -13,7 +13,7 @@ public partial class MainWindow
     // opens a browser, changes a system DPI setting or takes a desktop screenshot.
     internal async Task<object> UiLayoutSmokeAsync(string evidenceDirectory)
     {
-        if (host is not null || MicEnabled.IsChecked == true || SourceBox.SelectedIndex != -1)
+        if (host is not null || microphoneRequested || SourceBox.SelectedIndex != -1)
             throw new InvalidOperationException("布局检查必须从无采集的默认状态开始。");
         string directory = Path.GetFullPath(evidenceDirectory);
         string localRoot = Path.GetFullPath(Path.Combine(projectRoot, ".local")) + Path.DirectorySeparatorChar;

@@ -8,6 +8,7 @@ namespace ProjectEcho.Core.Transcription;
 public static class WhisperTranscriber
 {
     public const string VerifiedCliSource = "https://github.com/ggml-org/whisper.cpp/blob/b5130/examples/cli/cli.cpp";
+    public const string VerifiedForkCliSource = "https://github.com/lemonade-sdk/whisper.cpp-rocm/blob/v1.8.4/examples/cli/cli.cpp";
 
     public static WhisperReadiness Inspect(WhisperConfiguration? configuration)
     {
@@ -22,9 +23,21 @@ public static class WhisperTranscriber
             if (!configuration.ModelLicenseAcknowledged) return new(false, "请先确认所选本地模型的来源与许可。");
             if (configuration.Threads is < 1 or > 64 || configuration.Language is null || configuration.Language.Length is < 2 or > 16 ||
                 configuration.Language.Any(c => c is not (>= 'a' and <= 'z') and not '-')) return new(false, "语言或 CPU 线程设置无效。");
-            if (configuration.ExpectedModelSha256 is not null && !TranscriptFiles.IsHash(configuration.ExpectedModelSha256)) return new(false, "预期模型 SHA-256 必须是 64 位十六进制。");
+            // ExpectedModelSha256 is legacy configuration only. M3D no longer compares a
+            // user-supplied model digest; input/original audio integrity remains mandatory.
+            if (!Enum.IsDefined(configuration.Hardware) || configuration.GpuDeviceIndex is < 0 or > 63)
+                return new(false, "硬件模式或 GPU 设备编号无效；编号须为 0–63。");
+            if (configuration.InitialPrompt?.Length > 4000 || configuration.InitialPrompt?.Contains('\0') == true)
+                return new(false, "初始提示词不能超过 4000 字符或包含空字符；模型会按其上下文 token 上限截取。");
             if (configuration.ModelName?.Length > 200) return new(false, "模型显示名称不能超过 200 字符。");
-            return new(true, "本地文件已配置；开始后校验哈希并以独立 CPU 进程运行，模型兼容性与准确率待实际验证。");
+            string hardware = configuration.Hardware switch
+            {
+                LocalTranscriptionHardware.Cpu => "CPU",
+                LocalTranscriptionHardware.Auto => "自动硬件（允许 CPU 回退）",
+                LocalTranscriptionHardware.Vulkan => "Vulkan（需所选程序包含 Vulkan 后端，运行时确认）",
+                _ => "CUDA（需所选程序包含 CUDA 后端，运行时确认）"
+            };
+            return new(true, $"本地文件已配置；以独立进程运行。硬件：{hardware}。模型兼容性与准确率待实际验证。");
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         { return new(false, ex.Message); }
@@ -46,6 +59,7 @@ public static class WhisperTranscriber
         string attempt = TranscriptFiles.Inside(attempts, Guid.NewGuid().ToString("N")); Directory.CreateDirectory(attempt);
         var timer = Stopwatch.StartNew(); string status = "Failed", message = "", modelHash = "", executableHash = "", waveHash = "", priorityNote = "";
         int? exitCode = null; TranscriptRevision? revision = null; Process? process = null;
+        var hardwareParser = new WhisperHardwareParser(request.Configuration.Hardware);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -54,8 +68,6 @@ public static class WhisperTranscriber
             using var executable = TranscriptFiles.ReadLock(request.Configuration.ExecutablePath);
             using var wave = TranscriptFiles.ReadLock(wavePath);
             modelHash = TranscriptFiles.Hash(model, cancellationToken);
-            if (request.Configuration.ExpectedModelSha256 is not null && !string.Equals(modelHash, request.Configuration.ExpectedModelSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("模型 SHA-256 与配置不符，未启动转写。");
             executableHash = TranscriptFiles.Hash(executable, cancellationToken); waveHash = TranscriptFiles.Hash(wave, cancellationToken);
             if (!string.Equals(waveHash, request.ExpectedWaveSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("ASR 输入 WAV 哈希改变。");
             bool digitalSilence = ValidateWave(wave, request.MeetingDurationMs, cancellationToken);
@@ -71,12 +83,23 @@ public static class WhisperTranscriber
                     UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = attempt,
                     RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
                 };
-                // -pp is print-progress (-p means processors). b5130 reports progress at seek/window
+                // -pp is print-progress (-p means processors). Both checked CLI contracts report progress at seek/window
                 // boundaries, not model loading, encoding, or every token. Do not split audio or
                 // alter decoding/context merely to make its percentage look smoother.
                 foreach (string argument in new[] { "-m", TranscriptFiles.LocalPath(request.Configuration.ModelPath), "-f", wavePath,
                     "-l", request.Configuration.Language, "-t", request.Configuration.Threads.ToString(CultureInfo.InvariantCulture),
-                    "-ng", "-pp", "-osrt", "-otxt", "-ojf", "-of", outputBase }) start.ArgumentList.Add(argument);
+                    "-pp", "-osrt", "-otxt", "-ojf", "-of", outputBase }) start.ArgumentList.Add(argument);
+                if (request.Configuration.Hardware == LocalTranscriptionHardware.Cpu) start.ArgumentList.Add("-ng");
+                else
+                {
+                    start.ArgumentList.Add("-dev");
+                    start.ArgumentList.Add(request.Configuration.GpuDeviceIndex.ToString(CultureInfo.InvariantCulture));
+                }
+                if (!string.IsNullOrWhiteSpace(request.Configuration.InitialPrompt))
+                {
+                    start.ArgumentList.Add("--prompt");
+                    start.ArgumentList.Add(request.Configuration.InitialPrompt);
+                }
                 process = new Process { StartInfo = start };
                 if (!process.Start()) throw new IOException("本地转写进程未启动。");
                 try { process.PriorityClass = ProcessPriorityClass.BelowNormal; priorityNote = "BelowNormal"; }
@@ -90,12 +113,13 @@ public static class WhisperTranscriber
                     value => progress?.Report(new(LocalTranscriptionStage.Recognizing, value)),
                     stage => progress?.Report(new(stage)));
                 Task stdout = CaptureOutput(process.StandardOutput, TranscriptFiles.Inside(attempt, "stdout.txt"), process, stop.Token);
-                Task stderr = CaptureOutput(process.StandardError, TranscriptFiles.Inside(attempt, "stderr.txt"), process, stop.Token, progressParser);
+                Task stderr = CaptureOutput(process.StandardError, TranscriptFiles.Inside(attempt, "stderr.txt"), process, stop.Token, progressParser, hardwareParser);
                 try { await Task.WhenAll(process.WaitForExitAsync(stop.Token), stdout, stderr).ConfigureAwait(false); }
                 catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 { throw new TimeoutException("本地转写超过 24 小时，已停止独立进程。可调整配置后重试。"); }
                 cancellationToken.ThrowIfCancellationRequested(); exitCode = process.ExitCode;
                 if (exitCode != 0) throw new InvalidDataException($"whisper.cpp 返回错误码 {exitCode}，原始输出保留；录音与导出不受影响。");
+                hardwareParser.EnsureRequestedBackend();
                 progress?.Report(new(LocalTranscriptionStage.Saving));
                 string srt = outputBase + ".srt";
                 if (!File.Exists(srt)) throw new InvalidDataException("转写进程成功退出但缺少 SRT 输出，未伪造转写。");
@@ -107,7 +131,9 @@ public static class WhisperTranscriber
                     revision = TranscriptService.ImportWhisper(new(meeting, request.MeetingId, request.MeetingDurationMs, srt,
                         "whisper.cpp（本地，待人工校对）", request.Configuration.ModelName ?? Path.GetFileName(request.Configuration.ModelPath),
                         IsSynthetic: request.IsSynthetic), outputBase + ".json", cancellationToken);
-                    status = "Succeeded"; message = "本地转写已保存独立原稿；按句末标点及可用 token 时间分句，时间仍为 approximate，文字需人工核对。";
+                    status = "Succeeded"; message = "本地转写已保存独立原稿；按句末标点及可用 token 时间分句，时间仍为 approximate，文字需人工核对。" + hardwareParser.Describe();
+                    foreach (string warning in revision.Warnings.Where(value => value.StartsWith("Whisper 尾端时间", StringComparison.Ordinal)))
+                        message += "\n" + warning;
                 }
             }
         }
@@ -126,14 +152,30 @@ public static class WhisperTranscriber
             timer.Stop();
             TranscriptFiles.WriteJsonNew(TranscriptFiles.Inside(attempt, "attempt.json"), new
             {
-                schemaVersion = "m3-whisper-attempt-1", request.IsSynthetic, request.MeetingId,
+                schemaVersion = "m3-whisper-attempt-2", request.IsSynthetic, request.MeetingId,
                 importedAt = DateTimeOffset.UtcNow, status, elapsedMilliseconds = timer.ElapsedMilliseconds,
                 provider = "whisper.cpp", modelName = request.Configuration.ModelName ?? Path.GetFileName(request.Configuration.ModelPath),
                 modelSha256 = modelHash, executableSha256 = executableHash, inputWaveSha256 = waveHash,
-                request.Configuration.Language, request.Configuration.Threads, cpuOnly = true, maxSegmentLength = 0,
+                request.Configuration.Language, request.Configuration.Threads,
+                cpuOnly = request.Configuration.Hardware == LocalTranscriptionHardware.Cpu,
+                requestedHardware = request.Configuration.Hardware.ToString(), request.Configuration.GpuDeviceIndex,
+                request.Configuration.InitialPrompt, actualGpuBackend = hardwareParser.ActualGpuBackend,
+                hardwareEvidence = hardwareParser.Evidence, hardwarePolicy = WhisperHardwareParser.Policy,
+                modelHashPolicy = "audit-only-no-expected-comparison", maxSegmentLength = 0,
                 fullTokenJson = true, subtitleSegmentation = WhisperSentenceSegmenter.Policy, priorityNote,
+                timestampBoundaryPolicy = WhisperTimestampBoundary.Policy, request.MeetingDurationMs,
+                transcriptWarnings = revision?.Warnings,
                 modelLicenseAcknowledged = request.Configuration.ModelLicenseAcknowledged,
-                cliSource = VerifiedCliSource, cliSourceCheckedAt = "2026-10-01", printProgress = true,
+                // These are adapter-contract references, not the identity/version of the chosen
+                // executable. In particular, the Lemonade build is not a ggml-org b5130 binary.
+                cliArgumentContractSources = new[] { VerifiedCliSource, VerifiedForkCliSource },
+                hardwareDiagnosticContractSources = new[]
+                {
+                    "https://github.com/ggml-org/whisper.cpp/blob/b5130/src/whisper.cpp",
+                    "https://github.com/lemonade-sdk/whisper.cpp-rocm/blob/v1.8.4/src/whisper.cpp"
+                },
+                adapterContractCheckedAt = "2026-10-01", executableVersion = "NotProbed", executableBuilder = "NotProbed",
+                binaryIdentityPolicy = "executable-sha256-not-inferred-from-adapter-contract", printProgress = true,
                 progressPolicy = WhisperProgressParser.Policy, progressMeaning = "engine_seek_window_not_task_time", exitCode,
                 revisionId = revision?.RevisionId, message
             });
@@ -142,7 +184,7 @@ public static class WhisperTranscriber
     }
 
     private static async Task CaptureOutput(StreamReader reader, string outputPath, Process process, CancellationToken token,
-        WhisperProgressParser? progressParser = null)
+        WhisperProgressParser? progressParser = null, WhisperHardwareParser? hardwareParser = null)
     {
         try
         {
@@ -154,9 +196,11 @@ public static class WhisperTranscriber
                 count += read;
                 if (count > 2 * 1024 * 1024) throw new InvalidDataException("转写进程诊断输出超过 2 Mi 字符，已停止进程并保留此前输出。");
                 await writer.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+                hardwareParser?.Append(buffer.AsSpan(0, read));
                 progressParser?.Append(buffer.AsSpan(0, read));
             }
             progressParser?.Complete();
+            hardwareParser?.Complete();
         }
         catch { Kill(process); throw; }
     }

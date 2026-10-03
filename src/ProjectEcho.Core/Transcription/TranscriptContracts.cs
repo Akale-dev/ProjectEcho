@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ProjectEcho.Core.Transcription;
 
 public sealed record TranscriptSegment(string SegmentId, long? StartMs, long? EndMs,
@@ -23,9 +25,15 @@ public sealed record TranscriptSearchHit(string RevisionId, string SegmentId, lo
 public sealed record TranscriptOverlapCandidate(string LeftRevisionId, string LeftSegmentId,
     string RightRevisionId, string RightSegmentId, long StartMs, long EndMs, bool SameText);
 
+/// <summary>Explicit GPU modes require the selected CLI to report that actual backend; Auto may use CPU.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<LocalTranscriptionHardware>))]
+public enum LocalTranscriptionHardware { Cpu, Auto, Vulkan, Cuda }
+
 public sealed record WhisperConfiguration(string ExecutablePath, string ModelPath,
     string Language = "auto", int Threads = 2, string? ModelName = null,
-    string? ExpectedModelSha256 = null, bool ModelLicenseAcknowledged = false);
+    string? ExpectedModelSha256 = null, bool ModelLicenseAcknowledged = false,
+    LocalTranscriptionHardware Hardware = LocalTranscriptionHardware.Cpu, int GpuDeviceIndex = 0,
+    string? InitialPrompt = null);
 
 public sealed record WhisperReadiness(bool Ready, string Message);
 

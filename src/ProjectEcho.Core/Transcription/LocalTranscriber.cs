@@ -10,7 +10,9 @@ public sealed record LocalTranscriberDescriptor(string Id, string DisplayName, L
 /// <summary>Only explicit local files and bounded options. No URL, API key, command template or arbitrary arguments.</summary>
 public sealed record LocalTranscriptionConfiguration(string BackendId, string ExecutablePath, string ModelPath,
     string Language = "auto", int Threads = 2, string? ModelName = null,
-    string? ExpectedModelSha256 = null, bool ModelLicenseAcknowledged = false)
+    string? ExpectedModelSha256 = null, bool ModelLicenseAcknowledged = false,
+    LocalTranscriptionHardware Hardware = LocalTranscriptionHardware.Cpu, int GpuDeviceIndex = 0,
+    string? InitialPrompt = null)
 {
     // Keep the deployed whisper.json contract readable without migrating or replacing existing configuration.
     public static LocalTranscriptionConfiguration FromWhisper(WhisperConfiguration configuration)
@@ -18,7 +20,8 @@ public sealed record LocalTranscriptionConfiguration(string BackendId, string Ex
         ArgumentNullException.ThrowIfNull(configuration);
         return new(WhisperCppLocalTranscriber.BackendId, configuration.ExecutablePath, configuration.ModelPath,
             configuration.Language, configuration.Threads, configuration.ModelName,
-            configuration.ExpectedModelSha256, configuration.ModelLicenseAcknowledged);
+            configuration.ExpectedModelSha256, configuration.ModelLicenseAcknowledged,
+            configuration.Hardware, configuration.GpuDeviceIndex, configuration.InitialPrompt);
     }
 }
 
@@ -103,7 +106,8 @@ public sealed class WhisperCppLocalTranscriber : ILocalTranscriber
 
     private static WhisperConfiguration ToWhisper(LocalTranscriptionConfiguration configuration) =>
         new(configuration.ExecutablePath, configuration.ModelPath, configuration.Language, configuration.Threads,
-            configuration.ModelName, configuration.ExpectedModelSha256, configuration.ModelLicenseAcknowledged);
+            configuration.ModelName, configuration.ExpectedModelSha256, configuration.ModelLicenseAcknowledged,
+            configuration.Hardware, configuration.GpuDeviceIndex, configuration.InitialPrompt);
 }
 
 /// <summary>A development note, deliberately not an ILocalTranscriber or selectable runnable backend.</summary>

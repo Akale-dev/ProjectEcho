@@ -8,7 +8,7 @@ internal static class M3WhisperTests
     {
         string root = Path.Combine(output, "m3-whisper"); Directory.CreateDirectory(root);
         run("T35/T37-SYNTH M3 no model state never invokes executable or capture", () => Missing(root));
-        run("T35-SYNTH M3 zero PCM suppresses local ASR hallucination path and bad model hash rejects", () => Silence(root));
+        run("T35-SYNTH M3 zero PCM suppresses local ASR hallucination path and legacy model hash is ignored", () => Silence(root));
         run("T35/T37-WINDOWS SYNTHETIC CLI fixture M3 failure cancellation retry output retention", () => Processes(root));
     }
 
@@ -29,7 +29,7 @@ internal static class M3WhisperTests
         var result = WhisperTranscriber.RunAsync(new(meeting, "silence", 1000, wave, M3TranscriptTests.Hash(wave), config, true)).GetAwaiter().GetResult();
         M3TranscriptTests.Need(result.Status == "NoSpeech" && result.Revision is null && !File.Exists(Path.Combine(result.AttemptDirectory, "stdout.txt")), "纯数字静音调用了模型或产生文字。");
         var bad = WhisperTranscriber.RunAsync(new(meeting, "silence", 1000, wave, M3TranscriptTests.Hash(wave), config with { ExpectedModelSha256 = new string('f', 64) }, true)).GetAwaiter().GetResult();
-        M3TranscriptTests.Need(bad.Status == "Failed" && File.Exists(Path.Combine(bad.AttemptDirectory, "attempt.json")), "模型hash拒绝缺证据。");
+        M3TranscriptTests.Need(bad.Status == "NoSpeech" && File.Exists(Path.Combine(bad.AttemptDirectory, "attempt.json")), "旧模型hash仍然阻塞识别。");
         var rate = WriteWave(meeting, false, 48000, "bad-rate.wav");
         var wrongRate = WhisperTranscriber.RunAsync(new(meeting, "silence", 1000, rate, M3TranscriptTests.Hash(rate), config, true)).GetAwaiter().GetResult();
         M3TranscriptTests.Need(wrongRate.Status == "Failed" && wrongRate.Message.Contains("16 kHz"), "盲喂48k混音。");
@@ -62,9 +62,27 @@ internal static class M3WhisperTests
         string Value(string option) { int i = Array.IndexOf(args, option); if (i < 0 || i + 1 >= args.Length) throw new ArgumentException("fixture argument missing"); return args[i + 1]; }
         string output = Value("-of"), model = Value("-m");
         if (!Path.GetFullPath(output).StartsWith(Path.GetFullPath(Directory.GetCurrentDirectory()) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return 90;
-        if (!args.Contains("-ng") || !args.Contains("-osrt") || !args.Contains("-otxt") || !args.Contains("-ojf")) return 91;
+        string behavior = File.ReadAllText(model);
+        if ((!behavior.StartsWith("synthetic-hardware-", StringComparison.Ordinal) && !args.Contains("-ng")) ||
+            !args.Contains("-osrt") || !args.Contains("-otxt") || !args.Contains("-ojf")) return 91;
         File.WriteAllText(output + "-arguments.json", System.Text.Json.JsonSerializer.Serialize(args));
-        string behavior = File.ReadAllText(model); Console.WriteLine("ProjectEcho synthetic CLI fixture, never actual ASR.");
+        Console.WriteLine("ProjectEcho synthetic CLI fixture, never actual ASR.");
+        if (behavior.StartsWith("synthetic-hardware-", StringComparison.Ordinal))
+        {
+            string selected = behavior["synthetic-hardware-".Length..];
+            if (selected == "none") await Console.Error.WriteAsync("whisper_backend_init_gpu: no GPU found\r\n");
+            else if (selected == "unreported") await Console.Error.WriteAsync("GPU DLL is loaded but does not prove GPU selection\n");
+            else
+            {
+                // Split the diagnostic across writes so the product must parse the stream.
+                await Console.Error.WriteAsync("whisper_backend_init_gpu: us");
+                await Console.Error.FlushAsync();
+                await Task.Delay(10);
+                await Console.Error.WriteAsync("ing " + (selected == "failed" ? "Vulkan0" : selected) + " backend\r\n");
+                if (selected == "failed") await Console.Error.WriteAsync("whisper_backend_init_gpu: failed to initialize Vulkan0 backend\n");
+            }
+            await Console.Error.FlushAsync();
+        }
         if (behavior == "synthetic-fail") { Console.Error.WriteLine("synthetic failure"); return 7; }
         if (behavior == "synthetic-wait")
         { File.WriteAllText(Path.Combine(Path.GetDirectoryName(output)!, "fixture-ready.txt"), "ready"); await Task.Delay(TimeSpan.FromMinutes(5)); return 8; }
@@ -108,6 +126,8 @@ internal static class M3WhisperTests
         }
         if (behavior.StartsWith("synthetic-sentence-", StringComparison.Ordinal))
             return M3SentenceSegmentationTests.WriteFixture(output, behavior);
+        if (behavior.StartsWith("synthetic-m3e-timestamp-", StringComparison.Ordinal))
+            return M3eWhisperTimestampTests.WriteFixture(output, behavior);
         File.WriteAllText(output + ".srt", "1\n00:00:00,100 --> 00:00:00,900\n合成夹具结果，非真实 ASR\n", new UTF8Encoding(false));
         File.WriteAllText(output + ".txt", "合成夹具结果，非真实 ASR\n", new UTF8Encoding(false));
         File.WriteAllText(output + ".json", "{\"isSynthetic\":true}", new UTF8Encoding(false)); return 0;

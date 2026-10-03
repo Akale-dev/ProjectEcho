@@ -1,7 +1,25 @@
 # 00｜开发交接总览
 
+2026-10-03 **目录清理**：按用户确认删除旧包、编译产物和旧测试录音/会议数据，实际释放约49 GiB。最新M3H目录/ZIP、识别设置、源码、开发依赖及验收结果保留，文件完整性核验通过。下方历史“原件保留”及旧包路径以本次清理状态为准；验收结论不变，详见[65](65_WORKSPACE_CLEANUP.md)。
+
+2026-10-03 **M3H交付**：会议独立识别设置/提示词自动保存、去CUDA、成对图片mic/无漂移按压、精简布局、显式mic预览与连续平滑电平已实现。263回归、真实remote meter、六项包内WPF/公开Vulkan0及661文件ZIP通过；真实mic仍未主动测试，软件绘制规避及失败记录见[63](63_M3H_MEETING_SETTINGS_AND_LEVEL_PREVIEW.md)与STATUS。最终包20261003-M3H-Final，用户本轮授权全部收尾后正常关机。
+
+2026-10-02 **M3G**：基于M3F修复随包CPU/Vulkan硬件与程序路径联动，字幕/回放/控制事件显示百分秒；录制模式改名、默认关闭的透明麦克风图标移到下拉框下方，并移除10秒试录入口。241默认回归、包内新mic三语WPF/百分秒原生定位/真实Vulkan0与659文件ZIP核验通过，交付M3G-Final；证据见[62](62_M3G_VULKAN_TIMING_AND_MIC_UI.md)及STATUS；旧现场闸门不升级。
+
+2026-10-02 **M3F**：录音/ASR红框、矢量logo、未选来源不再全局禁播、回听校验可见/只验实际WAV、单实例及默认WAV按需压缩已实现；235回归、真实WPF/两会静音回听及六项多进程检查通过。用户明确暂缓超大文件适配，3小时为主要场景而非本轮长识别验收。报告[61](61_M3F_VALIDATION_REPLAY_AND_SINGLE_INSTANCE.md)与STATUS。
+
+2026-10-02 **M3E**：新增逐会议时间戳Log与脱敏导出、界面六项调整和Whisper末句≤250ms边界修复。233回归、实际WPF及真实CPU/base中英合成样本通过；中文125ms越界已真实复现修复。用户确认AudioFix2新电脑音质/回放恢复；其32.831秒识别失败待M3E目标机重试，旧Complete与现场闸门不升级。交付和证据见[60](60_M3E_LOG_UI_AND_ASR_FIX.md)及STATUS。
+
 ## 一句话
 做一个不依赖 Zoom/Webex 录音按钮的 Windows 项目会议记录器：本地录音可靠、会后合并可上传、资料可追溯。
+
+2026-10-02 AudioFix2：处理结果按会议归属/持久化，旧v4历史安全回读；合法微小重叠、逐包调频和额外衰减已修，混音v5从原轨可重新生成；mic两阶段准备避免remote等协商，暂停/关麦/停止取消待开mic。**221回归、零警告构建、实际WPF及656文件ZIP解压启动通过**，旧binary质量红测7项均复现、新版通过。交付`artifacts/ProjectEcho-win-x64-20261002-M3D-AudioFix2.zip`（含CPU/Vulkan/base）。用户旧Win10Fix在19043/Jabra实测失败/警告保留，AudioFix2目标实机/听感/原生线程交接仍待验；未采集或启mic。详见[59](59_M3D_ENDPOINT_MIX_AND_HISTORY_FIX.md)与STATUS。下一步先对旧原轨重生成v5，再由用户主动短录验证。
+
+2026-10-02 新机故障跟进：用户更正目标机为Win10 Pro21H1 **19043.2364**，并要求进程录音支持。依据锁定NAudio及OBS官方实现新增19041–20347显式兼容尝试，失败不转端点；remote设备帧证实的小QPC抖动修复及数值诊断完成。**201回归、0警告构建、新ZIP逐文件与解压后WPF/Host无采集检查PASS**。新包`artifacts/ProjectEcho-win-x64-20261002-M3D-Win10Fix.zip`仍附CPU/Vulkan/base。目标Win10/Jabra实际复测NOT_RUN；用户旧失败只余几KB partial，不承诺恢复不存在的音频。详见[58](58_M3D_ENDPOINT_RECORDING_FIX.md)与STATUS。没有开启录音或mic，不沿用历史关机请求。
+
+2026-10-02最终追加：已部署真实RX6900XT Vulkan，最终静态CPU/Vulkan无需预装VC；189回归、真实base/large/取消重试、七项包内WPF、中文目录ZIP解压后CPU/Vulkan UI均PASS。首版中文argv故障已用进程UTF8 manifest修复，失败包隔离保留。交付`artifacts/ProjectEcho-win-x64-20261002-M3D-Complete-Final.zip`（约261MB，附base，无私人Data）；本机同名目录Data已另配`H:\AI\Whisper\whisper-b5130-vulkan-ProjectEcho-20261002`和原large-v3。全部测试结束后按用户授权正常关机、不强制。详见[57](57_M3D_VULKAN_AND_COMPLETE_PACKAGE.md)及STATUS；真正干净Windows、CUDA/其他GPU、旧录音闸门未替代。以下历史的GPU未验声明已由本段当前范围更新。
+
+2026-10-01 M3D：10项识别/UI升级及追加“如何配置”教学已实现，CPU/Auto/Vulkan/CUDA选项、initial prompt、独立多模型版本、侧栏录音/识别标记与导航、紧凑语言按钮及标题清理。186回归、实际WPF/教程、已有base/large-v3真实公开样本与提示词/版本保留通过；本机仍CPU引擎，Vulkan缺后端明确失败，AMD加速NOT_RUN，无自动下载。交付`artifacts/ProjectEcho-win-x64-20261001-M3D`，见[56](56_M3D_IMPLEMENTATION.md)、[使用说明](53_M3C_USER_GUIDE_ZH.md)及STATUS。无采集/mic/上传/推送，M1/M2旧失败/未验不变。以下为历史。
 
 2026-10-01界面跟进完成：01–04/语言左对齐及固定`EN/中`、回听字幕自动选中滚动且不跳播、独立模型加载/真实计时/活动提示和即时%解析已实现。181默认回归和最终包四项WPF通过；已有large-v3的47秒公开样本真实UI识别105.328秒，数值严格对应引擎`[49,100]`，等待期间计时活动可见。内部窗口仍限制百分比粒度，不造匀速进度。新包`artifacts/ProjectEcho-win-x64-20261001-M3C-UiFix`，完整证据见[55](55_UI_FOLLOWUP_AND_LARGE_MODEL_PROGRESS.md)与STATUS。未启mic/CU/上传，旧录音与现场限制不变。
 

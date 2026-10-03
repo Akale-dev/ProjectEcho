@@ -16,7 +16,7 @@ public partial class MainWindow
     /// <summary>Explicit file import and muted WPF playback; never creates a capture client.</summary>
     internal async Task<object> M3ReplaySmokeAsync(string audioPath, string subtitlePath, string evidence, CancellationToken token)
     {
-        if (host is not null || microphoneEnabled || MicEnabled.IsChecked == true)
+        if (host is not null || microphoneEnabled || microphoneRequested)
             throw new InvalidOperationException("回放检查必须在未采集状态运行。");
         string sourceAudio = Path.GetFullPath(audioPath), sourceSubtitles = Path.GetFullPath(subtitlePath);
         var sourceHashes = new[] { sourceAudio, sourceSubtitles }.ToDictionary(path => path, PlaybackFixtureHash);

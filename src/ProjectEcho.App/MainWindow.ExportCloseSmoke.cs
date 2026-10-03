@@ -63,7 +63,7 @@ public partial class MainWindow
             bool remainedOpen = IsVisible && closedCount == 0 && !closeApproved && !heldWork.IsCompleted;
             if (!remainedOpen || pendingMixes.Count != 0 || !File.Exists(encoder.PendingPath))
                 throw new InvalidDataException("Window closed or claimed cleanup before pending file work finished.");
-            if (StartButton.IsEnabled || TrialButton.IsEnabled || ExportButton.IsEnabled || PlaybackButton.IsEnabled || RecoveryPanel.IsEnabled)
+            if (StartButton.IsEnabled || ExportButton.IsEnabled || PlaybackButton.IsEnabled || RecoveryPanel.IsEnabled)
                 throw new InvalidDataException("Closing allowed new recording, playback or file work.");
             QueueMix(Path.Combine(fixture, "must-not-queue-during-close"));
             if (pendingMixes.Count != 0) throw new InvalidDataException("Closing accepted another mix job.");

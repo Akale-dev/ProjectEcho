@@ -15,7 +15,10 @@ public partial class MainWindow
     {
         token.ThrowIfCancellationRequested();
         var view = transcriptionView ?? throw new InvalidOperationException("转写界面未初始化。");
-        string configurationPath = WhisperConfigurationPath;
+        // Exercise the literal prompt control without changing the user's saved settings.
+        view.InitialPromptBox.Text = "John F. Kennedy, United States, country";
+        string configurationPath = File.Exists(WhisperConfigurationPath) ? WhisperConfigurationPath
+            : Path.Combine(AppContext.BaseDirectory, PortableWhisperConfiguration.BundledFileName);
         var configuration = CurrentWhisperConfiguration();
         var readiness = WhisperTranscriber.Inspect(configuration);
         if (!readiness.Ready) throw new InvalidDataException("真实 UI 识别需要先加载已配置的 CLI/model：" + readiness.Message);
@@ -32,10 +35,14 @@ public partial class MainWindow
 
         // Keep the loaded controls and CLI/model selection while isolating all newly imported recordings.
         dataRoot = fixture; DataRootText.Text = dataRoot;
+        MeetingWhisperSettingsStore.SaveDefaults(WhisperConfigurationPath, configuration, AppContext.BaseDirectory);
         if (CurrentWhisperConfiguration() != configuration) throw new InvalidDataException("隔离测试数据改变了已加载的识别配置。");
         var imported = await ImportAudioFileAsync(source, token);
+        view.InitialPromptBox.Text = configuration.InitialPrompt ?? ""; FlushMeetingWhisperPrompt();
         Stage("production_audio_import_completed", new { imported.MeetingDirectory, imported.Mix.FrameCount, imported.Mix.SampleRate });
         var originalHashes = Directory.EnumerateFiles(imported.MeetingDirectory, "*", SearchOption.AllDirectories)
+            .Where(path => Path.GetFileName(path) != ProjectEcho.Core.Diagnostics.MeetingLogStore.FileName &&
+                !path.EndsWith(MeetingWhisperSettingsStore.RelativePath.Replace('/', Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
             .ToDictionary(path => path, CloseFixtureHash, StringComparer.OrdinalIgnoreCase);
         if (sourceHash != imported.OriginalSha256 || CloseFixtureHash(imported.OriginalPath) != sourceHash)
             throw new InvalidDataException("UI 导入没有保存与源文件完全相同的原件副本。");
@@ -53,6 +60,9 @@ public partial class MainWindow
         var previousWork = transcriptWork;
         view.RunWhisperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         if (ReferenceEquals(previousWork, transcriptWork)) throw new InvalidDataException("本地识别按钮没有进入文字任务。");
+        if (recognitionMeetingDirectory != imported.MeetingDirectory ||
+            !RecoveryBox.Items.Cast<RecordingDirectory>().Any(row => row.Path == imported.MeetingDirectory && row.IsRecognizing))
+            throw new InvalidDataException("实际识别任务没有标记正确的侧边栏会议。");
         Stage("run_whisper_button_invoked", new { Busy = transcriptBusy, CancelEnabled = view.CancelButton.IsEnabled });
         try { await transcriptWork.WaitAsync(token); }
         finally
@@ -79,7 +89,8 @@ public partial class MainWindow
         if (!recognizedText.Contains("ask not what your country can do for you", StringComparison.Ordinal) ||
             !recognizedText.Contains("what you can do for your country", StringComparison.Ordinal))
             throw new InvalidDataException("UI 真实识别未包含 JFK 样本的基本短语。");
-        if (!view.ExportSubtitlesButton.IsEnabled || !view.RunWhisperButton.IsEnabled || view.CancelButton.IsEnabled || transcriptBusy)
+        if (!view.ExportSubtitlesButton.IsEnabled || !view.RunWhisperButton.IsEnabled || view.CancelButton.IsEnabled || transcriptBusy ||
+            recognitionMeetingDirectory is not null || RecoveryBox.Items.Cast<RecordingDirectory>().Any(row => row.IsRecognizing))
             throw new InvalidDataException("UI 真实识别结束后按钮状态没有恢复。");
         string attemptPath = Directory.EnumerateFiles(Path.Combine(imported.MeetingDirectory, "transcripts", "asr"),
             "attempt.json", SearchOption.AllDirectories).Single();
@@ -89,6 +100,7 @@ public partial class MainWindow
             throw new InvalidDataException("UI 百分比与本次引擎 stderr 不符，或完成后未清理进度条。");
         using var attempt = JsonDocument.Parse(File.ReadAllText(attemptPath));
         if (attempt.RootElement.GetProperty("status").GetString() != "Succeeded" ||
+            attempt.RootElement.GetProperty("initialPrompt").GetString() != configuration.InitialPrompt ||
             attempt.RootElement.GetProperty("revisionId").GetString() != asrRevision.RevisionId ||
             !attempt.RootElement.GetProperty("fullTokenJson").GetBoolean() ||
             attempt.RootElement.GetProperty("maxSegmentLength").GetInt32() != 0 ||
