@@ -328,7 +328,7 @@ public partial class MainWindow
                 .OrderBy(segment => segment.StartMs).Select(segment => new TranscriptRow(directory, row.Revision, segment, UiText.T("本场"))).ToArray();
             ReplaySegmentsBox.ItemsSource = segments;
             ReplayStatusText.Text = segments.Length == 0 ? UiText.T("本版文字没有时间戳，不会猜测字幕位置。可切换带时间的版本。")
-                : UiText.F($"{segments.Length} 条字幕 · {row.Revision.Provider} · 点击字幕跳转，暂停和空白时段保持原始时间轴。");
+                : UiText.F($"{segments.Length} 条字幕 · {row.Revision.Provider} · 点击字幕跳转，字幕时间以本场录音为准。");
         }
         UpdatePlaybackPosition();
         UpdateReplayControls();

@@ -19,6 +19,8 @@ public static class TimelineWaveRenderer
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        if (result.TimelinePolicy != RecordingTimeline.Elapsed || result.Tracks.Any(track => track.ExcludedPause100ns != 0))
+            throw new NotSupportedException("M0短试录混音不处理暂停排除时间轴；请使用完整会议混音。");
         if (result.Tracks.Count is < 1 or > 2) throw new NotSupportedException("M0 混音只接收一或两路原轨。");
         if (result.Duration100ns < 0 || result.Duration100ns > MaximumSeconds * AudioClock.UnitsPerSecond)
             throw new NotSupportedException("M0 混音只用于不超过 60 秒的主动短试录。");

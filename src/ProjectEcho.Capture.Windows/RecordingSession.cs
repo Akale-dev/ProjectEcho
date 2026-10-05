@@ -30,6 +30,7 @@ public sealed class RecordingSession : IAsyncDisposable
     private volatile Exception? writerError;
     private bool paused, micEnabled, captureFault;
     private ulong epoch, lastIteration;
+    private RecordingTimeClock? recordingClock;
     private long available;
     private RecordingOptions options = null!;
     private string? fixedMicrophoneDeviceId;
@@ -95,10 +96,12 @@ public sealed class RecordingSession : IAsyncDisposable
         try
         {
             epoch = now();
+            recordingClock = new(epoch);
             directory = Path.GetFullPath(directory);
             factory.Preflight(options);
             ValidateDirectory(directory);
             epoch = now(); lastIteration = epoch;
+            recordingClock = new(epoch);
             micEnabled = options.Selection.MicrophoneEnabled;
             var writerReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             writer = Task.Run(() => WriterMain(directory, writerReady));
@@ -122,12 +125,12 @@ public sealed class RecordingSession : IAsyncDisposable
             OpenSources();
             started.TrySetResult();
             ulong checkAt = epoch, healthAt = epoch;
-            while (Volatile.Read(ref stopping) == 0 && now() - epoch < (ulong)options.MaximumSeconds * 10_000_000)
+            while (Volatile.Read(ref stopping) == 0 && recordingClock.Elapsed100ns(now()) < (long)options.MaximumSeconds * 10_000_000)
             {
                 if (writerError is not null) throw new IOException("原轨写入失败。", writerError);
                 ulong current = now();
                 maximumLoopInterval = Math.Max(maximumLoopInterval, checked((long)(current - lastIteration)));
-                Interlocked.Exchange(ref observedSessionUs, Us(current));
+                ObserveRecordingTime(current);
                 if (current - lastIteration > 20_000_000 && !paused)
                 {
                     CancelPendingMicrophone("检测到系统/调度时间缺口，等待中的麦克风未启动。");
@@ -157,7 +160,7 @@ public sealed class RecordingSession : IAsyncDisposable
                 if (current >= checkAt && validation.TryRequest(paused ? null : sources.FirstOrDefault(x => x.Source.Id == "remote")?.SegmentId))
                     checkAt = current + 5_000_000;
                 ServiceStartedSources();
-                if (current >= healthAt) { RaiseHealth(current); healthAt = current + 2_000_000; }
+                if (current >= healthAt) { ulong sampled = now(); RaiseHealth(sampled); healthAt = sampled + 2_000_000; }
                 WaitForSourceOrControl();
             }
         }
@@ -172,15 +175,16 @@ public sealed class RecordingSession : IAsyncDisposable
             lock (controlGate) Volatile.Write(ref stopping, 1);
             CancelPendingMicrophone("会话已停止，麦克风未启动。");
             validation?.Dispose();
-            try { CloseSources(sources.ToArray(), "stop", stopId); }
+            end = now();
+            try { end = CloseSources(sources.ToArray(), "stop", stopId); }
             catch (Exception ex) { captureFault = true; warnings.Enqueue("停采收尾异常：" + ex.Message); }
             try { scheduling?.Dispose(); }
             catch (Exception ex) { warnings.Enqueue("录音线程调度收尾失败：" + ex.GetType().Name); }
             if (scheduling?.Diagnostic is { Registered: true, Released: false, ReleaseErrorCode: { } releaseError })
                 warnings.Enqueue("录音线程多媒体调度释放未确认，Win32错误：" + releaseError);
-            end = Math.Max(epoch, now());
-            Interlocked.Exchange(ref duration100ns, checked((long)(end - epoch)));
-            Interlocked.Exchange(ref observedSessionUs, Us(end));
+            end = Math.Max(epoch, end);
+            Interlocked.Exchange(ref duration100ns, recordingClock?.Elapsed100ns(end) ?? checked((long)(end - epoch)));
+            ObserveRecordingTime(end);
             while (controls.TryDequeue(out var control)) control.Done.TrySetException(new OperationCanceledException("会话已停止。"));
             M1StorageResult? stored = null;
             if (writer is not null)
@@ -219,7 +223,8 @@ public sealed class RecordingSession : IAsyncDisposable
     {
         try
         {
-            using var store = new M1Storage(directory, epoch, DateTimeOffset.UtcNow, options.Selection.Title, synthetic);
+            using var store = new M1Storage(directory, epoch, DateTimeOffset.UtcNow, options.Selection.Title, synthetic,
+                timelinePolicy: RecordingTimeline.ExcludePaused);
             M1Storage.WriteAtomicJson(Path.Combine(directory, "selection.json"), new
             {
                 schemaVersion = "m1-selection-1", isSynthetic = synthetic, sourceMode = options.Selection.Mode.ToString(),
@@ -244,7 +249,7 @@ public sealed class RecordingSession : IAsyncDisposable
                 if (store.LastCheckpointUtc != lastCheckpoint)
                 {
                     lastCheckpoint = store.LastCheckpointUtc;
-                    Interlocked.Exchange(ref savedUs, Us(now()));
+                    Interlocked.Exchange(ref savedUs, store.LastCheckpointSessionUs);
                 }
             }
             store.SetObservedSessionUs(Interlocked.Read(ref observedSessionUs));
@@ -285,16 +290,41 @@ public sealed class RecordingSession : IAsyncDisposable
             // Both native clients and both disk segments must be prepared before
             // either starts. Slow microphone activation cannot fill an unread
             // remote buffer during initial Start or Resume.
+            if (Volatile.Read(ref stopping) != 0) throw new OperationCanceledException("启动已取消。");
             var readyRemote = remote; remote = null; Open(readyRemote, start: false);
             if (microphone is not null) { var readyMic = microphone; microphone = null; Open(readyMic, start: false); }
-            foreach (var live in sources.Where(source => !source.Started).ToArray()) StartPreparedSource(live);
+            if (Volatile.Read(ref stopping) != 0) throw new OperationCanceledException("启动已取消。");
+            var preparedSources = sources.Where(source => !source.Started).ToArray();
+            bool resuming = recordingClock!.IsPaused;
+            ulong resumeAt = now();
+            foreach (var live in preparedSources)
+            {
+                if (resuming) live.ActiveStartBoundary = resumeAt;
+                StartPreparedSource(live);
+                if (resuming && recordingClock.IsPaused)
+                {
+                    // Commit only once the first Start succeeds. All disk files
+                    // are already ready; queue the mapping before any packet is
+                    // serviced, without waiting for I/O while capture is active.
+                    ulong excluded = recordingClock.Resume(resumeAt);
+                    foreach (var prepared in preparedSources) SetSegmentOffset(prepared, excluded);
+                }
+            }
         }
-        catch { CancelPendingMicrophone("启动已取消，麦克风未启动。"); CloseSources(sources.ToArray(), "stop", "start-failed"); throw; }
+        catch
+        {
+            CancelPendingMicrophone("启动已取消，麦克风未启动。");
+            // If an actual source started before another source failed, retain
+            // its valid prefix, then freeze again. Never rewind recorded audio.
+            CloseSources(sources.ToArray(), paused ? "pause" : "stop", "start-failed");
+            throw;
+        }
         finally { microphone?.Dispose(); remote?.Dispose(); }
     }
     private void Open(IRecordingAudioSource source, bool start = true)
     {
-        var live = new Live(source, source.Id + "-" + (++nextSegment));
+        var live = new Live(source, source.Id + "-" + (++nextSegment))
+            { ExcludedPause100ns = recordingClock?.Excluded100ns ?? 0 };
         sources.Add(live);
         sourceWaitHandles = null;
         try
@@ -307,7 +337,8 @@ public sealed class RecordingSession : IAsyncDisposable
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Enqueue(new(store =>
         {
-            try { store.AddSegment(live.SegmentId, source.Id, source.WaveFormat, processingMode: source.ProcessingMode); store.Checkpoint(); ready.TrySetResult(); }
+            try { store.AddSegment(live.SegmentId, source.Id, source.WaveFormat, processingMode: source.ProcessingMode,
+                excludedPause100ns: live.ExcludedPause100ns); store.Checkpoint(); ready.TrySetResult(); }
             catch (Exception ex) { ready.TrySetException(ex); throw; }
         }));
         // The writer task fault must also wake an item waiting behind an earlier failed write.
@@ -320,7 +351,12 @@ public sealed class RecordingSession : IAsyncDisposable
         }
         ready.Task.GetAwaiter().GetResult();
         live.Prepared = true;
-        if (start) StartPreparedSource(live);
+        if (start)
+        {
+            // Late mic activation must not retain a driver's pre-activation prefix.
+            live.ActiveStartBoundary = now();
+            StartPreparedSource(live);
+        }
         }
         catch
         {
@@ -328,6 +364,13 @@ public sealed class RecordingSession : IAsyncDisposable
             catch (Exception ex) { warnings.Enqueue("启动来源清理失败：" + ex.Message); Interlocked.Exchange(ref stopping, 1); }
             throw;
         }
+    }
+
+    private void SetSegmentOffset(Live live, ulong excluded)
+    {
+        if (live.OffsetAssigned) throw new InvalidOperationException("录音段不能重复更改时间轴映射。");
+        live.ExcludedPause100ns = excluded; live.OffsetAssigned = true;
+        Enqueue(new(store => store.SetSegmentTimelineOffset(live.SegmentId, excluded)));
     }
 
     private void StartPreparedSource(Live live)
@@ -437,6 +480,7 @@ public sealed class RecordingSession : IAsyncDisposable
     private void AcknowledgeControl(Control control, ulong? boundaryAt = null, string? message = null)
     {
         long effective = Us(boundaryAt ?? now());
+        ObserveRecordingTime(now());
         if (control.Operation == "mic_on")
         {
             string? confirmedDevice = fixedMicrophoneDeviceId;
@@ -466,6 +510,7 @@ public sealed class RecordingSession : IAsyncDisposable
             if ((block.Flags & 1) != 0 && source.SeenPacket) { captureFault = true; warnings.Enqueue(source.Source.Id + " 报告音频不连续。"); }
             source.SeenPacket = true;
             source.LastPacketAt = now(); source.LastSilent = (block.Flags & 2) != 0;
+            block = RemoveInactivePrefix(source, block);
             if (block.Pcm.Length == 0) continue;
             if (Interlocked.Add(ref queuedBytes, block.Pcm.Length) > 32L * 1024 * 1024)
             {
@@ -477,6 +522,22 @@ public sealed class RecordingSession : IAsyncDisposable
             else PublishPending(source, now(), false);
         }
         if (cutoff.HasValue) throw new IOException("停采尾包超过受控上限。");
+    }
+
+    private static RecordingBlock RemoveInactivePrefix(Live source, RecordingBlock block)
+    {
+        if (source.ActiveStartBoundary == 0 || block.QpcPosition100ns >= source.ActiveStartBoundary) return block;
+        // Retain only whole frames beginning at/after the shared active boundary.
+        // Keep raw API QPC/device positions intact and describe the retained slice.
+        UInt128 delta = (UInt128)(source.ActiveStartBoundary - block.QpcPosition100ns) * (uint)source.Source.Format.SampleRate;
+        UInt128 first = (delta + AudioClock.UnitsPerSecond - 1) / AudioClock.UnitsPerSecond;
+        int retainedStart = (int)UInt128.Min((uint)block.RawFrameCount, first);
+        int drop = Math.Clamp(retainedStart - block.RetainedFrameOffset, 0, block.FrameCount);
+        if (drop == 0) return block;
+        byte[] kept = block.Pcm.AsSpan(checked(drop * source.Source.Format.BlockAlign)).ToArray();
+        Array.Clear(block.Pcm);
+        source.Discarded += drop; source.DiscardedBeforeStart += drop;
+        return block with { Pcm = kept, FrameCount = block.FrameCount - drop, RetainedFrameOffset = block.RetainedFrameOffset + drop };
     }
 
     private void ServiceStartedSources()
@@ -525,7 +586,8 @@ public sealed class RecordingSession : IAsyncDisposable
     {
         while (source.Pending.TryPeek(out var block))
         {
-            int keep = AudioClock.CompleteFramesBefore(block.QpcPosition100ns, cutoff, source.Source.Format.SampleRate, block.FrameCount);
+            int rawThrough = AudioClock.CompleteFramesBefore(block.QpcPosition100ns, cutoff, source.Source.Format.SampleRate, block.RawFrameCount);
+            int keep = Math.Clamp(rawThrough - block.RetainedFrameOffset, 0, block.FrameCount);
             if (!final && keep < block.FrameCount)
             {
                 if (block.QpcPosition100ns > cutoff + 2_000_000) throw new IOException("API包时间超前超过200ms，拒绝不明边界。");
@@ -541,7 +603,7 @@ public sealed class RecordingSession : IAsyncDisposable
             }
             if (keep == 0) { Clear(pcm); continue; }
             var packet = new CapturedPacket(source.Frames, keep, block.RawFrameCount, block.DevicePosition,
-                block.QpcPosition100ns, block.Flags, true, block.DevicePositionValid);
+                block.QpcPosition100ns, block.Flags, true, block.DevicePositionValid, block.RetainedFrameOffset);
             source.Peak = Peak(pcm, source.Source.Format);
             source.ObservedSound |= source.Peak > .0001f;
             Enqueue(new(store => store.WritePacket(source.SegmentId, pcm, packet), pcm));
@@ -564,8 +626,18 @@ public sealed class RecordingSession : IAsyncDisposable
             }
             source.Cutoff = now();
         }
+        ulong boundary = ordered.Length == 0 ? now() : ordered.Max(source => source.Cutoff);
+        if (!stopUnconfirmed && operation is "pause" or "system_gap")
+        {
+            // Freeze at the actual last Stop boundary, before potentially slow
+            // tail writing or Dispose. A paused stop must not add cleanup silence.
+            recordingClock!.Pause(boundary);
+            ObserveRecordingTime(boundary);
+        }
         foreach (var source in ordered)
         {
+            if (source.Prepared && !source.Started && !source.OffsetAssigned && recordingClock!.IsPaused)
+                SetSegmentOffset(source, recordingClock.ExcludedAtFrozenBoundary(source.Cutoff));
             try
             {
                 if (source.Started && !source.StopFailed) Drain(source, source.Cutoff, 1024);
@@ -588,7 +660,7 @@ public sealed class RecordingSession : IAsyncDisposable
             }
             if (source.DeviceLimited) warnings.Enqueue(source.Source.Id + " 设备帧计数不可依赖；保留原值，以实际API QPC标记时间。长时/双轨同步未验收。");
             if (source.Discarded > 0) warnings.Enqueue(source.Source.Id + $" 边界舍弃 {source.Discarded} 帧。");
-            if (source.Prepared && source.Frames == 0) { captureFault = true; warnings.Enqueue(source.Source.Id + " 本段未收到有效音频包，不等于静音。"); }
+            if (source.Started && source.Frames == 0) { captureFault = true; warnings.Enqueue(source.Source.Id + " 本段未收到有效音频包，不等于静音。"); }
             // A late MicOn can be refused by the actual-format disk budget
             // before its segment exists. Never poison the still-recording remote
             // writer by queuing a boundary for an uncreated segment.
@@ -596,7 +668,7 @@ public sealed class RecordingSession : IAsyncDisposable
             try
             {
                 Enqueue(new(store => store.WriteBoundary(source.SegmentId, requestId, operation, source.Cutoff, null,
-                    source.Discarded, source.Discarded == 0 ? null : "after_boundary")));
+                    source.Discarded, source.Discarded == 0 ? null : source.DiscardedBeforeStart > 0 ? "outside_active_boundary" : "after_boundary")));
             }
             catch (Exception ex) { captureFault = true; warnings.Enqueue("边界未能写入：" + ex.Message); }
         }
@@ -605,7 +677,7 @@ public sealed class RecordingSession : IAsyncDisposable
             Interlocked.Exchange(ref stopping, 1);
             throw new IOException("未确认所有来源成功停止/释放；结束本场并等待Host退出，不回执已暂停或mic已关。");
         }
-        return ordered.Length == 0 ? now() : ordered.Max(source => source.Cutoff);
+        return boundary;
     }
     private void FailSource(Live source, Exception ex)
     {
@@ -656,7 +728,10 @@ public sealed class RecordingSession : IAsyncDisposable
         return current > lastPacketAt && current - lastPacketAt > 20_000_000;
     }
     private void NotifyAck(RecordingAck ack) { try { Acknowledged?.Invoke(ack); } catch { } }
-    private long Us(ulong value) => value >= epoch ? checked((long)((value - epoch) / 10)) : 0;
+    private long Us(ulong value) => recordingClock?.Elapsed100ns(value) / 10
+        ?? (value >= epoch ? checked((long)((value - epoch) / 10)) : 0);
+    private void ObserveRecordingTime(ulong value) => Interlocked.Exchange(ref observedSessionUs,
+        Math.Max(Interlocked.Read(ref observedSessionUs), Us(value)));
     private static ulong Now100ns() => (ulong)AudioClock.CounterTo100ns(Stopwatch.GetTimestamp(), Stopwatch.Frequency);
     private static void ValidateDirectory(string directory)
     {
@@ -691,8 +766,9 @@ public sealed class RecordingSession : IAsyncDisposable
         public Queue<RecordingBlock> Pending { get; } = new();
         public bool Prepared, Started, StopFailed, DeviceLimited, DeviceClockAnomaly, SeenPacket, LastSilent, ObservedSound;
         public bool AllDevicePositionsZero = true;
-        public ulong Cutoff, LastPacketAt;
-        public long Frames, Discarded;
+        public ulong Cutoff, LastPacketAt, ExcludedPause100ns, ActiveStartBoundary;
+        public bool OffsetAssigned;
+        public long Frames, Discarded, DiscardedBeforeStart;
         public float Peak;
     }
 }

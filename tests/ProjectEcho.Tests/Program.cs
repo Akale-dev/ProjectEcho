@@ -42,6 +42,9 @@ if (args.Length > 0 && args[0] == "--m3d-vulkan-full-probe")
 if (args.Length > 0 && args[0] == "--m3h-meter-preview-probe")
     return await M3hAudioLevelPreviewProbe.RunAsync(args);
 
+if (args.Length > 0 && args[0] == "--m3hfix-asr-probe")
+    return await M3hFixAsrProbe.RunAsync(args);
+
 if (args.Length > 0 && args[0] == "--m2-revalidate-long-run")
     return await M2LongRunProbe.RunRevalidationAsync(args);
 
@@ -148,6 +151,8 @@ M3gTimelinePrecisionTests.Register(Run, output);
 M3hMeetingWhisperTests.Register(Run, output);
 M3hAudioLevelPreviewTests.Register(Run);
 M3hMeterDisplayTests.Register(Run);
+M3hFixPauseTests.Register(Run, output);
+M3hFixStorageTests.Register(Run, output);
 M3eMeetingLogTests.Register(Run, output);
 M4aTimelineTests.Register(Run, output);
 TruePeakTests.Register(Run, output);

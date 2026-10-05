@@ -29,7 +29,7 @@ public partial class MainWindow
         {
             ChangeLanguage(language, persist: false); ModeBox.SelectedIndex = 0; UpdateControls();
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render, token);
-            Need(ApplicationVersionText.Text == "Ver. M3H", "The current version is not M3G.");
+            Need(ApplicationVersionText.Text == "Ver. M3Hfix", "The current version is not M3G.");
             Need(Equals(((ComboBoxItem)ModeBox.Items[0]).Content, UiText.T("从特定应用录音")) &&
                 Equals(((ComboBoxItem)ModeBox.Items[1]).Content, UiText.T("从所有应用录音")),
                 "The recording mode names have not changed in every language.");

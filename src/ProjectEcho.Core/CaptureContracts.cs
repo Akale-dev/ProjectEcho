@@ -44,7 +44,8 @@ public sealed record CapturedTrack(
     long FrameCount,
     IReadOnlyList<CapturedPacket> Packets,
     string? SegmentId = null,
-    string? ProcessingMode = null);
+    string? ProcessingMode = null,
+    ulong ExcludedPause100ns = 0);
 
 public sealed record CaptureResult(
     string SessionDirectory,
@@ -54,4 +55,31 @@ public sealed record CaptureResult(
     long Duration100ns,
     IReadOnlyList<CapturedTrack> Tracks,
     bool Complete,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    string TimelinePolicy = RecordingTimeline.Elapsed);
+
+/// <summary>Persisted mapping policy. Original device and QPC clocks are never rewritten.</summary>
+public static class RecordingTimeline
+{
+    public const string Elapsed = "elapsed-v1";
+    public const string ExcludePaused = "pause-excluded-v1";
+
+    public static void Validate(string policy, ulong excludedPause100ns = 0)
+    {
+        if (policy is not (Elapsed or ExcludePaused) || (policy == Elapsed && excludedPause100ns != 0))
+            throw new InvalidDataException("未知录音时间轴规则，或旧经过时间轴含暂停扣除。");
+    }
+
+    public static Int128 Position100ns(ulong qpc100ns, ulong epochQpc100ns, ulong excludedPause100ns)
+    {
+        Int128 position = RawPosition100ns(qpc100ns, epochQpc100ns, excludedPause100ns);
+        if (position < 0) throw new InvalidDataException("原始 QPC 早于该段录音时间轴起点。");
+        return position;
+    }
+
+    // A restarted device may return a raw packet beginning before native Start.
+    // Keep its signed raw position; the retained frame offset must prove that no
+    // pre-Start PCM is saved. Boundary positions themselves remain nonnegative.
+    public static Int128 RawPosition100ns(ulong qpc100ns, ulong epochQpc100ns, ulong excludedPause100ns)
+        => (Int128)qpc100ns - epochQpc100ns - excludedPause100ns;
+}

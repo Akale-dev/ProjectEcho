@@ -42,6 +42,9 @@ public partial class MainWindow : Window
     private string? pendingControl;
     private string? pendingControlRequestId;
     private long elapsedUs;
+    // Capture-thread ACKs own the frozen active timeline, including while Stop
+    // drains a paused session. Delayed health events cannot advance this boundary.
+    private long? pausedRecordingElapsedUs;
     private Action<string>? pendingMeetingWhisperDefaults;
     private SourceSnapshot? snapshot;
 
@@ -190,7 +193,7 @@ public partial class MainWindow : Window
         : state switch
         {
             SessionState.Recording => isTrial ? UiText.T("正在进行 10 秒试录") : UiText.T("正在录音"),
-            SessionState.Paused => UiText.T("已暂停 · 时间轴继续，不采集"),
+            SessionState.Paused => UiText.T("已暂停 · 计时停止，两路均不采集"),
             SessionState.Saved => UiText.T("原轨已保存"),
             SessionState.SavedIncomplete => UiText.T("原件已保留 · 完整性有警告"),
             SessionState.Faulted or SessionState.StoppedWithError => UiText.T("录音异常 · 保存状态请查看详情"),
@@ -232,12 +235,13 @@ public partial class MainWindow : Window
         FlushMeetingWhisperPrompt();
         recordingLogDirectory = trial ? null : options.SessionDirectory;
         pendingRecordingLog.Clear();
-        LogRecordingStatus($"Ver. M3H · Windows {Environment.OSVersion.Version} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · NAudio 3.1.0\n录音请求：{options.Mode}；MicEnabled={options.MicrophoneEnabled}。");
+        LogRecordingStatus($"Ver. M3Hfix · Windows {Environment.OSVersion.Version} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · NAudio 3.1.0\n录音请求：{options.Mode}；MicEnabled={options.MicrophoneEnabled}。");
         isTrial = trial;
         fixedMicrophoneId = options.MicrophoneDeviceId;
         fixedMicrophoneName = options.MicrophoneEnabled ? (MicBox.SelectedItem as AudioDevice)?.Name : null;
         microphoneEnabled = options.MicrophoneEnabled;
         elapsedUs = 0;
+        pausedRecordingElapsedUs = null;
         pendingControl = null;
         pendingControlRequestId = null;
         pendingMicrophone = null;
@@ -341,11 +345,16 @@ public partial class MainWindow : Window
                 if (!stopRequested) SetStatus(value.Message ?? (isTrial ? UiText.T("正在试录") : UiText.T("正在录音")));
                 break;
             case "health" when value.Health is { } health && state is (SessionState.Recording or SessionState.Paused or SessionState.Stopping):
-                elapsedUs = health.ElapsedUs;
-                SetLevelMeterTargets(state == SessionState.Paused ? 0 : health.RemotePeak,
-                    state == SessionState.Paused || !microphoneEnabled ? 0 : health.MicPeak);
-                RemoteHealth.Text = UiText.F($"{health.RemoteStatus} · {health.RemoteFrames:N0} 帧");
-                MicHealth.Text = UiText.F($"{health.MicStatus} · {health.MicFrames:N0} 帧");
+                bool clockPaused = pausedRecordingElapsedUs is not null || state == SessionState.Paused;
+                if (!clockPaused && !health.Paused)
+                {
+                    elapsedUs = Math.Max(elapsedUs, health.ElapsedUs);
+                    SetLevelMeterTargets(health.RemotePeak, microphoneEnabled && health.MicrophoneEnabled ? health.MicPeak : 0);
+                    RemoteHealth.Text = UiText.F($"{health.RemoteStatus} · {health.RemoteFrames:N0} 帧");
+                    if (!microphoneEnabled) MicHealth.Text = UiText.T("关闭 · 不采集");
+                    else if (health.MicrophoneEnabled) MicHealth.Text = UiText.F($"{health.MicStatus} · {health.MicFrames:N0} 帧");
+                }
+                else if (clockPaused) ShowPausedCaptureHealth();
                 ConnectionText.Text = UiText.T("捕获连接：CaptureHost 健康回报已收到");
                 StorageText.Text = UiText.F($"保存状态：写入中；最近持久检查点 {FormatElapsed(health.LastCheckpointUs)}；可用磁盘 {health.AvailableBytes / 1_000_000:N0} MB");
                 break;
@@ -365,13 +374,21 @@ public partial class MainWindow : Window
                 microphoneEnabled = ack.MicrophoneEnabled;
                 SetMicrophoneRequested(microphoneEnabled);
                 state = ack.Paused ? SessionState.Paused : SessionState.Recording;
-                elapsedUs = Math.Max(elapsedUs, ack.EffectiveSessionUs);
                 if (ack.Paused)
                 {
-                    ResetLevelMeterDisplay();
-                    RemoteHealth.Text = UiText.T("暂停 · 不采集");
-                    MicHealth.Text = microphoneEnabled ? UiText.T("暂停 · 不采集，恢复后开启") : UiText.T("关闭 · 不采集");
+                    // Pause's capture boundary is authoritative even if a health
+                    // report arrived first. Other paused controls cannot add time.
+                    pausedRecordingElapsedUs = ack.Operation == "pause" ? ack.EffectiveSessionUs
+                        : pausedRecordingElapsedUs ?? elapsedUs;
+                    elapsedUs = pausedRecordingElapsedUs.Value;
+                    ShowPausedCaptureHealth();
                 }
+                else if (ack.Operation == "resume")
+                {
+                    pausedRecordingElapsedUs = null;
+                    elapsedUs = ack.EffectiveSessionUs;
+                }
+                else elapsedUs = Math.Max(elapsedUs, ack.EffectiveSessionUs);
                 if (!ack.MicrophoneEnabled) { ResetLevelMeterDisplay(microphoneOnly: true); MicHealth.Text = UiText.T("关闭 · 不采集"); }
                 SetStatus((systemPause ? UiText.T("检测到系统/调度时间缺口；CaptureHost 已确认暂停，两路均已停采。可明确恢复录音，或停止并保存。") :
                     ack.Message ?? UiText.F($"已确认{ControlDescription(ack.Operation)}")) +
@@ -387,8 +404,12 @@ public partial class MainWindow : Window
                 SetStatus(UiText.F($"{ControlDescription(rejectedOperation)}未完成：{value.Message}\n当前开关和录音状态按上次实际回执显示；可重试或停止并保存。"));
                 break;
             case "levels" when value.Levels is { } levels && state is (SessionState.Recording or SessionState.Paused or SessionState.Stopping):
-                SetLevelMeterTargets(state == SessionState.Paused ? 0 : levels.RemotePeak,
-                    state == SessionState.Paused || !microphoneEnabled ? 0 : levels.MicrophonePeak);
+                if (pausedRecordingElapsedUs is not null || state == SessionState.Paused)
+                {
+                    ShowPausedCaptureHealth();
+                    break;
+                }
+                SetLevelMeterTargets(levels.RemotePeak, !microphoneEnabled ? 0 : levels.MicrophonePeak);
                 RemoteHealth.Text = levels.RemoteFrames == 0 ? UiText.T("尚未收到音频包") : UiText.F($"{levels.RemoteFrames:N0} 帧 · 峰值 {levels.RemotePeak:F3}");
                 MicHealth.Text = microphoneEnabled ? UiText.F($"{levels.MicrophoneFrames:N0} 帧 · 峰值 {levels.MicrophonePeak:F3}") : UiText.T("关闭 · 不采集");
                 if (!string.IsNullOrEmpty(levels.Status)) SetStatus(levels.Status);
@@ -510,6 +531,7 @@ public partial class MainWindow : Window
         launching = false;
         pendingControl = null;
         pendingControlRequestId = null;
+        pausedRecordingElapsedUs = null;
         microphoneEnabled = false;
         fixedMicrophoneId = null;
         fixedMicrophoneName = null;
@@ -520,6 +542,13 @@ public partial class MainWindow : Window
         MicBox.SelectedIndex = -1;
         ResetRecordingLevelCounters();
         TitleBox.Text = SessionDefaults.Title(DateTimeOffset.Now);
+    }
+
+    private void ShowPausedCaptureHealth()
+    {
+        ResetLevelMeterDisplay();
+        RemoteHealth.Text = UiText.T("暂停 · 不采集");
+        MicHealth.Text = microphoneEnabled ? UiText.T("暂停 · 不采集，恢复后开启") : UiText.T("关闭 · 不采集");
     }
 
     private void SetMicrophoneRequested(bool enabled)

@@ -9,14 +9,15 @@ using ProjectEcho.Core;
 namespace ProjectEcho.Capture.Windows;
 
 public sealed record M1ChunkSummary(string ChunkId, string SegmentId, string SourceId, string Path,
-    PcmFormat Format, long FrameCount, long PcmBytes, long DataOffsetBytes, string PcmSha256, string FileSha256);
+    PcmFormat Format, long FrameCount, long PcmBytes, long DataOffsetBytes, string PcmSha256, string FileSha256,
+    ulong ExcludedPause100ns = 0);
 public sealed record M1StorageResult(string ManifestPath, bool StorageComplete, long Duration100ns,
     IReadOnlyList<string> Warnings, IReadOnlyList<M1ChunkSummary> Chunks);
 
 /// <summary>Single writer owned by CaptureHost. Never owns or starts an audio device.</summary>
 public sealed class M1Storage : IDisposable
 {
-    private readonly string directory, title;
+    private readonly string directory, title, timelinePolicy;
     private readonly ulong epoch;
     private readonly DateTimeOffset started;
     private readonly bool synthetic;
@@ -28,11 +29,15 @@ public sealed class M1Storage : IDisposable
     private long observedSessionUs;
     private bool disposed, finished;
     public DateTimeOffset? LastCheckpointUtc { get; private set; }
+    public long LastCheckpointSessionUs { get; private set; }
     public long BytesWritten { get; private set; }
     public string IndexPath => Path.Combine(directory, "journal", "capture-index.jsonl");
 
-    public M1Storage(string directory, ulong epochQpc100ns, DateTimeOffset startedAtUtc, string title, bool isSynthetic = false)
+    public M1Storage(string directory, ulong epochQpc100ns, DateTimeOffset startedAtUtc, string title, bool isSynthetic = false,
+        string timelinePolicy = RecordingTimeline.Elapsed)
     {
+        RecordingTimeline.Validate(timelinePolicy);
+        this.timelinePolicy = timelinePolicy;
         this.directory = Path.GetFullPath(directory);
         M1Paths.NoReparseAncestors(this.directory);
         this.title = title; epoch = epochQpc100ns; started = startedAtUtc; synthetic = isSynthetic;
@@ -43,21 +48,25 @@ public sealed class M1Storage : IDisposable
         try { events = new FileStream(Path.Combine(this.directory, "journal", "events.jsonl"), FileMode.CreateNew, FileAccess.Write, FileShare.Read); }
         catch { journal.Dispose(); throw; }
         Append(new { type = "session", meetingId = Path.GetFileName(this.directory), epochQpc100ns = U(epoch),
-            startedAtUtc = started, displayTimeZone = TimeZoneInfo.Local.Id, storageVersion = "m1-recording-1" });
+            startedAtUtc = started, displayTimeZone = TimeZoneInfo.Local.Id, storageVersion = "m1-recording-1", timelinePolicy });
         journal.Flush(true);
     }
 
     public void AddSegment(string segmentId, string sourceId, WaveFormat waveFormat, CapturedPacket? firstPacket = null,
-        string? processingMode = null)
+        string? processingMode = null, ulong excludedPause100ns = 0)
     {
         EnsureOpen(); ValidateId(segmentId); ValidateId(sourceId);
-        if (firstPacket is { TimestampValid: true } && firstPacket.QpcPosition100ns < epoch)
-            throw new InvalidDataException("segment 锚点早于会话起点。");
+        RecordingTimeline.Validate(timelinePolicy, excludedPause100ns);
+        if (firstPacket is { TimestampValid: true })
+            PacketPosition(firstPacket.QpcPosition100ns, firstPacket.RetainedFrameOffset, waveFormat.SampleRate, excludedPause100ns);
         if (segments.Values.Any(s => s.SourceId == sourceId && !s.Closed))
             throw new InvalidOperationException("同一来源必须先确认旧 segment 的停采边界。");
+        // Prepared segments may temporarily use zero until SetSegmentTimelineOffset.
+        // Their final offset is checked before any clock or PCM becomes authoritative.
         var format = CaptureSession.Describe(waveFormat); format.Validate();
         ValidateProcessingMode(processingMode);
-        var segment = new Segment(segmentId, sourceId, waveFormat, format) { ProcessingMode = processingMode };
+        var segment = new Segment(segmentId, sourceId, waveFormat, format)
+            { ProcessingMode = processingMode, ExcludedPause100ns = excludedPause100ns };
         segments.Add(segmentId, segment);
         // A successful AddSegment is the writer-readiness barrier. Create the actual
         // original file before AudioClient.Start, even though its first clock anchor
@@ -79,6 +88,7 @@ public sealed class M1Storage : IDisposable
         if ((packet.Flags & ~7) != 0) throw new InvalidDataException("未知 WASAPI flags。");
         if (!packet.TimestampValid || (packet.Flags & 4) != 0 || packet.QpcPosition100ns < epoch)
             throw new InvalidDataException("时间有歧义或早于会话起点的 PCM 不进入 M1 原件。");
+        PacketPosition(packet.QpcPosition100ns, packet.RetainedFrameOffset, segment.Format.SampleRate, segment.ExcludedPause100ns);
         if ((packet.Flags & 2) != 0 && pcm.Any(b => b != 0)) throw new InvalidDataException("SILENT 包含非零 PCM。");
         ulong gap = ValidateContinuity(segment, packet, out long clockJitter);
         if (clockJitter != 0) storageWarnings.Add(segment.SourceId + " 连续设备帧的 API QPC 存在小幅抖动；已保留原始时钟及偏差，回听按相邻实际时钟锚点映射。长时同步仍需实测。");
@@ -96,7 +106,7 @@ public sealed class M1Storage : IDisposable
                 deviceFramePosition = U(packet.DevicePosition), devicePositionValid = packet.DevicePositionValid,
                 qpcPosition100ns = U(packet.QpcPosition100ns), rawFrameCount = packet.RawFrameCount,
                 flags = Flags(packet.Flags), retainedFrameOffset = checked(offset + consumed), frameCount = count,
-                chunkFrameOffset = chunk.Frames, sessionStartUs = SessionUs(packet, offset + consumed, segment.Format.SampleRate),
+                chunkFrameOffset = chunk.Frames, sessionStartUs = SessionUs(segment, packet, offset + consumed),
                 timestampQuality = packet.GetTimestampQuality(), gapBefore100ns = U(consumed == 0 ? gap : 0),
                 clockJitter100ns = consumed == 0 ? clockJitter : 0,
                 gapReason = consumed == 0 && gap != 0 ? "unobserved_audio_interval" : null });
@@ -104,7 +114,7 @@ public sealed class M1Storage : IDisposable
             if (packet.TimestampValid)
                 segment.MaximumEnd = Int128.Max(segment.MaximumEnd, (Int128)packet.QpcPosition100ns * segment.Format.SampleRate +
                     (Int128)(offset + consumed + count) * AudioClock.UnitsPerSecond);
-            observedSessionUs = Math.Max(observedSessionUs, SessionUs(packet, offset + consumed + count, segment.Format.SampleRate));
+            observedSessionUs = Math.Max(observedSessionUs, SessionUs(segment, packet, offset + consumed + count));
             if (packet.DevicePositionValid)
                 segment.MaximumDeviceEnd = UInt128.Max(segment.MaximumDeviceEnd, (UInt128)packet.DevicePosition + (uint)(offset + consumed + count));
             chunk.Frames += count; segment.Frames += count; BytesWritten += bytes;
@@ -119,24 +129,41 @@ public sealed class M1Storage : IDisposable
         CheckpointIfDue();
     }
 
+    /// <summary>
+    /// Finalizes a prepared segment's mapping immediately before native Start.
+    /// AddSegment has already flushed the WAV, but its journal anchor is written
+    /// with the first actual packet (or empty boundary). FIFO writer ordering keeps
+    /// this mapping ahead of all PCM without counting slow device preparation.
+    /// </summary>
+    public void SetSegmentTimelineOffset(string segmentId, ulong excludedPause100ns)
+    {
+        EnsureOpen(); var segment = segments[segmentId];
+        RecordingTimeline.Validate(timelinePolicy, excludedPause100ns);
+        if (timelinePolicy != RecordingTimeline.ExcludePaused || segment.Written || segment.Frames != 0 || segment.TimelineOffsetFinalized)
+            throw new InvalidOperationException("只能在新段写入任何时钟/PCM之前确定一次暂停扣除。");
+        segment.ExcludedPause100ns = excludedPause100ns;
+        segment.TimelineOffsetFinalized = true;
+    }
+
     public void WriteBoundary(string segmentId, string requestId, string operation, ulong cutoffQpc100ns,
         ulong? firstForbiddenDeviceFrame, long discardedFrameCount, string? discardReason)
     {
         EnsureOpen(); var segment = segments[segmentId];
         if (segment.Closed) throw new InvalidOperationException("segment 边界已保存。");
         if (operation is not ("stop" or "pause" or "mic_off") || discardedFrameCount < 0 ||
-            discardReason is not (null or "crossing_frame" or "after_boundary" or "timestamp_ambiguous") || cutoffQpc100ns < epoch ||
+            discardReason is not (null or "crossing_frame" or "after_boundary" or "outside_active_boundary" or "timestamp_ambiguous") || cutoffQpc100ns < epoch ||
             string.IsNullOrWhiteSpace(requestId) || (operation == "mic_off" && segment.SourceId != "mic") || (discardedFrameCount > 0 && discardReason is null))
             throw new ArgumentException("无效边界。");
         if (!segment.Written) WriteSegment(segment, null);
+        long effectiveSessionUs = checked((long)(RecordingTimeline.Position100ns(cutoffQpc100ns, epoch, segment.ExcludedPause100ns) / 10));
         if (segment.MaximumEnd > (Int128)cutoffQpc100ns * segment.Format.SampleRate ||
             (firstForbiddenDeviceFrame is { } forbidden && segment.MaximumDeviceEnd > forbidden))
             throw new InvalidDataException("已经写入的 PCM 超过实际停采边界。");
         Append(new { type = "boundary", requestId, operation, segmentId,
-            effectiveSessionUs = checked((long)(((Int128)cutoffQpc100ns - epoch) / 10)), effectiveQpc100ns = U(cutoffQpc100ns),
+            effectiveSessionUs, effectiveQpc100ns = U(cutoffQpc100ns),
             firstForbiddenDeviceFrame = firstForbiddenDeviceFrame is { } frame ? U(frame) : null,
             acceptedThroughSequence = segment.LastSequence, discardedFrameCount, discardReason });
-        observedSessionUs = Math.Max(observedSessionUs, checked((long)((cutoffQpc100ns - epoch) / 10)));
+        observedSessionUs = Math.Max(observedSessionUs, effectiveSessionUs);
         segment.Closed = true;
         Checkpoint();
         if (segment.Active is { } chunk) { FinalizeChunk(chunk); segment.Active = null; }
@@ -150,7 +177,7 @@ public sealed class M1Storage : IDisposable
         events.Flush(true);
     }
 
-    /// <summary>Capture-thread elapsed time, including pause/no-callback intervals. Never substitutes for packet clocks.</summary>
+    /// <summary>Capture-thread time in the persisted timeline policy. Never substitutes for packet clocks.</summary>
     public void SetObservedSessionUs(long sessionUs)
     {
         EnsureOpen();
@@ -174,7 +201,7 @@ public sealed class M1Storage : IDisposable
                 committedPcmBytes = checked(c.Frames * c.Segment.Format.BlockAlign), dataOffsetBytes = c.DataOffset,
                 pcmSha256 = c.PcmHash ?? Convert.ToHexStringLower(c.Hash.GetCurrentHash()) }).ToArray() });
         journal.Flush(true); events.Flush(true);
-        LastCheckpointUtc = DateTimeOffset.UtcNow; checkpointAt = Stopwatch.GetTimestamp();
+        LastCheckpointUtc = DateTimeOffset.UtcNow; LastCheckpointSessionUs = observedSessionUs; checkpointAt = Stopwatch.GetTimestamp();
     }
 
     public M1StorageResult Finish(long duration100ns, bool complete, IReadOnlyList<string> warnings)
@@ -182,7 +209,7 @@ public sealed class M1Storage : IDisposable
         EnsureOpen();
         if (duration100ns < 0) throw new ArgumentOutOfRangeException(nameof(duration100ns));
         if ((Int128)duration100ns < (Int128)observedSessionUs * 10 || segments.Values.Any(s =>
-            s.MaximumEnd > ((Int128)epoch + duration100ns) * s.Format.SampleRate))
+            s.MaximumEnd > ((Int128)epoch + s.ExcludedPause100ns + duration100ns) * s.Format.SampleRate))
             throw new InvalidDataException("完成时长不能截短已确认经过时间或包尾帧。");
         SetObservedSessionUs(duration100ns / 10);
         foreach (var segment in segments.Values) if (!segment.Written) WriteSegment(segment, null);
@@ -192,9 +219,9 @@ public sealed class M1Storage : IDisposable
         Checkpoint();
         foreach (var chunk in chunks) FinalizeChunk(chunk);
         var summaries = chunks.Select(c => new M1ChunkSummary(c.Id, c.Segment.Id, c.Segment.SourceId, c.RelativePath,
-            c.Segment.Format, c.Frames, checked(c.Frames * c.Segment.Format.BlockAlign), c.DataOffset, c.PcmHash!, c.FileHash!)).ToArray();
+            c.Segment.Format, c.Frames, checked(c.Frames * c.Segment.Format.BlockAlign), c.DataOffset, c.PcmHash!, c.FileHash!, c.Segment.ExcludedPause100ns)).ToArray();
         var manifest = Path.Combine(directory, "meeting.json");
-        WriteAtomicJson(manifest, new { schemaVersion = "m1-recording-1", isSynthetic = synthetic, title,
+        WriteAtomicJson(manifest, new { schemaVersion = "m1-recording-1", timelinePolicy, isSynthetic = synthetic, title,
             project = "未分类", startedAtUtc = started, epochQpc100ns = U(epoch), duration100ns,
             captureIndexPath = "journal/capture-index.jsonl", storageComplete = complete,
             finalCheckpointSequence = sequence - 1, warnings, chunks = summaries });
@@ -227,21 +254,32 @@ public sealed class M1Storage : IDisposable
 
     private void WriteSegment(Segment segment, CapturedPacket? first)
     {
+        if (segments.Values.Any(previous => previous.SourceId == segment.SourceId && previous.Written &&
+            previous.ExcludedPause100ns > segment.ExcludedPause100ns))
+            throw new InvalidDataException("同一来源累计暂停扣除不能倒退。");
         var format = segment.Format;
         Append(new { type = "segment", segmentId = segment.Id, sourceId = segment.SourceId, processingMode = segment.ProcessingMode,
+            excludedPause100ns = U(segment.ExcludedPause100ns),
             format = new { sampleRate = format.SampleRate, channels = format.Channels,
                 encoding = format.IsFloat ? "float32le" : $"pcm_s{format.BitsPerSample}le", blockAlign = format.BlockAlign, channelMask = format.ChannelMask,
                 validBitsPerSample = segment.WaveFormat is WaveFormatExtensible e ? e.ValidBitsPerSample : format.BitsPerSample },
             anchor = new { deviceFramePosition = first is { TimestampValid: true, DevicePositionValid: true } ? U(first.DevicePosition) : null,
                 qpcPosition100ns = first is { TimestampValid: true } ? U(first.QpcPosition100ns) : null,
-                sessionStartUs = first is null ? 0 : SessionUs(first, first.RetainedFrameOffset, format.SampleRate),
+                sessionStartUs = first is null ? 0 : SessionUs(segment, first, first.RetainedFrameOffset),
                 timestampQuality = first?.GetTimestampQuality() ?? "invalid" } });
         segment.Written = true;
         segment.AnchorPacket = first;
     }
 
-    private long SessionUs(CapturedPacket packet, int offset, int rate) => packet.TimestampValid
-        ? Math.Max(0, checked((long)((((Int128)packet.QpcPosition100ns - epoch) * rate + (Int128)offset * AudioClock.UnitsPerSecond) / (rate * 10L)))) : 0;
+    private long SessionUs(Segment segment, CapturedPacket packet, int offset) => packet.TimestampValid
+        ? checked((long)(PacketPosition(packet.QpcPosition100ns, offset, segment.Format.SampleRate, segment.ExcludedPause100ns) /
+            (segment.Format.SampleRate * 10L))) : 0;
+    private Int128 PacketPosition(ulong qpc, int retainedOffset, int rate, ulong excluded)
+    {
+        Int128 position = RecordingTimeline.RawPosition100ns(qpc, epoch, excluded) * rate + (Int128)retainedOffset * AudioClock.UnitsPerSecond;
+        if (qpc < epoch || retainedOffset < 0 || position < 0) throw new InvalidDataException("保留PCM起点早于录音时间轴起点。");
+        return position;
+    }
     private static ulong ValidateContinuity(Segment segment, CapturedPacket packet, out long clockJitter)
     {
         clockJitter = 0;
@@ -330,7 +368,8 @@ public sealed class M1Storage : IDisposable
         public WaveFormat WaveFormat = waveFormat;
         public PcmFormat Format = format;
         public string? ProcessingMode;
-        public bool Written, Closed;
+        public ulong ExcludedPause100ns;
+        public bool Written, Closed, TimelineOffsetFinalized;
         public Int128 MaximumEnd;
         public UInt128 MaximumDeviceEnd;
         public int ChunkNumber;

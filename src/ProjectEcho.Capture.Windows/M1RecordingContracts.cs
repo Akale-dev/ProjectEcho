@@ -23,7 +23,8 @@ public sealed record RecordingDiagnostics(CaptureSchedulingDiagnostic? Schedulin
 
 /// <summary>One actual WASAPI packet, with only authorized whole frames copied into PCM.</summary>
 internal sealed record RecordingBlock(byte[] Pcm, int RawFrameCount, int FrameCount, ulong DevicePosition,
-    ulong QpcPosition100ns, int Flags, bool TimestampValid, bool DevicePositionValid, int DiscardedFrames);
+    ulong QpcPosition100ns, int Flags, bool TimestampValid, bool DevicePositionValid, int DiscardedFrames,
+    int RetainedFrameOffset = 0);
 
 internal interface IRecordingAudioSource : IDisposable
 {

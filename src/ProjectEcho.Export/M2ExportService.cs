@@ -9,6 +9,13 @@ public static class M2ExportService
 {
     internal const string RenderVersion = "m2-qpc-mono-5-stable-device-unity";
     private const string CaptureTimeline = "complete_elapsed_qpc_packet_mapping";
+    private const string PauseExcludedTimeline = "pause_excluded_qpc_packet_mapping";
+    internal static string TimelineFor(string policy) => policy switch
+    {
+        RecordingTimeline.Elapsed => CaptureTimeline,
+        RecordingTimeline.ExcludePaused => PauseExcludedTimeline,
+        _ => throw new InvalidDataException("未知录音时间轴规则。")
+    };
     private const int MaximumSizeRetries = 8;
     private const int MaximumParts = 10000;
     private static readonly PcmFormat MixFormat = new(M2TimelineRenderer.SampleRate, 1, 16, false, 2);
@@ -66,7 +73,7 @@ public static class M2ExportService
             var warnings = capture.Warnings.Concat(new[]
             {
                 "混音依据原始 API QPC 和设备帧重建时间；连续设备帧采用有界平稳映射，保留断续与真实缺口。真实两小时双轨同步尚待验收。",
-                "混音保持来源原有音量，仅在合成峰值过高时整体衰减；保留全部经过时间，不改原轨。"
+                "混音保持来源原有音量，仅在合成峰值过高时整体衰减；保留本场录音时间轴，不改原轨。"
             }).ToList();
             if (capture.Tracks.Sum(track => track.FrameCount) == 0) warnings.Add("来源未收到 PCM；输出为已确认经过时间的占位静音，不代表已采到静音。");
             if (!recovery.IsCleanEnd)
@@ -105,7 +112,7 @@ public static class M2ExportService
                 deviceClockSmoothing = new { nominalWindow100ns = AudioClock.UnitsPerSecond,
                     maximumAllowedCorrection100ns = DevicePacketClock.MaximumJitter100ns,
                     packets = renderLevel.SmoothedPackets, maximumCorrection100ns = renderLevel.MaximumClockCorrection100ns },
-                timeline = CaptureTimeline, sourceHashes,
+                timeline = TimelineFor(capture.TimelinePolicy), timelinePolicy = capture.TimelinePolicy, sourceHashes,
                 wave = new { file = "mixed_full.wav", sha256 = waveHash, truePeak = peakProtection.After,
                     beforeTruePeakDbTp = renderLevel.Before.DbTp, appliedGain = renderLevel.AppliedGain * peakProtection.AppliedGain,
                     processingCeilingDbTp = TruePeakProtection.ProcessingCeilingDbTp, additionalDelayFrames = 0 },
@@ -159,7 +166,10 @@ public static class M2ExportService
             ? versionField.GetString() : null;
         string? sourceTimeline = provenanceRoot.TryGetProperty("timeline", out var timelineField) && timelineField.ValueKind == JsonValueKind.String
             ? timelineField.GetString() : null;
-        bool supportedRecording = sourceRenderVersion == RenderVersion && sourceTimeline == CaptureTimeline;
+        string sourcePolicy = provenanceRoot.TryGetProperty("timelinePolicy", out var policyField)
+            ? policyField.ValueKind == JsonValueKind.String ? policyField.GetString()! : "" : RecordingTimeline.Elapsed;
+        bool supportedRecording = sourceRenderVersion == RenderVersion && (sourcePolicy is RecordingTimeline.Elapsed or RecordingTimeline.ExcludePaused) &&
+            sourceTimeline == TimelineFor(sourcePolicy);
         bool supportedImport = sourceRenderVersion == AudioImportService.SchemaVersion && sourceTimeline == AudioImportService.Timeline &&
             provenanceRoot.TryGetProperty("captureClockMetadataAvailable", out var clocksAvailable) && clocksAvailable.ValueKind == JsonValueKind.False;
         if (!supportedRecording && !supportedImport)
