@@ -56,3 +56,20 @@ M3J在公司Win10的新完整转写和新界面仍须用户复测；本机Vulkan
 “只最后一段”的初版已被后续逐段规则替换。最终生产政策为 `whisper-out-of-range-cues-own-in-range-tokens-or-untimed-v2`，实际Release构建0警告0错误，**319项默认回归PASS**。覆盖倒数两段、连续三段、中间异常后正常段、所有正向段越界、分别使用本段词证据、完整JSON不匹配后的全局回退、10001段全文与重开，以及旧250ms分句边角。手动导入仍严格，负数/反序/绝对超限与EOF零时长合同不变。
 
 证据 `lite/.local/M3J/v2-final/`。界面八入口PASS见 `lite/.local/M3J/integrated-01/ui-runs.json`；最新逐段规则的包内完整回归、旧输出恢复与真实全场识别另补，不把此前初版完整识别当作最终二进制验证。
+
+## 最终M3J交付与包内复测（2026-10-05）
+
+交付 `artifacts/ProjectEcho-win-x64-20261005-M3J-Lite-Final/ProjectEcho.exe` 与同名ZIP。ZIP **262684774字节**，SHA-256 **`60dc2986a572e128610bbaee835855736dece14440cb7abf27f9b7ac9af22ae2`**。665项清单加manifest共666文件；中文路径逐项解压/hash、自带App与Host运行时/IPC通过。manifest SHA-256 `9b30d4a85607f3592a5a4f3a8c7041f7dd08e57d5fc25c413755a67f4472a45e`。
+
+源码修复提交 **`2a7f2e5230ca6c1c1720ed1680974c0db06c2079`**，位于长期Lite分支 `codex/m3i-lite`。独立复审未发现阻断问题；后续仅文档收尾不改变已测ZIP。
+
+- 最终包原样生产DLL回归 **319/0**；八项包内WPF入口通过，含三语录音页卡片/会议时长/版本标识。品牌左缘5、右缘227，侧栏246和字号保持。包内App、Host、回归、实际用户转写所用Core/Capture/Export逐项hash相同。
+- 最终v2生产代码直接恢复原失败输出：**184段，183有时间/1待校对**，26593个非空白字符完整；全文TXT/JSON回导通过，原SRT/JSON/音频/日志不改。没有通过增大容差或整体平移把末句伪装成已定位。
+- 最终包再对同一41分钟音频做完整本机识别：真实**Vulkan0，103369ms推理，105587ms整体验证，186段全部有时间、32696字符**，TXT/JSON/SRT往返通过，最高引擎进度100%，退出0。输入音频与模型hash和原attempt相同；本次新稿TXT/SRT与前次本机完整重转写hash也相同。文字准确率未做人工验收。
+- 原17份会议目录文件和独立诊断Log共18份保留；主目录297个Pro源码/测试/协议文件不变；旧M3I/M5C包保持。M5C同步仍NOT_APPLIED，待M3J用户验收通过后按已有授权执行。
+
+证据：`.local/M3J/zip-verification-final.json`、`bundled-regression/results.json`、`bundled-ui/runs.json`、`tested-components-final.json`、`preservation-final.json`；实际样本最终结果为`.local/M3I-ASRFix/user-recovered-final/report.json`和`full-transcription-final/summary.json`。
+
+方便用户使用的两份独立结果位于 **`.local/M3J/转写结果/`**：本机完整重转写SRT/JSON/TXT，以及公司旧输出恢复JSON/TXT；说明明确区分两份来源。它们是私人本地文件，未进入软件ZIP/Git，未上传。可在原会议“转写与字幕”导入JSON或SRT，不覆盖旧版本。
+
+包内说明是封包前快照；本节和同名`.package.json`补充封包后实际结果，不覆盖已验ZIP。**M3J公司Win10实际重试、新界面物理DPI、干净Windows和旧M1/M2未验项仍未升级**。只有M3I录音不再复现与本场33.7秒处理属于用户现场确认。

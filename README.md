@@ -1,6 +1,8 @@
 # ProjectEcho｜项目会议记录器
 
-当前正在交付 **M3J Lite**：逐段ASR时间越界保全、版本标识、会议时长与录音页录后处理。说明见[84](docs/84_M3J_ASR_EOF_AND_RECORDING_UI_FIX.md)。M3I包保留；M5C尚未同步。
+**M3J Lite：** [完整便携ZIP](../artifacts/ProjectEcho-win-x64-20261005-M3J-Lite-Final.zip)；源码2a7f2e5，ZIP SHA-256 60dc2986a572e128610bbaee835855736dece14440cb7abf27f9b7ac9af22ae2。[详细修复与验证](docs/84_M3J_ASR_EOF_AND_RECORDING_UI_FIX.md)。M5C仍未同步。
+
+当前已交付 **M3J Lite**：逐段ASR时间越界保全、版本标识、会议时长与录音页录后处理。说明见[84](docs/84_M3J_ASR_EOF_AND_RECORDING_UI_FIX.md)。M3I包保留；M5C尚未同步。
 
 **M3I Lite下载：** [完整便携ZIP](../artifacts/ProjectEcho-win-x64-20261005-M3I-Lite-Final.zip)；入口同名目录下ProjectEcho.exe。源提交98d3420，ZIP SHA-256 74af54360a02473d6fde2cc5bd0229af3ce6e1bc782395c278dccd896d2788fc。M5C未同步；目标公司电脑验收待完成。
 
