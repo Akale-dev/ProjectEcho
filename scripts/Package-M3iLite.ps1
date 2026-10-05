@@ -43,20 +43,21 @@ foreach ($config in @('ProjectEcho.runtimeconfig.json','CaptureHost/ProjectEcho.
 }
 $portablePath=Join-Path $output 'portable.json'
 $portable=Get-Content -LiteralPath $portablePath -Raw | ConvertFrom-Json
-$portable | Add-Member NoteProperty milestone 'M3I' -Force
+$portable | Add-Member NoteProperty milestone 'M3J' -Force
 $portable | Add-Member NoteProperty edition 'Lite' -Force
 $portable | Add-Member NoteProperty releaseStatus 'FIXED_AND_LOCAL_TESTED_COMPANY_RETEST_PENDING' -Force
-$portable | Add-Member NoteProperty baseline 'M3Hfix-Final; no Qwen or speaker components' -Force
+$portable | Add-Member NoteProperty baseline 'M3I-Lite-Final; no Qwen or speaker components' -Force
 $portable | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $portablePath -Encoding utf8
 [IO.File]::WriteAllText((Join-Path $output 'M3I-Lite修复与验证.zh-CN.md'), [IO.File]::ReadAllText((Join-Path $source 'docs/82_M3I_LITE_CAPTURE_AND_ASR_FIX.md')).Replace('(83_M3I_TO_M5C_SYNC_CHECKLIST.md)', '(M3I-待同步M5C清单.zh-CN.md)'))
 Copy-Item -LiteralPath (Join-Path $source 'docs/83_M3I_TO_M5C_SYNC_CHECKLIST.md') -Destination (Join-Path $output 'M3I-待同步M5C清单.zh-CN.md')
+[IO.File]::WriteAllText((Join-Path $output 'M3J-Lite修复与验证.zh-CN.md'), [IO.File]::ReadAllText((Join-Path $source 'docs/84_M3J_ASR_EOF_AND_RECORDING_UI_FIX.md')).Replace('(83_M3I_TO_M5C_SYNC_CHECKLIST.md)', '(M3I-待同步M5C清单.zh-CN.md)'))
 $readme=Join-Path $output 'README.zh-CN.md'
 $text=[IO.File]::ReadAllText($readme)
-[IO.File]::WriteAllText($readme,"# ProjectEcho M3I Lite`n`n本版基于 M3Hfix 修复大音频包和 Whisper 零时长字幕。请先阅读 [M3I 修复与验证](M3I-Lite修复与验证.zh-CN.md)。公司电脑复测尚待完成。以下保留基础使用说明及历史验收。`n`n"+$text)
+[IO.File]::WriteAllText($readme,"# ProjectEcho M3J Lite`n`n本版基于 M3I 修复 Whisper 多段时间越界导致保存失败，并改善版本标识、会议时长和录音页处理状态。请先阅读 [M3J 修复与验证](M3J-Lite修复与验证.zh-CN.md)。M3I录音和提速已获用户现场确认，M3J仍待目标机复测。以下保留基础使用说明及历史验收。`n`n"+$text)
 & (Join-Path $workspace 'scripts/Update-PortableManifest.ps1') -PortableDirectory $output
 [IO.Compression.ZipFile]::CreateFromDirectory($output,($output+'.zip'),[IO.Compression.CompressionLevel]::Optimal,$true,[Text.Encoding]::UTF8)
 $hash=(Get-FileHash -LiteralPath ($output+'.zip')).Hash.ToLowerInvariant()
 ($hash+'  '+[IO.Path]::GetFileName($output)+'.zip') | Set-Content -LiteralPath ($output+'.zip.sha256') -Encoding utf8
 $finalManifest=Get-Content -LiteralPath (Join-Path $output 'release-manifest.json') -Raw | ConvertFrom-Json
-[ordered]@{version='M3I';edition='Lite';baseline='M3Hfix-Final';archiveSha256=$hash;archiveBytes=(Get-Item -LiteralPath ($output+'.zip')).Length;files=$finalManifest.fileCount;manifestSha256=(Get-FileHash -LiteralPath (Join-Path $output 'release-manifest.json')).Hash.ToLowerInvariant();reusedVerifiedAssets=$copied;sourceBranch='codex/m3i-lite';sourceDirectory='lite';companyRetest='NOT_RUN';cleanWindows='NOT_RUN';captureStarted=$false;microphoneStarted=$false} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath ($output+'.package.json') -Encoding utf8
+[ordered]@{version='M3J';edition='Lite';baseline='M3I-Lite-Final';archiveSha256=$hash;archiveBytes=(Get-Item -LiteralPath ($output+'.zip')).Length;files=$finalManifest.fileCount;manifestSha256=(Get-FileHash -LiteralPath (Join-Path $output 'release-manifest.json')).Hash.ToLowerInvariant();reusedVerifiedAssets=$copied;sourceBranch='codex/m3i-lite';sourceDirectory='lite';companyRetest='NOT_RUN';cleanWindows='NOT_RUN';captureStarted=$false;microphoneStarted=$false} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath ($output+'.package.json') -Encoding utf8
 Write-Host ('Packaged '+$output+'.zip')

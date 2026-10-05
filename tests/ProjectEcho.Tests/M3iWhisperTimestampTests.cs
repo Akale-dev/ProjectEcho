@@ -25,7 +25,7 @@ internal static class M3iWhisperTimestampTests
         run("T35/T38-WINDOWS SYNTHETIC CLI M3I unusable tokens retain untimed text without joining and split valid neighboring cues", () => UnusableTokens(root));
         run("T35/T38-WINDOWS SYNTHETIC CLI M3I absent malformed and globally mismatched token JSON cannot recover times", () => IncompleteEvidence(root));
         run("T35/T38-WINDOWS SYNTHETIC CLI M3I zero timestamps at start middle and final in-range sample remain text", () => MultipleZeros(root));
-        run("T35/T38-WINDOWS SYNTHETIC CLI M3I negative reversed EOF and arbitrary range errors remain failures", () => InvalidRanges(root));
+        run("T35/T38-WINDOWS SYNTHETIC CLI M3J negative reversed EOF-zero fail while positive nonfinal overrun is untimed", () => InvalidRanges(root));
         run("T35/T38-WINDOWS SYNTHETIC CLI M3I manual import remains strict TXT complete and timed subtitle export blocked", () => ExportsAndManualImport(root));
         run("T35/T38-WINDOWS SYNTHETIC CLI M3I rerun preserves original reviewed revision input and raw output hashes", () => Immutable(root));
         run("T35/T38-WINDOWS SYNTHETIC CLI M3I 10001 zero cues bound diagnostics and remain fully reloadable", () => ManyZeros(root));
@@ -121,7 +121,7 @@ internal static class M3iWhisperTimestampTests
 
     private static void InvalidRanges(string root)
     {
-        foreach (string variant in new[] { "backward", "eof", "after", "overrun", "negative" })
+        foreach (string variant in new[] { "backward", "eof", "after", "negative" })
         {
             var (request, result) = Run(root, variant);
             Need(result.Status == "Failed" && result.Revision is null &&
@@ -130,6 +130,12 @@ internal static class M3iWhisperTimestampTests
             Need(File.Exists(Path.Combine(result.AttemptDirectory, "whisper-output.srt")) &&
                 M3TranscriptTests.Hash(request.WavePath) == request.ExpectedWaveSha256, "失败丢失原输出或改变音频。");
         }
+        var (overrunRequest, overrunResult) = Run(root, "overrun");
+        var retained = Success(overrunResult);
+        Need(retained.Segments.Count == 4 && retained.Segments[1] is { StartMs: null, EndMs: null } &&
+            retained.Segments[1].Text == UntimedText && retained.Segments[^1].EndMs == 2000 &&
+            M3TranscriptTests.Hash(overrunRequest.WavePath) == overrunRequest.ExpectedWaveSha256,
+            "v2非末段正向越界没有局部保全文，或破坏正常后续字幕。");
     }
 
     private static void ExportsAndManualImport(string root)

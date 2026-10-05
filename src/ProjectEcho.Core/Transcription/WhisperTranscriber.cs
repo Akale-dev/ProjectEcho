@@ -138,6 +138,9 @@ public static class WhisperTranscriber
                             "本版暂不能导出 SRT/VTT，以免丢失无时间文字。" + hardwareParser.Describe();
                     foreach (string warning in revision.Warnings.Where(value => value.StartsWith("Whisper 尾端时间", StringComparison.Ordinal)))
                         message += "\n" + warning;
+                    var overrunWarnings = revision.Warnings.Where(value => value.StartsWith(WhisperOverrunTimestamp.DiagnosticPrefix, StringComparison.Ordinal)).ToArray();
+                    foreach (string warning in overrunWarnings.Take(20)) message += "\n" + warning;
+                    if (overrunWarnings.Length > 20) message += "\n其余越界时间诊断保存在本版原稿和本次 attempt.json，全部原始字幕仍保留。";
                     var zeroWarnings = revision.Warnings.Where(value => value.StartsWith("Whisper 零时长片段", StringComparison.Ordinal)).ToArray();
                     foreach (string warning in zeroWarnings.Take(20)) message += "\n" + warning;
                     if (zeroWarnings.Length > 20) message += "\n其余零时长诊断保存在本版原稿和本次 attempt.json，全部原始字幕仍保留。";
@@ -171,6 +174,9 @@ public static class WhisperTranscriber
                 modelHashPolicy = "audit-only-no-expected-comparison", maxSegmentLength = 0,
                 fullTokenJson = true, subtitleSegmentation = WhisperSentenceSegmenter.Policy, priorityNote,
                 timestampBoundaryPolicy = WhisperTimestampBoundary.Policy,
+                // Keep the former field recognizable to local diagnostic readers; v2 applies to every cue.
+                finalCueTimestampPolicy = WhisperOverrunTimestamp.Policy,
+                outOfRangeTimestampPolicy = WhisperOverrunTimestamp.Policy,
                 zeroDurationPolicy = WhisperZeroDurationTimestamp.Policy, request.MeetingDurationMs,
                 transcriptWarnings = revision?.Warnings,
                 modelLicenseAcknowledged = request.Configuration.ModelLicenseAcknowledged,

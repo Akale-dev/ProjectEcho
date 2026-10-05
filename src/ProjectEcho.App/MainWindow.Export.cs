@@ -64,6 +64,7 @@ public partial class MainWindow
             selectedFilingBaseline = null;
             FlushMeetingWhisperPrompt();
             dataRoot = chosen;
+            ClearRecordingProcessing();
             libraryQuery = new();
             LoadWhisperConfiguration();
             DataRootText.Text = chosen;
@@ -121,6 +122,9 @@ public partial class MainWindow
             FiledTitleBox.Text = draft.Title;
             FiledProjectBox.Text = draft.Project;
             var entry = ReadMeetingListEntry(selectedMeetingDirectory);
+            selectedDurationDirectory = selectedMeetingDirectory;
+            selectedDurationMs = entry.DurationMs;
+            RefreshMeetingDuration();
             MeetingMetadataText.Text = entry.DateLabel + (entry.Imported ? UiText.T(" · 外部录音（实际开会日期未知）") : UiText.T(" · 本机录音")) + "\n" + selectedMeetingDirectory;
             RefreshSelectedExportStatus();
             MeetingLogExportStatus.Text = "";
@@ -129,6 +133,7 @@ public partial class MainWindow
         catch (Exception ex)
         {
             selectedMeetingDirectory = null; currentMix = null; mixedPath = null;
+            selectedDurationDirectory = null; selectedDurationMs = null; RefreshMeetingDuration();
             selectedFilingBaseline = null;
             selectedMeetingImported = false;
             lastExportDirectory = null;
@@ -213,6 +218,11 @@ public partial class MainWindow
     {
         if (WindowCloseRequested || deletingMeeting) return;
         if (!pendingMixes.Contains(directory, StringComparer.OrdinalIgnoreCase)) pendingMixes.Enqueue(directory);
+        if (string.Equals(recordingProcessingDirectory, directory, StringComparison.OrdinalIgnoreCase))
+        {
+            recordingProcessingState = "原轨已保存；等待录后处理。可在会议库查看处理记录。";
+            RefreshRecordingProcessingCard();
+        }
         if (!exportBusy) backgroundWork = DrainMixQueueAsync();
     }
 

@@ -27,7 +27,7 @@ public static class TranscriptService
         if (whisperTokenJsonPath is not null)
         {
             // The adapter validates every field before processing; only its narrowly defined
-            // in-range zero-duration cue policy can preserve text with unsupported times.
+            // per-cue zero-duration and overrun policies can preserve text with unsupported times.
             segments = WhisperSentenceSegmenter.Normalize(segments, whisperTokenJsonPath,
                 request.MeetingDurationMs, warnings, cancellationToken);
             segments = WhisperTimestampBoundary.Normalize(segments, request.MeetingDurationMs, warnings);

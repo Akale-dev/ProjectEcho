@@ -288,5 +288,14 @@
   "校验原始音频数据": "Verify original audio data",
   "校验原轨文件": "Verify original track files",
   "分析混音音量": "Analyze mix level",
-  "复查音频峰值": "Recheck audio peaks"
+  "复查音频峰值": "Recheck audio peaks",
+  "录后处理": "Post-recording processing",
+  "尚无本次录音": "No recording in this session",
+  "本次录音：{0}": "This recording: {0}",
+  "本场录音保存后将在此显示处理进度与结果。": "Processing progress and results will appear here after this recording is saved.",
+  "录音结束并保存原轨后，开始录后处理。": "Processing starts after recording ends and the original tracks are saved.",
+  "原轨已保存；等待录后处理。可在会议库查看处理记录。": "Original tracks saved; waiting for processing. Processing records are also available in the meeting library.",
+  "录音未确认完整保存；尚未开始录后处理，请查看录音状态。": "Complete recording storage has not been confirmed. Processing has not started; check the recording status.",
+  "时长：{0}": "Duration: {0}",
+  "时长：未知（元数据不可用）": "Duration: unknown (metadata unavailable)"
 }

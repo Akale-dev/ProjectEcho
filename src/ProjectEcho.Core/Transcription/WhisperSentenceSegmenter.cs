@@ -19,8 +19,19 @@ internal static class WhisperSentenceSegmenter
         var fallbackWarnings = new List<string>();
         var fallback = WhisperZeroDurationTimestamp.WithoutUnsupportedTimes(original, durationMs, fallbackWarnings);
         // Validate before JSON processing or joining. Negative/reversed/out-of-range zero cues,
-        // invalid text/identity and all other unsupported input remain fatal.
+        // invalid text/identity and absolute hard-limit violations remain fatal.
         TranscriptFiles.ValidateSegments(fallback, TranscriptFiles.MaximumDurationMs);
+        // Prepare every raw out-of-range cue for absent/corrupt JSON without changing the raw
+        // list used for complete JSON/SRT correspondence. No neighbor or whole-file shift is used.
+        var fallbackOverrunWarnings = new List<string>(); int overrunCount = 0;
+        for (int index = 0; index < original.Count; index++)
+        {
+            if (!WhisperOverrunTimestamp.RequiresNormalization(original[index], index, original.Count, durationMs)) continue;
+            fallback[index] = WhisperOverrunTimestamp.Untimed(original[index]); overrunCount++;
+            WhisperOverrunTimestamp.AddDiagnostic(fallbackOverrunWarnings, WhisperOverrunTimestamp.Diagnostic(original[index], durationMs));
+        }
+        WhisperOverrunTimestamp.AddDiagnosticSummary(fallbackOverrunWarnings, overrunCount);
+        fallbackWarnings.AddRange(fallbackOverrunWarnings);
         // JSON full includes a large amount of per-token metadata; keep a separate, bounded local limit.
         try
         {
@@ -42,13 +53,28 @@ internal static class WhisperSentenceSegmenter
                     throw new InvalidDataException("JSON/SRT 文字或时间不一致。");
             }
             var recoveryWarnings = new List<string>(); int zeroCount = 0;
+            var overrunWarnings = new List<string>();
             var result = new List<TranscriptSegment>(); int splitCount = 0, unchangedCount = 0;
             for (int index = 0; index < original.Count; index++)
             {
                 token.ThrowIfCancellationRequested();
                 TranscriptSegment source = original[index]; JsonElement entry = entryArray[index];
                 string text = entry.GetProperty("text").GetString() ?? "";
-                if (WhisperZeroDurationTimestamp.IsEligible(source, durationMs))
+                if (WhisperOverrunTimestamp.RequiresNormalization(source, index, original.Count, durationMs))
+                {
+                    if (WhisperOverrunTimestamp.TryRecover(source, text, entry, endOfTextToken, durationMs, out var recovered))
+                    {
+                        WhisperOverrunTimestamp.AddDiagnostic(overrunWarnings, WhisperOverrunTimestamp.Diagnostic(source, durationMs, recovered));
+                        source = recovered;
+                    }
+                    else
+                    {
+                        result.Add(fallback[index]);
+                        WhisperOverrunTimestamp.AddDiagnostic(overrunWarnings, WhisperOverrunTimestamp.Diagnostic(source, durationMs));
+                        continue;
+                    }
+                }
+                else if (WhisperZeroDurationTimestamp.IsEligible(source, durationMs))
                 {
                     zeroCount++;
                     if (WhisperZeroDurationTimestamp.TryRecover(source, text, entry, endOfTextToken, durationMs, out var recovered))
@@ -66,6 +92,11 @@ internal static class WhisperSentenceSegmenter
                     }
                 }
                 List<TranscriptSegment> cues = Split(source, text, entry, endOfTextToken);
+                // Preserve the old small final-cue clipping policy, but do not let splitting
+                // create earlier out-of-range subcues or a final subcue beginning beyond EOF.
+                if (WhisperOverrunTimestamp.IsLegacyFinalCue(source, index, original.Count, durationMs) &&
+                    (cues.Take(cues.Count - 1).Any(cue => cue.EndMs > durationMs) || cues[^1].StartMs >= durationMs))
+                    cues = [source];
                 result.AddRange(cues);
                 if (cues.Count > 1) splitCount += cues.Count - 1;
                 else if (SentenceEnds(text).Any(position => position < text.TrimEnd().Length)) unchangedCount++;
@@ -88,7 +119,9 @@ internal static class WhisperSentenceSegmenter
             }
             for (int i = 0; i < merged.Count; i++) merged[i] = merged[i] with { SegmentId = $"segment-{i + 1:D6}" };
             WhisperZeroDurationTimestamp.AddDiagnosticSummary(recoveryWarnings, zeroCount);
+            WhisperOverrunTimestamp.AddDiagnosticSummary(overrunWarnings, overrunCount);
             warnings.AddRange(recoveryWarnings);
+            warnings.AddRange(overrunWarnings);
             warnings.Add($"字幕按句末标点分句（拆分 {splitCount} 处、合并相邻未完句 {merges} 处）；边界只取模型 token/原段时间，仍为 approximate，不是强制对齐。");
             if (unchangedCount > 0) warnings.Add($"{unchangedCount} 个原段含句末标点但没有可用的 token 分句边界，保留原段时间，未按字数猜测。");
             return merged;

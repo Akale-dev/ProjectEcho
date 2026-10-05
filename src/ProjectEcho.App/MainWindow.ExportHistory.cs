@@ -23,6 +23,7 @@ public partial class MainWindow
     private void RefreshSelectedExportStatus()
     {
         RefreshMixProgressHeader();
+        RefreshRecordingProcessingCard();
         lastExportDirectory = null;
         if (selectedMeetingDirectory is not { } directory)
         {
@@ -30,6 +31,7 @@ public partial class MainWindow
             return;
         }
         EnsureMeetingExportStatus(directory);
+        RefreshRecordingProcessingCard();
         meetingExportStatuses.TryGetValue(directory, out var result);
         ExportStatus.Text = transientMixStatuses.TryGetValue(directory, out string? progressText)
             ? progressText : result?.Text ?? UiText.T("所选会议暂无处理结果；可生成完整混音或导出音频。");
@@ -125,6 +127,7 @@ public partial class MainWindow
             }
         }
         if (string.Equals(selectedMeetingDirectory, directory, StringComparison.OrdinalIgnoreCase)) RefreshSelectedExportStatus();
+        RefreshRecordingProcessingCard();
     }
 
     private void SetSavedMixStatus(string directory, string text)

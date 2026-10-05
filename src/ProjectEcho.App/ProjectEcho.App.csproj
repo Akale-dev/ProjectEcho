@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <InformationalVersion>M3I-Lite</InformationalVersion>
+    <InformationalVersion>M3J-Lite</InformationalVersion>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>

@@ -1,5 +1,8 @@
 # Development status
 
+2026-10-05 **M3J Lite正在修复/验证**：用户已确认M3I公司机录音故障不再复现及后处理提速；新ASR模型末端914ms越界。M3J按要求覆盖逐段时间异常，并左移标识、显示会议时长、增加录音页录后处理卡。已恢复旧结果并完成本机整场Vulkan重转写；最终回归/封包待补。见[84](docs/84_M3J_ASR_EOF_AND_RECORDING_UI_FIX.md)。M5C仍未同步。
+
+
 **M3I Lite下载：** [完整便携ZIP](../artifacts/ProjectEcho-win-x64-20261005-M3I-Lite-Final.zip)；入口同名目录下ProjectEcho.exe。源提交98d3420，ZIP SHA-256 74af54360a02473d6fde2cc5bd0229af3ce6e1bc782395c278dccd896d2788fc。M5C未同步；目标公司电脑验收待完成。
 Updated: 2026-10-05
 

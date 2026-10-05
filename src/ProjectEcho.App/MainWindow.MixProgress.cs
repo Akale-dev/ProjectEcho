@@ -59,6 +59,7 @@ public partial class MainWindow
         operation.Reporter = new ThrottledMixProgress(operation, new Progress<MixUiObservation>(value => ApplyMixProgress(operation, value)));
         activeMixUiOperation = operation;
         transientMixStatuses[directory] = FormatMixProgress(operation, new(MixStages.Preparing, 0, null), TimeSpan.Zero);
+        RefreshRecordingProcessingCard();
         if (string.Equals(selectedMeetingDirectory, directory, StringComparison.OrdinalIgnoreCase)) RefreshSelectedExportStatus();
         return operation;
     }
@@ -78,6 +79,7 @@ public partial class MainWindow
             operation.Stage = value.Stage; operation.StageStarted = observation.ReportedAt;
         }
         transientMixStatuses[operation.Directory] = FormatMixProgress(operation, value, observation.ReportedAt);
+        RefreshRecordingProcessingCard();
         if (string.Equals(selectedMeetingDirectory, operation.Directory, StringComparison.OrdinalIgnoreCase))
             RefreshSelectedExportStatus();
     }
@@ -100,6 +102,7 @@ public partial class MainWindow
         AddMixStageTime(operation, operation.Clock.Elapsed);
         if (ReferenceEquals(activeMixUiOperation, operation)) activeMixUiOperation = null;
         transientMixStatuses.Remove(operation.Directory);
+        RefreshRecordingProcessingCard();
         RefreshMixProgressHeader();
         operation.Summary = UiText.F($"混音总耗时：{operation.Clock.Elapsed.TotalSeconds:F1} 秒。");
         string details = UiText.F($"混音阶段耗时（{outcome}）：总计 {operation.Clock.Elapsed.TotalMilliseconds:F0} ms。\n") +

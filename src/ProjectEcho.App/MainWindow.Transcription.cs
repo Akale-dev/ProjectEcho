@@ -287,7 +287,7 @@ public partial class MainWindow
         transcriptBusy = true;
         using var cancellation = new CancellationTokenSource(); transcriptCancellation = cancellation;
         UpdateControls();
-        if (logCategory is not null) LogMeeting(logDirectory, logCategory, "文字任务已开始。Ver. M3I Lite");
+        if (logCategory is not null) LogMeeting(logDirectory, logCategory, "文字任务已开始。Ver. M3J Lite");
         try { await operation(); }
         catch (OperationCanceledException)
         {

@@ -32,7 +32,7 @@
     <Border Background="{DynamicResource SidebarBrush}">
       <DockPanel LastChildFill="True" Margin="14,0">
         <StackPanel DockPanel.Dock="Top" Margin="0,25,0,20">
-          <StackPanel x:Name="BrandHeaderPanel" Orientation="Horizontal">
+          <StackPanel x:Name="BrandHeaderPanel" Orientation="Horizontal" Margin="-9,0,0,0">
             <!-- Native vector geometry from Assets/ProjectEcho.svg stays sharp at every display scale. -->
             <Image x:Name="BrandLogo" Width="34" Height="34" Margin="0,0,8,0" VerticalAlignment="Center">
               <Image.Source><DrawingImage><DrawingImage.Drawing><DrawingGroup>
@@ -44,7 +44,7 @@
               </DrawingGroup></DrawingImage.Drawing></DrawingImage></Image.Source>
             </Image>
             <TextBlock x:Name="BrandNameText" Text="ProjectEcho" Foreground="{DynamicResource SidebarTextBrush}" FontWeight="SemiBold" FontSize="19" VerticalAlignment="Center"/>
-            <TextBlock x:Name="ApplicationVersionText" Text="Ver. M3I Lite" Foreground="{DynamicResource SidebarTextBrush}" FontSize="10" Margin="6,0,0,4" VerticalAlignment="Bottom"/>
+            <TextBlock x:Name="ApplicationVersionText" Text="Ver. M3J Lite" Foreground="{DynamicResource SidebarTextBrush}" FontSize="10" Margin="6,0,0,4" VerticalAlignment="Bottom"/>
           </StackPanel>
           <TextBlock Text="{DynamicResource Loc635D0DE93BFCA011}" Foreground="{DynamicResource SidebarTextBrush}" FontSize="11" Margin="0,6,0,0"/>
         </StackPanel>
@@ -154,6 +154,13 @@
                   <TextBlock x:Name="StorageText" Text="{DynamicResource LocA751DD12EE53642D}" Style="{StaticResource MutedText}"/>
                 </StackPanel>
               </Border>
+              <Border x:Name="RecordingProcessingCard" Style="{StaticResource Card}">
+                <StackPanel>
+                  <TextBlock x:Name="RecordingProcessingHeading" Style="{StaticResource SectionTitle}"/>
+                  <TextBlock x:Name="RecordingProcessingMeetingText" FontWeight="SemiBold" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                  <TextBox x:Name="RecordingProcessingStatus" IsReadOnly="True" TextWrapping="Wrap" MinHeight="76" MaxHeight="210" VerticalScrollBarVisibility="Auto"/>
+                </StackPanel>
+              </Border>
             </StackPanel>
           </ScrollViewer>
 
@@ -168,6 +175,7 @@
                   <StackPanel x:Name="RecoveryPanel">
                     <TextBlock Text="{DynamicResource Loc0F062E752DE69D87}" Style="{StaticResource SectionTitle}"/>
                     <TextBlock x:Name="MeetingMetadataText" Text="{DynamicResource Loc153B06E16B921449}" Style="{StaticResource MutedText}"/>
+                    <TextBlock x:Name="MeetingDurationText" FontWeight="SemiBold" Margin="0,12,0,0" TextWrapping="Wrap"/>
                     <TextBlock Text="{DynamicResource LocC3405F8C7D9D392A}" Style="{StaticResource FieldLabel}"/><TextBox x:Name="FiledTitleBox"/>
                     <TextBlock Text="{DynamicResource Loc79F326BE4409D51F}" Style="{StaticResource FieldLabel}"/><TextBox x:Name="FiledProjectBox" Text="{DynamicResource Loc54B89F901274588B}"/>
                     <WrapPanel Margin="0,16,0,12"><Button x:Name="FileMeetingButton" Content="{DynamicResource LocDF773B41EF8AA5AC}" Click="FileMeeting_Click" IsEnabled="False"/><Button Content="{DynamicResource Loc6CDB43B3F37F8618}" Click="OpenRecordingFolder_Click"/></WrapPanel>

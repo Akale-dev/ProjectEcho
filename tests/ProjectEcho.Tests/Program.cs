@@ -9,6 +9,12 @@ using ProjectEcho.Export;
 if (args.Length > 0 && args[0] == "-m" && args.Contains("-osrt"))
     return await M3WhisperTests.RunFixtureAsync(args);
 
+if (args.Length > 0 && args[0] == "--m3i-asr-saved-output-probe")
+    return await M3iAsrSavedOutputProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m3i-full-user-asr-probe")
+    return await M3iFullUserAsrProbe.RunAsync(args);
+
 if (args.Length > 0 && args[0] == "--m3-real-whisper-probe")
     return await M3RealWhisperProbe.RunAsync(args);
 
@@ -148,6 +154,7 @@ M3dWhisperTests.Register(Run, output);
 M3dPortableWhisperTests.Register(Run, output);
 M3eWhisperTimestampTests.Register(Run, output);
 M3iWhisperTimestampTests.Register(Run, output);
+M3iAsrEndBoundaryTests.Register(Run, output);
 M3iDiagnosticPresentationTests.Register(Run, output);
 M3iMixProgressTests.Register(Run, output);
 M3iRecoveryProgressTests.Register(Run, output);

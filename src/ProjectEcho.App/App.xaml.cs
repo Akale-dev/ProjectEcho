@@ -56,6 +56,7 @@ public partial class App : Application
         bool m3hAsrSmoke = e.Args.Contains("--m3h-meeting-asr-smoke");
         bool m3hPreviewSmoke = e.Args.Contains("--m3h-preview-smoke");
         bool m3hFixPauseSmoke = e.Args.Contains("--m3h-fix-pause-smoke");
+        bool m3jUiSmoke = e.Args.Contains("--m3j-ui-smoke");
         try
         {
             if (e.Args.Contains("--single-instance-probe"))
@@ -68,13 +69,26 @@ public partial class App : Application
             bool isolatedSmoke = exportCloseSmoke || exportHistorySmoke || playbackSmoke || layoutSmoke
                 || transcriptionSmoke || m3ReplaySmoke || realWhisperSmoke || whisperProgressSmoke
                 || m3cTranscriptSmoke || m3cLibrarySmoke || m3dVersionSmoke || m3dNavigationSmoke || m3dSettingsSmoke
-                || m3fUiSmoke || m3fRecordingSmoke || m3fReplaySmoke || m3gUiSmoke || m3gTimeSmoke || m3hUiSmoke || m3hAsrSmoke || m3hPreviewSmoke || m3hFixPauseSmoke || e.Args.Contains("--smoke-test")
+                || m3fUiSmoke || m3fRecordingSmoke || m3fReplaySmoke || m3gUiSmoke || m3gTimeSmoke || m3hUiSmoke || m3hAsrSmoke || m3hPreviewSmoke || m3hFixPauseSmoke || m3jUiSmoke || e.Args.Contains("--smoke-test")
                 || e.Args.Contains("--m3e-ui-smoke") || e.Args.Contains("--m3e-log-smoke");
             if (!isolatedSmoke)
             {
                 singleInstance = await SingleInstanceCoordinator.AcquireOrActivateAsync(
                     () => Dispatcher.BeginInvoke(new Action(ActivateExistingWindow)));
                 if (singleInstance is null) { Shutdown(0); return; }
+            }
+            if (m3jUiSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M3J", "ui-" + DateTime.UtcNow.ToString("HHmmssfff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                var result = await testWindow.M3jUiSmokeAsync(folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
+                Shutdown(0); return;
             }
             if (m3hUiSmoke || m3hAsrSmoke || m3hPreviewSmoke || m3hFixPauseSmoke)
             {
@@ -286,6 +300,12 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
+            if (m3jUiSmoke)
+            {
+                string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M3J", "failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
+                Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
+                Shutdown(1); return;
+            }
             if (e.Args.Any(argument => argument.StartsWith("--m3h-", StringComparison.Ordinal)))
             {
                 string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", m3hFixPauseSmoke ? "M3Hfix" : "M3H", "failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");

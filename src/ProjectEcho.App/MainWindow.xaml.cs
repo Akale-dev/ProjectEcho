@@ -162,6 +162,8 @@ public partial class MainWindow : Window
             ? UiText.T("试听混音（有警告）") : UiText.T("播放完整录音");
         StopPlaybackButton.IsEnabled = !WindowCloseRequested && SessionRules.CanPlayback(state);
         UpdateExportControls();
+        RefreshRecordingProcessingCard();
+        RefreshMeetingDuration();
         if (preflighting || preparingCapturePreviewStop || microphonePreviewStopping) DataRootButton.IsEnabled = ImportAudioButton.IsEnabled = false;
         UpdateTranscriptionControls();
         UpdateReplayControls();
@@ -232,11 +234,13 @@ public partial class MainWindow : Window
         // clear a usable historical mix or strand every meeting in Faulted.
         if (!await ValidateRecordingBeforeStartAsync(options, trial)) { preparingCapturePreviewStop = false; UpdateControls(); return; }
         if (WindowCloseRequested || deletingMeeting || !SessionRules.CanStart(state)) { preparingCapturePreviewStop = false; UpdateControls(); return; }
+        if (!trial) BeginRecordingProcessing(options.SessionDirectory, options.Title);
+        else ClearRecordingProcessing();
         pendingMeetingWhisperDefaults = trial ? null : PrepareNewMeetingWhisperDefaults();
         FlushMeetingWhisperPrompt();
         recordingLogDirectory = trial ? null : options.SessionDirectory;
         pendingRecordingLog.Clear();
-        LogRecordingStatus($"Ver. M3I Lite · Windows {Environment.OSVersion.Version} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · NAudio 3.1.0\n录音请求：{options.Mode}；MicEnabled={options.MicrophoneEnabled}。");
+        LogRecordingStatus($"Ver. M3J Lite · Windows {Environment.OSVersion.Version} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · NAudio 3.1.0\n录音请求：{options.Mode}；MicEnabled={options.MicrophoneEnabled}。");
         isTrial = trial;
         fixedMicrophoneId = options.MicrophoneDeviceId;
         fixedMicrophoneName = options.MicrophoneEnabled ? (MicBox.SelectedItem as AudioDevice)?.Name : null;
@@ -294,6 +298,7 @@ public partial class MainWindow : Window
             state = SessionState.StoppedWithError;
             ConnectionText.Text = UiText.T("捕获连接：已结束");
             StorageText.Text = UiText.T("保存状态：未确认完整保存");
+            MarkRecordingProcessingUnconfirmed();
             SetStatus(UiText.T("未确认完整录音：") + ex.Message);
             recordingLogDirectory = null;
             ResetConsentAfterSession();
@@ -428,6 +433,7 @@ public partial class MainWindow : Window
                 {
                     state = exitConfirmed ? SessionState.StoppedWithError : SessionState.Faulted;
                     StorageText.Text = UiText.T("保存状态：缺少持久结果或 Host 退出确认");
+                    MarkRecordingProcessingUnconfirmed();
                     SetStatus(UiText.T("未确认完整保存；请保留原件。") + value.Message);
                 }
                 else
@@ -440,6 +446,7 @@ public partial class MainWindow : Window
                         UiText.F($"\n目录：{recordingResult.SessionDirectory}\n") +
                         string.Join(Environment.NewLine, recordingResult.Warnings) +
                         UiText.T("\n原轨保存结束；后台混音不阻止开始下一场。"));
+                    MarkRecordingProcessingSaved(recordingResult.SessionDirectory);
                     SelectMeeting(recordingResult.SessionDirectory, loadSavedMix: false);
                     RefreshRecovery_Click(this, new RoutedEventArgs());
                     if (!closeAfterSave) QueueMix(recordingResult.SessionDirectory);
@@ -492,6 +499,7 @@ public partial class MainWindow : Window
                 ResetConsentAfterSession();
                 break;
             case "error":
+                MarkRecordingProcessingUnconfirmed();
                 state = exitConfirmed ? SessionState.StoppedWithError : SessionState.Faulted;
                 ConnectionText.Text = exitConfirmed ? UiText.T("捕获连接：CaptureHost 已退出") : UiText.T("捕获连接：未确认退出");
                 StorageText.Text = UiText.T("保存状态：未确认完整保存，原件保留");
@@ -724,7 +732,12 @@ public partial class MainWindow : Window
             bool imported = root.TryGetProperty("importedAt", out var importedAt);
             DateTimeOffset? date = (imported ? importedAt : root.TryGetProperty("startedAtUtc", out var started) ? started : default)
                 is { ValueKind: System.Text.Json.JsonValueKind.String } dateNode && dateNode.TryGetDateTimeOffset(out var value) ? value : null;
-            return new(directory, string.IsNullOrWhiteSpace(filing.Title) ? UiText.T("未命名会议") : filing.Title, date, imported);
+            // The manifest already owns its timeline: new pause-excluded recordings, legacy
+            // elapsed recordings and imported audio all supply their own duration100ns.
+            long? durationMs = root.TryGetProperty("duration100ns", out var span) && span.TryGetInt64(out long duration100ns) &&
+                duration100ns >= 0 && duration100ns <= 7L * 24 * 60 * 60 * 10_000_000 ? duration100ns / 10000 : null;
+            return new(directory, string.IsNullOrWhiteSpace(filing.Title) ? UiText.T("未命名会议") : filing.Title,
+                date, imported, durationMs: durationMs);
         }
         catch { return new(directory, UiText.T("信息待检查 · ") + Path.GetFileName(directory)); }
     }
