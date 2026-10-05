@@ -1,5 +1,8 @@
 # Development status
-Updated: 2026-10-03
+Updated: 2026-10-05
+
+2026-10-05 **M3I Lite修复本机验证完成，正在封包**：大包、Whisper零时长保全文、正常说明精简、路径校验提速和真实阶段进度。307回归与七项WPF通过；同一小时原轨439→29秒且WAV hash相同。主目录M5C产品代码保持，待用户验收再同步；见[82](docs/82_M3I_LITE_CAPTURE_AND_ASR_FIX.md)、[83](docs/83_M3I_TO_M5C_SYNC_CHECKLIST.md)。
+
 
 ## 目录维护：旧版本与测试数据已清理
 

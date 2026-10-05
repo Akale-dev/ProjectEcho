@@ -14,8 +14,13 @@ internal static class WhisperSentenceSegmenter
         { "Mr", "Mrs", "Ms", "Dr", "Prof", "Sr", "Jr", "St", "vs", "etc", "e.g", "i.e" };
 
     internal static List<TranscriptSegment> Normalize(List<TranscriptSegment> original, string jsonPath,
-        List<string> warnings, CancellationToken token)
+        long durationMs, List<string> warnings, CancellationToken token)
     {
+        var fallbackWarnings = new List<string>();
+        var fallback = WhisperZeroDurationTimestamp.WithoutUnsupportedTimes(original, durationMs, fallbackWarnings);
+        // Validate before JSON processing or joining. Negative/reversed/out-of-range zero cues,
+        // invalid text/identity and all other unsupported input remain fatal.
+        TranscriptFiles.ValidateSegments(fallback, TranscriptFiles.MaximumDurationMs);
         // JSON full includes a large amount of per-token metadata; keep a separate, bounded local limit.
         try
         {
@@ -25,14 +30,41 @@ internal static class WhisperSentenceSegmenter
             if (entries.ValueKind != JsonValueKind.Array || entries.GetArrayLength() != original.Count)
                 throw new InvalidDataException("JSON/SRT 段数量不一致。");
             int endOfTextToken = root.GetProperty("model").GetProperty("multilingual").GetBoolean() ? 50257 : 50256;
+            var entryArray = entries.EnumerateArray().ToArray();
+            // Match the complete output before trusting any per-token time; a late mismatch must
+            // not leave earlier recovered timestamps or their warnings in a partial result.
+            for (int index = 0; index < original.Count; index++)
+            {
+                token.ThrowIfCancellationRequested();
+                JsonElement entry = entryArray[index]; TranscriptSegment source = original[index];
+                if ((entry.GetProperty("text").GetString() ?? "").Trim() != source.Text ||
+                    !TryOffsets(entry, out long from, out long to) || from != source.StartMs || to != source.EndMs)
+                    throw new InvalidDataException("JSON/SRT 文字或时间不一致。");
+            }
+            var recoveryWarnings = new List<string>(); int zeroCount = 0;
             var result = new List<TranscriptSegment>(); int splitCount = 0, unchangedCount = 0;
             for (int index = 0; index < original.Count; index++)
             {
                 token.ThrowIfCancellationRequested();
-                TranscriptSegment source = original[index]; JsonElement entry = entries[index];
+                TranscriptSegment source = original[index]; JsonElement entry = entryArray[index];
                 string text = entry.GetProperty("text").GetString() ?? "";
-                if (text.Trim() != source.Text || !TryOffsets(entry, out long from, out long to) || from != source.StartMs || to != source.EndMs)
-                    throw new InvalidDataException("JSON/SRT 文字或时间不一致。");
+                if (WhisperZeroDurationTimestamp.IsEligible(source, durationMs))
+                {
+                    zeroCount++;
+                    if (WhisperZeroDurationTimestamp.TryRecover(source, text, entry, endOfTextToken, durationMs, out var recovered))
+                    {
+                        WhisperZeroDurationTimestamp.AddDiagnostic(recoveryWarnings, $"Whisper 零时长片段 {source.SegmentId}：原始 {source.StartMs}–{source.EndMs} ms；" +
+                            $"按本段全文匹配且单调有效的原始 token 时间恢复为 {recovered.StartMs}–{recovered.EndMs} ms，仍为 approximate，需人工校对。");
+                        source = recovered;
+                    }
+                    else
+                    {
+                        result.Add(fallback[index]);
+                        WhisperZeroDurationTimestamp.AddDiagnostic(recoveryWarnings, $"Whisper 零时长片段 {source.SegmentId}：原始 {source.StartMs}–{source.EndMs} ms；没有可核对的有效词时间，" +
+                            "全部文字与顺序保留，标为无时间待校对；未猜测回听区间。");
+                        continue;
+                    }
+                }
                 List<TranscriptSegment> cues = Split(source, text, entry, endOfTextToken);
                 result.AddRange(cues);
                 if (cues.Count > 1) splitCount += cues.Count - 1;
@@ -55,6 +87,8 @@ internal static class WhisperSentenceSegmenter
                 else merged.Add(cue);
             }
             for (int i = 0; i < merged.Count; i++) merged[i] = merged[i] with { SegmentId = $"segment-{i + 1:D6}" };
+            WhisperZeroDurationTimestamp.AddDiagnosticSummary(recoveryWarnings, zeroCount);
+            warnings.AddRange(recoveryWarnings);
             warnings.Add($"字幕按句末标点分句（拆分 {splitCount} 处、合并相邻未完句 {merges} 处）；边界只取模型 token/原段时间，仍为 approximate，不是强制对齐。");
             if (unchangedCount > 0) warnings.Add($"{unchangedCount} 个原段含句末标点但没有可用的 token 分句边界，保留原段时间，未按字数猜测。");
             return merged;
@@ -63,7 +97,8 @@ internal static class WhisperSentenceSegmenter
             InvalidOperationException or KeyNotFoundException or FormatException or DecoderFallbackException)
         {
             warnings.Add("未取得可核对的完整 token 时间，保留模型原段；未按字数推算句子时间。可重新转写生成独立版本。");
-            return original;
+            warnings.AddRange(fallbackWarnings);
+            return fallback;
         }
     }
 
@@ -101,6 +136,7 @@ internal static class WhisperSentenceSegmenter
     }
 
     private static bool CanJoin(TranscriptSegment left, TranscriptSegment right) =>
+        left.StartMs is not null && left.EndMs is not null && right.StartMs is not null && right.EndMs is not null &&
         !EndsSentence(left.Text) && left.EndMs <= right.StartMs && right.StartMs - left.EndMs <= 1000 &&
         right.EndMs - left.StartMs <= 30000 && left.Text.Length + right.Text.Length < 240 &&
         left.SourceKind == right.SourceKind && left.SpeakerLabel == right.SpeakerLabel;

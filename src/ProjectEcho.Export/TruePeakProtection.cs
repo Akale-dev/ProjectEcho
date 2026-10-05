@@ -23,14 +23,24 @@ public static class TruePeakProtection
     public static readonly double ProcessingCeilingLinear = Math.Pow(10, ProcessingCeilingDbTp / 20);
 
     public static TruePeakMeasurement AnalyzeWave(string path, CancellationToken cancellationToken = default)
+        => AnalyzeWave(path, cancellationToken, null);
+
+    public static TruePeakMeasurement AnalyzeWave(string path, CancellationToken cancellationToken, IProgress<MixProgress>? progress)
     {
         using var input = new M2WaveReader(path);
         ValidateFormat(input.Format);
-        return AnalyzePcm16(input, input.Format.SampleRate, cancellationToken);
+        return AnalyzePcm16(input, input.Format.SampleRate, cancellationToken, progress, input.FrameCount, MixStages.TruePeakAnalysis);
     }
 
     public static TruePeakMeasurement AnalyzePcm16(Stream pcm, int sampleRate, CancellationToken cancellationToken = default)
+        => AnalyzePcm16(pcm, sampleRate, cancellationToken, null, null, MixStages.TruePeakAnalysis);
+
+    public static TruePeakMeasurement AnalyzePcm16(Stream pcm, int sampleRate, CancellationToken cancellationToken,
+        IProgress<MixProgress>? progress, long? totalFrames, string stage)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        var reporter = new MixProgressReporter(progress); long processed = 0;
+        reporter.Report(stage, 0, totalFrames, true);
         var meter = new TruePeakMeter(sampleRate);
         var bytes = new byte[32_768];
         while (true)
@@ -39,14 +49,21 @@ public static class TruePeakProtection
             var read = pcm.Read(bytes);
             if (read == 0) break;
             meter.AppendPcm16(bytes.AsSpan(0, read));
+            processed += read / 2; if (processed > totalFrames) totalFrames = null;
+            reporter.Report(stage, processed, totalFrames);
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return meter.Complete();
+        var measurement = meter.Complete();
+        reporter.Report(stage, processed, totalFrames, true); return measurement;
     }
 
     /// <summary>Produces a new file even if attenuation is unnecessary. Neither input nor existing targets are overwritten.</summary>
     public static TruePeakProtectionResult ProtectWave(string source, string destination, CancellationToken cancellationToken = default)
+        => ProtectWave(source, destination, cancellationToken, null);
+
+    public static TruePeakProtectionResult ProtectWave(string source, string destination, CancellationToken cancellationToken, IProgress<MixProgress>? progress)
     {
+        var reporter = new MixProgressReporter(progress);
         var sourcePath = Path.GetFullPath(source);
         var targetPath = Path.GetFullPath(destination);
         if (string.Equals(sourcePath, targetPath, StringComparison.OrdinalIgnoreCase) || File.Exists(targetPath))
@@ -54,7 +71,7 @@ public static class TruePeakProtection
         cancellationToken.ThrowIfCancellationRequested();
         using var reader = new M2WaveReader(sourcePath);
         ValidateFormat(reader.Format);
-        var before = AnalyzePcm16(reader, reader.Format.SampleRate, cancellationToken);
+        var before = AnalyzePcm16(reader, reader.Format.SampleRate, cancellationToken, progress, reader.FrameCount, MixStages.TruePeakAnalysis);
         // 0.01 dB rounding guard ensures the written PCM16 file remains below the processing ceiling.
         var gain = before.TruePeakLinear > ProcessingCeilingLinear
             ? Math.Pow(10, (ProcessingCeilingDbTp - 0.01) / 20) / before.TruePeakLinear : 1;
@@ -68,6 +85,7 @@ public static class TruePeakProtection
                 var buffer = new byte[32_768];
                 CopyExact(raw, output, reader.DataOffset, buffer, cancellationToken);
                 long remaining = reader.DataLength;
+                reporter.Report(MixStages.TruePeakProtection, 0, reader.DataLength, true);
                 while (remaining > 0)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -81,11 +99,17 @@ public static class TruePeakProtection
                         }
                     output.Write(buffer, 0, count);
                     remaining -= count;
+                    reporter.Report(MixStages.TruePeakProtection, reader.DataLength - remaining, reader.DataLength);
                 }
                 CopyExact(raw, output, raw.Length - raw.Position, buffer, cancellationToken);
                 output.Flush(true);
             }
-            var after = AnalyzeWave(temporary, cancellationToken);
+            TruePeakMeasurement after;
+            using (var verification = new M2WaveReader(temporary))
+            {
+                ValidateFormat(verification.Format);
+                after = AnalyzePcm16(verification, verification.Format.SampleRate, cancellationToken, progress, verification.FrameCount, MixStages.TruePeakVerification);
+            }
             if (after.FrameCount != before.FrameCount || after.SampleRate != before.SampleRate ||
                 after.TruePeakLinear > ProcessingCeilingLinear + 1e-7)
                 throw new InvalidDataException("派生 WAV 的真峰值或帧数复核失败；没有发布输出。");

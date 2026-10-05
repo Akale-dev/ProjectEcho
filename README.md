@@ -1,4 +1,6 @@
 # ProjectEcho｜项目会议记录器
+
+当前为长期维护的 **M3I Lite** 工作树，基于M3Hfix。修复与测试见[82](docs/82_M3I_LITE_CAPTURE_AND_ASR_FIX.md)，验收后同步Pro见[83](docs/83_M3I_TO_M5C_SYNC_CHECKLIST.md)。M5C在主目录保留，本次未改。
 Windows 本地会议音频 → 可回放合并文件 → 手动外部转写或本地转写 → 项目档案。
 
 **实施更新：2026-09-30 · M2 + M3 验证版**

@@ -45,14 +45,20 @@ internal static class M2FileSafety
         return new(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
     }
 
-    internal static string Hash(Stream stream, CancellationToken cancellationToken)
+    internal static string Hash(Stream stream, CancellationToken cancellationToken) => Hash(stream, cancellationToken, null);
+
+    internal static string Hash(Stream stream, CancellationToken cancellationToken, Action<long, long>? progress)
     {
         long saved = stream.Position; stream.Position = 0;
+        long processed = 0, total = stream.Length;
+        void Notify() { try { progress?.Invoke(processed, total); } catch (Exception) { } }
+        Notify();
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var bytes = new byte[65536]; int count;
         try
         {
-            while ((count = stream.Read(bytes)) != 0) { cancellationToken.ThrowIfCancellationRequested(); hash.AppendData(bytes, 0, count); }
+            while ((count = stream.Read(bytes)) != 0) { cancellationToken.ThrowIfCancellationRequested(); hash.AppendData(bytes, 0, count); processed += count; Notify(); }
+            cancellationToken.ThrowIfCancellationRequested(); Notify();
             return Convert.ToHexStringLower(hash.GetHashAndReset());
         }
         finally { stream.Position = saved; }
@@ -60,6 +66,9 @@ internal static class M2FileSafety
 
     internal static string Hash(string path, CancellationToken token)
     { using var file = LockedRead(path); return Hash(file, token); }
+
+    internal static string Hash(string path, CancellationToken token, Action<long, long>? progress)
+    { using var file = LockedRead(path); return Hash(file, token, progress); }
 
     internal static void AtomicJson(string path, object data, CancellationToken token)
     {

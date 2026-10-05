@@ -8,7 +8,8 @@ internal static class CapturePacketScratchTests
 {
     internal static void Register(Action<string, Action> run)
     {
-        run("T21/T57-SYNTH capture scratch uses reported capacity and bounded unavailable-metadata fallback", Capacity);
+        run("T21/T57-SYNTH M3I capture scratch reserves bounded capacity independently of reported metadata", Capacity);
+        run("T21/T51/T52-SYNTH M3I legal packet larger than reported buffer preserves all PCM and raw cutoff prefix", LargerPacket);
         run("T51/T52-SYNTH capture scratch copies exact pre-cutoff bytes and never stages a forbidden tail", PrefixAndSilence);
         run("T52-SYNTH capture scratch is cleared after materialization failures disposal and refused copies", FailureCleanup);
         run("T54-SYNTH held-buffer staging and fixed timing counters allocate no managed bytes after warmup", AllocationAndMetrics);
@@ -21,12 +22,39 @@ internal static class CapturePacketScratchTests
         using var invalidZero = new CapturePacketScratch(0, 2);
         using var invalidNegative = new CapturePacketScratch(-1, 2);
         using var capped = new CapturePacketScratch(int.MaxValue, 8);
-        Need(exact.Capacity == 3840, "实际BufferSize未用于构造scratch。");
+        Need(exact.Capacity == CapturePacketScratch.MaximumBytes, "reported BufferSize仍被误作包大小上限。");
         Need(new[] { unavailable.Capacity, invalidZero.Capacity, invalidNegative.Capacity, capped.Capacity }.All(value => value == 1024 * 1024),
             "元数据不可用的回退或1MiB上限发生变化。");
         Reject<ArgumentOutOfRangeException>(() => new CapturePacketScratch(480, 0));
     }
 
+    private static void LargerPacket()
+    {
+        byte[] source = Enumerable.Range(0, CapturePacketScratch.MaximumBytes).Select(i => (byte)(i % 251 + 1)).ToArray();
+        IntPtr native = Marshal.AllocHGlobal(source.Length);
+        try
+        {
+            Marshal.Copy(source, 0, native, source.Length);
+            using var scratch = new CapturePacketScratch(1, 8);
+            foreach (int count in new[] { 16, 48000 * 8, CapturePacketScratch.MaximumBytes })
+            {
+                Need(scratch.CopyPrefix(native, count, false) == ScratchCopyResult.Success, "合法大包因reported容量误拒绝。");
+                Need(scratch.MaterializeAndClear().AsSpan().SequenceEqual(source.AsSpan(0, count)), "大包音频被截断或损坏。");
+                Cleared(scratch);
+            }
+            const ulong qpc = 9000000; const int frames = 48000;
+            int keep = AudioClock.CompleteFramesBefore(qpc, qpc + 10000, 48000, frames);
+            Need(keep == 48 && scratch.CopyPrefix(native, keep * 8L, false) == ScratchCopyResult.Success, "截止前完整帧错误。");
+            Need(scratch.UsedBytes == keep * 8 && scratch.DiagnosticBytes[(keep * 8)..].IndexOfAnyExcept((byte)0) < 0, "截止后的PCM被暂存。");
+            Need(scratch.MaterializeAndClear().AsSpan().SequenceEqual(source.AsSpan(0, keep * 8)), "截止前大包尾部不完整。");
+            Need(scratch.CopyPrefix(IntPtr.Zero, CapturePacketScratch.MaximumBytes, true) == ScratchCopyResult.Success &&
+                scratch.MaterializeAndClear().All(value => value == 0), "大静音包泄露旧PCM。");
+            Need(scratch.CopyPrefix(native, (long)CapturePacketScratch.MaximumBytes + 1, false) == ScratchCopyResult.ExceedsPacketLimit,
+                "大于1MiB未在访问指针前拒绝。");
+            Cleared(scratch);
+        }
+        finally { Marshal.FreeHGlobal(native); }
+    }
     private static void PrefixAndSilence()
     {
         byte[] source = Enumerable.Range(1, 32).Select(value => (byte)value).ToArray();
@@ -78,7 +106,7 @@ internal static class CapturePacketScratchTests
             scratch.CopyPrefix(native, 20, false);
             Reject<InvalidDataException>(() => scratch.MaterializeAndClear(_ => new byte[1]));
             Cleared(scratch);
-            foreach (var (length, expected) in new[] { (33L, ScratchCopyResult.ExceedsScratchCapacity),
+            foreach (var (length, expected) in new[] {
                 ((long)CapturePacketScratch.MaximumBytes + 1, ScratchCopyResult.ExceedsPacketLimit), (-1L, ScratchCopyResult.ExceedsPacketLimit) })
             {
                 scratch.CopyPrefix(native, 16, false);

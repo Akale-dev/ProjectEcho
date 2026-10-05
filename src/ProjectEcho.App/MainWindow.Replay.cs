@@ -329,6 +329,8 @@ public partial class MainWindow
             ReplaySegmentsBox.ItemsSource = segments;
             ReplayStatusText.Text = segments.Length == 0 ? UiText.T("本版文字没有时间戳，不会猜测字幕位置。可切换带时间的版本。")
                 : UiText.F($"{segments.Length} 条字幕 · {row.Revision.Provider} · 点击字幕跳转，字幕时间以本场录音为准。");
+            int untimed = row.Revision.Segments.Count(segment => segment.StartMs is null);
+            if (untimed > 0) ReplayStatusText.Text += UiText.F($" 另有 {untimed} 段无时间文字，已保留在转写全文中。");
         }
         UpdatePlaybackPosition();
         UpdateReplayControls();

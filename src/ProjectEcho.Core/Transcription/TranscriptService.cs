@@ -24,10 +24,12 @@ public static class TranscriptService
         byte[] original = TranscriptFiles.ReadBounded(request.InputPath, cancellationToken);
         var warnings = new List<string>();
         var segments = TranscriptParser.Parse(original, extension, request.MeetingId, warnings);
-        TranscriptFiles.ValidateSegments(segments, TranscriptFiles.MaximumDurationMs);
         if (whisperTokenJsonPath is not null)
         {
-            segments = WhisperSentenceSegmenter.Normalize(segments, whisperTokenJsonPath, warnings, cancellationToken);
+            // The adapter validates every field before processing; only its narrowly defined
+            // in-range zero-duration cue policy can preserve text with unsupported times.
+            segments = WhisperSentenceSegmenter.Normalize(segments, whisperTokenJsonPath,
+                request.MeetingDurationMs, warnings, cancellationToken);
             segments = WhisperTimestampBoundary.Normalize(segments, request.MeetingDurationMs, warnings);
         }
         // Local subtitle ranges are checked before and after applying a manifest. Untimed text stays untimed.

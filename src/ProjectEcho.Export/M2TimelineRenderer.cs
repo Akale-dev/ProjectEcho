@@ -10,8 +10,9 @@ internal static class M2TimelineRenderer
     internal const float PeakCeiling = 0.8912509f;
     private const int BlockFrames = 8192;
 
-    internal static TimelineRenderLevel Render(CaptureResult capture, string destination, CancellationToken token)
+    internal static TimelineRenderLevel Render(CaptureResult capture, string destination, CancellationToken token, IProgress<MixProgress>? progress = null)
     {
+        var reporter = new MixProgressReporter(progress);
         RecordingTimeline.Validate(capture.TimelinePolicy);
         foreach (var track in capture.Tracks) RecordingTimeline.Validate(capture.TimelinePolicy, track.ExcludedPause100ns);
         long frames = FramesForDuration(capture.Duration100ns);
@@ -27,18 +28,21 @@ internal static class M2TimelineRenderer
             // 0.4 gain lowered every quiet recording, while unity followed by
             // PCM clipping would irreversibly distort overlapping loud tracks.
             var meter = new TruePeakMeter(SampleRate);
+            reporter.Report(MixStages.RenderAnalysis, 0, frames, true);
             for (long start = 0; start < frames; start += BlockFrames)
             {
                 token.ThrowIfCancellationRequested(); int count = (int)Math.Min(BlockFrames, frames - start);
                 Array.Clear(mix);
                 foreach (var source in sources) source.Add(start, count, mix, token);
                 meter.AppendSamples(mix.AsSpan(0, count));
+                reporter.Report(MixStages.RenderAnalysis, start + count, frames);
             }
             var peak = meter.Complete();
             double ceiling = Math.Pow(10, (TruePeakProtection.ProcessingCeilingDbTp - 0.01) / 20);
             double gain = peak.TruePeakLinear > ceiling ? ceiling / peak.TruePeakLinear : 1;
             foreach (var source in sources) source.Reset();
             using var output = new MonoPcmWriter(destination, frames);
+            reporter.Report(MixStages.Rendering, 0, frames, true);
             for (long start = 0; start < frames; start += BlockFrames)
             {
                 token.ThrowIfCancellationRequested(); int count = (int)Math.Min(BlockFrames, frames - start);
@@ -46,6 +50,7 @@ internal static class M2TimelineRenderer
                 foreach (var source in sources) source.Add(start, count, mix, token);
                 if (gain < 1) for (int i = 0; i < count; i++) mix[i] *= (float)gain;
                 output.Write(mix.AsSpan(0, count));
+                reporter.Report(MixStages.Rendering, start + count, frames);
             }
             output.Finish();
             return new(gain, peak, sources.Sum(source => source.SmoothedPackets), sources.Select(source => source.MaximumCorrection100ns).DefaultIfEmpty().Max());

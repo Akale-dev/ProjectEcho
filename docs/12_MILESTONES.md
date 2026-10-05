@@ -1,5 +1,8 @@
 # 12｜里程碑与完成闸门
 
+2026-10-05 **M3I Lite修复本机验证完成，正在封包**：大包、Whisper零时长保全文、正常说明精简、路径校验提速和真实阶段进度。307回归与七项WPF通过；同一小时原轨439→29秒且WAV hash相同。主目录M5C产品代码保持，待用户验收再同步；见[82](82_M3I_LITE_CAPTURE_AND_ASR_FIX.md)、[83](83_M3I_TO_M5C_SYNC_CHECKLIST.md)。
+
+
 2026-10-03 **M3H交付**：会议独立识别设置/提示词自动保存、去CUDA、成对图片mic/无漂移按压、精简布局、显式mic预览与连续平滑电平已实现。263回归、真实remote meter、六项包内WPF/公开Vulkan0及661文件ZIP通过；真实mic仍未主动测试，软件绘制规避及失败记录见[63](63_M3H_MEETING_SETTINGS_AND_LEVEL_PREVIEW.md)与STATUS。最终包20261003-M3H-Final，用户本轮授权全部收尾后正常关机。
 
 2026-10-02 **M3G**：基于M3F修复随包CPU/Vulkan硬件与程序路径联动，字幕/回放/控制事件显示百分秒；录制模式改名、默认关闭的透明麦克风图标移到下拉框下方，并移除10秒试录入口。241默认回归、包内新mic三语WPF/百分秒原生定位/真实Vulkan0与659文件ZIP核验通过，交付M3G-Final；证据见[62](62_M3G_VULKAN_TIMING_AND_MIC_UI.md)及STATUS；旧现场闸门不升级。

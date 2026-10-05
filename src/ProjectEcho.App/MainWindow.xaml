@@ -44,7 +44,7 @@
               </DrawingGroup></DrawingImage.Drawing></DrawingImage></Image.Source>
             </Image>
             <TextBlock x:Name="BrandNameText" Text="ProjectEcho" Foreground="{DynamicResource SidebarTextBrush}" FontWeight="SemiBold" FontSize="19" VerticalAlignment="Center"/>
-            <TextBlock x:Name="ApplicationVersionText" Text="Ver. M3Hfix" Foreground="{DynamicResource SidebarTextBrush}" FontSize="10" Margin="6,0,0,4" VerticalAlignment="Bottom"/>
+            <TextBlock x:Name="ApplicationVersionText" Text="Ver. M3I Lite" Foreground="{DynamicResource SidebarTextBrush}" FontSize="10" Margin="6,0,0,4" VerticalAlignment="Bottom"/>
           </StackPanel>
           <TextBlock Text="{DynamicResource Loc635D0DE93BFCA011}" Foreground="{DynamicResource SidebarTextBrush}" FontSize="11" Margin="0,6,0,0"/>
         </StackPanel>
@@ -186,6 +186,7 @@
               <TextBlock Text="{DynamicResource Loc18A2790F18ABB9E1}" Style="{StaticResource SectionTitle}"/>
               <TextBlock Text="{Binding Text, ElementName=SelectedMeetingText}" FontWeight="Medium" Margin="0,0,0,14"/>
               <WrapPanel><Button Content="{DynamicResource LocC83B5BBAC73FA91C}" Tag="1" Click="Navigate_Click"/><Button x:Name="RetryMixButton" Content="{DynamicResource Loc4175B816874F3102}" Click="RetryMix_Click" IsEnabled="False"/><Button x:Name="CancelExportButton" Content="{DynamicResource Loc4506562217F3139D}" Click="CancelExport_Click" IsEnabled="False"/></WrapPanel>
+              <TextBlock x:Name="CurrentMixProgressText" Visibility="Collapsed" FontSize="13" FontWeight="SemiBold" Margin="0,12,0,8" TextWrapping="Wrap"/>
               <TextBlock Text="{DynamicResource Loc4736517320FA907D}" Style="{StaticResource MutedText}" FontSize="11"/>
             </StackPanel></Border>
             <Border Style="{StaticResource Card}"><StackPanel>

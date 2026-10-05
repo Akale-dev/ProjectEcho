@@ -59,7 +59,7 @@ internal static class M3eWhisperTimestampTests
 
     private static void InvalidIntervals(string root)
     {
-        foreach (string variant in new[] { "zero", "backward", "after", "nonfinal" })
+        foreach (string variant in new[] { "backward", "after", "nonfinal" })
         {
             var (request, result) = Run(root, variant);
             Need(result.Status == "Failed" && result.Revision is null && result.Message.Contains("segment-") &&
@@ -130,6 +130,8 @@ internal static class M3eWhisperTimestampTests
     internal static int WriteFixture(string output, string behavior)
     {
         string variant = behavior[Prefix.Length..];
+        if (variant.StartsWith("m3i-", StringComparison.Ordinal))
+            return M3iWhisperTimestampTests.WriteFixture(output, variant["m3i-".Length..]);
         long start = variant == "after" ? DurationMs : variant == "backward" ? 39840 : 30000;
         long end = variant switch { "valid" => 39700, "limit" => 39965, "large" => 39966,
             "zero" => start, "backward" => 39000, _ => 39840 };

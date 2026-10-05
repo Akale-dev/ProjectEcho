@@ -132,8 +132,15 @@ public static class WhisperTranscriber
                         "whisper.cpp（本地，待人工校对）", request.Configuration.ModelName ?? Path.GetFileName(request.Configuration.ModelPath),
                         IsSynthetic: request.IsSynthetic), outputBase + ".json", cancellationToken);
                     status = "Succeeded"; message = "本地转写已保存独立原稿；按句末标点及可用 token 时间分句，时间仍为 approximate，文字需人工核对。" + hardwareParser.Describe();
+                    int untimedCount = revision.Segments.Count(segment => segment.StartMs is null);
+                    if (untimedCount > 0)
+                        message = $"文字已完整保存；{untimedCount} 个片段时间待校对，不能定位回听。其余有时间片段可正常回听；可导出 TXT 全文，" +
+                            "本版暂不能导出 SRT/VTT，以免丢失无时间文字。" + hardwareParser.Describe();
                     foreach (string warning in revision.Warnings.Where(value => value.StartsWith("Whisper 尾端时间", StringComparison.Ordinal)))
                         message += "\n" + warning;
+                    var zeroWarnings = revision.Warnings.Where(value => value.StartsWith("Whisper 零时长片段", StringComparison.Ordinal)).ToArray();
+                    foreach (string warning in zeroWarnings.Take(20)) message += "\n" + warning;
+                    if (zeroWarnings.Length > 20) message += "\n其余零时长诊断保存在本版原稿和本次 attempt.json，全部原始字幕仍保留。";
                 }
             }
         }
@@ -163,7 +170,8 @@ public static class WhisperTranscriber
                 hardwareEvidence = hardwareParser.Evidence, hardwarePolicy = WhisperHardwareParser.Policy,
                 modelHashPolicy = "audit-only-no-expected-comparison", maxSegmentLength = 0,
                 fullTokenJson = true, subtitleSegmentation = WhisperSentenceSegmenter.Policy, priorityNote,
-                timestampBoundaryPolicy = WhisperTimestampBoundary.Policy, request.MeetingDurationMs,
+                timestampBoundaryPolicy = WhisperTimestampBoundary.Policy,
+                zeroDurationPolicy = WhisperZeroDurationTimestamp.Policy, request.MeetingDurationMs,
                 transcriptWarnings = revision?.Warnings,
                 modelLicenseAcknowledged = request.Configuration.ModelLicenseAcknowledged,
                 // These are adapter-contract references, not the identity/version of the chosen

@@ -23,7 +23,7 @@ public partial class MainWindow
             ChangeLanguage(language, persist: false); NavigateTo(0);
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render, token);
             Need(BrandLogo.Source is DrawingImage drawing && drawing.Drawing is DrawingGroup { Children.Count: 5 }, "Sidebar logo is not the original five-part vector.");
-            Need(ApplicationVersionText.Text == "Ver. M3Hfix", "M3F version is missing.");
+            Need(ApplicationVersionText.Text == "Ver. M3I Lite", "M3F version is missing.");
             Point logo = BrandLogo.TranslatePoint(new Point(0, BrandLogo.ActualHeight / 2), BrandHeaderPanel);
             Point name = BrandNameText.TranslatePoint(new Point(0, BrandNameText.ActualHeight / 2), BrandHeaderPanel);
             Point version = ApplicationVersionText.TranslatePoint(new Point(ApplicationVersionText.ActualWidth, 0), BrandHeaderPanel);
@@ -76,7 +76,7 @@ public partial class MainWindow
             "Validation started capture, playback or ASR.");
         return new
         {
-            Status = "PASS", Version = "Ver. M3Hfix", VectorLogoSharesTitleRow = true,
+            Status = "PASS", Version = "Ver. M3I Lite", VectorLogoSharesTitleRow = true,
             RemovedRecordingInstruction = true, MinimumWidthThreeLanguages = true, RasterPreviewAtTwoScales = true,
             AsrInvalidFieldsOutlined = true, CorrectedFieldsClearAutomatically = true, MissingMeetingAndMixStayBlocked = true,
             SourceMode = "SYNTHETIC FILES / NO CAPTURE / NO MODEL EXECUTION", CaptureStarted = false,

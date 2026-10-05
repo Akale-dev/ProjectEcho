@@ -17,6 +17,12 @@ public partial class MainWindow
         string? eventId = null, DateTimeOffset? timestamp = null, string? exportSummary = null)
     {
         if (directory is null) return;
+        if (category is "recording" or "mix" or "export" or "diagnostic")
+        {
+            message = PresentRecordingDiagnostic(message);
+            if (exportSummary is not null) exportSummary = PresentRecordingDiagnostic(exportSummary);
+            if (string.IsNullOrWhiteSpace(message)) return;
+        }
         if (message.Length > 16000)
         {
             string id = eventId ?? Guid.NewGuid().ToString("N");
@@ -194,6 +200,7 @@ public partial class MainWindow
 
     private static string LegacyDiagnosticSummary(string message)
     {
+        message = RecordingDiagnosticPresentation.Project(message);
         var selected = new List<string>();
         foreach (string known in new[] { "转写起止时间倒置、越界或质量标记无效。", "原件及索引已完成验证", "未观察到音频包的时间区间",
             "API QPC 存在小幅抖动", "Complete仍为false", "本地转写已取消", "M4A 已生成并完成解码检查", "原始输出保留" })

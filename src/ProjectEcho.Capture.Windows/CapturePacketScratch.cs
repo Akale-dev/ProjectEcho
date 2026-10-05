@@ -19,8 +19,9 @@ internal sealed class CapturePacketScratch : IDisposable
     internal CapturePacketScratch(int? bufferFrames, int blockAlign)
     {
         if (blockAlign <= 0) throw new ArgumentOutOfRangeException(nameof(blockAlign));
-        long requested = bufferFrames is > 0 ? (long)bufferFrames.Value * blockAlign : MaximumBytes;
-        bytes = new byte[(int)Math.Min(MaximumBytes, requested)];
+        // Reported capacity is diagnostic metadata, not a process-loopback packet limit.
+        // Reserve the existing hard limit before Start; never grow while holding a packet.
+        bytes = new byte[MaximumBytes];
     }
 
     internal int Capacity => bytes.Length;

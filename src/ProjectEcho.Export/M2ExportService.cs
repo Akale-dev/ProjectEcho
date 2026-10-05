@@ -25,8 +25,12 @@ public static class M2ExportService
 
     /// <summary>Encoder injection supports deterministic fault/size tests. Null requests only the verified WAV.</summary>
     public static FullMixResult RenderMeeting(string sessionDirectory, IM2AudioEncoder? encoder, CancellationToken cancellationToken = default)
+        => RenderMeeting(sessionDirectory, encoder, cancellationToken, null);
+
+    public static FullMixResult RenderMeeting(string sessionDirectory, IM2AudioEncoder? encoder, CancellationToken cancellationToken, IProgress<MixProgress>? progress)
     {
         cancellationToken.ThrowIfCancellationRequested(); string source = M2FileSafety.FullPath(sessionDirectory);
+        var reporter = new MixProgressReporter(progress); reporter.Report(MixStages.Preparing, 0, null, true);
         var locks = new List<FileStream>(); var generated = new List<string>(); string? outputDirectory = null;
         bool waveFinalized = false;
         try
@@ -34,7 +38,7 @@ public static class M2ExportService
             // Sharing excludes writers/deletion throughout verification and rendering.
             foreach (string name in new[] { "meeting.json", "journal/capture-index.jsonl", "journal/events.jsonl" })
                 locks.Add(M2FileSafety.LockedRead(M2FileSafety.Inside(source, name)));
-            var recovery = M1Recovery.Read(source, cancellationToken); cancellationToken.ThrowIfCancellationRequested();
+            var recovery = M1Recovery.Read(source, cancellationToken, new RecoveryMixProgress(reporter)); cancellationToken.ThrowIfCancellationRequested();
             if (!recovery.HasCheckpoint || recovery.Issues.Count != 0 ||
                 recovery.Capture.Tracks.Any(track => !track.WavePath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("原件未通过存储/哈希验证；请先检查恢复状态，不能将缺失或损坏来源当作完整混音。 " + string.Join(" | ", recovery.Issues));
@@ -45,31 +49,35 @@ public static class M2ExportService
                 item => M2FileSafety.Inside(source, item.GetProperty("Path").GetString()!),
                 item => item.GetProperty("FileSha256").GetString()!, StringComparer.OrdinalIgnoreCase);
             var sourceHashes = new List<object>();
+            long sourceBytes = capture.Tracks.Sum(track => new FileInfo(track.WavePath).Length), verifiedBytes = 0;
+            reporter.Report(MixStages.Validating, 0, sourceBytes, true);
             foreach (var track in capture.Tracks)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!M2FileSafety.IsInside(source, track.WavePath) || !expected.TryGetValue(track.WavePath, out string? hash))
                     throw new InvalidDataException("来源文件不在已验证清单内。");
                 var held = M2FileSafety.LockedRead(track.WavePath); locks.Add(held);
-                if (M2FileSafety.Hash(held, cancellationToken) != hash) throw new InvalidDataException("验证后来源文件发生改变。");
+                if (M2FileSafety.Hash(held, cancellationToken, (done, total) => reporter.Report(MixStages.Validating, verifiedBytes + done, sourceBytes)) != hash) throw new InvalidDataException("验证后来源文件发生改变。");
+                verifiedBytes += held.Length;
                 sourceHashes.Add(new { sha256 = hash, sourceId = track.SourceId, frames = track.FrameCount });
             }
+            cancellationToken.ThrowIfCancellationRequested(); reporter.Report(MixStages.Validating, verifiedBytes, sourceBytes, true);
             M2FileSafety.RequireDiskSpace(source, checked(frames * 4));
             string derived = M2FileSafety.Inside(source, "derived"); Directory.CreateDirectory(derived);
             outputDirectory = M2FileSafety.Inside(derived, "mix-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(outputDirectory);
             string wave = M2FileSafety.Inside(outputDirectory, "mixed_full.wav"), partial = wave + ".partial";
             generated.Add(partial); generated.Add(wave);
-            var renderLevel = M2TimelineRenderer.Render(capture, partial, cancellationToken);
+            var renderLevel = M2TimelineRenderer.Render(capture, partial, cancellationToken, progress);
             cancellationToken.ThrowIfCancellationRequested();
             using (var check = new M2WaveReader(partial, MixFormat))
                 if (check.FrameCount != frames) throw new InvalidDataException("混音 WAV 解码帧数与完整时间轴不同。");
             string protectedWave = M2FileSafety.Inside(outputDirectory, "mixed_full.peak-protected.wav");
             generated.Add(protectedWave);
-            var peakProtection = TruePeakProtection.ProtectWave(partial, protectedWave, cancellationToken);
+            var peakProtection = TruePeakProtection.ProtectWave(partial, protectedWave, cancellationToken, progress);
             ValidateTruePeak(peakProtection.After, frames);
             M2FileSafety.DeleteGenerated(outputDirectory, partial);
             M2FileSafety.NoReparse(wave); File.Move(protectedWave, wave, false); waveFinalized = true;
-            string waveHash = M2FileSafety.Hash(wave, cancellationToken);
+            string waveHash = M2FileSafety.Hash(wave, cancellationToken, (done, total) => reporter.Report(MixStages.Hashing, done, total));
             var warnings = capture.Warnings.Concat(new[]
             {
                 "混音依据原始 API QPC 和设备帧重建时间；连续设备帧采用有界平稳映射，保留断续与真实缺口。真实两小时双轨同步尚待验收。",
@@ -121,6 +129,7 @@ public static class M2ExportService
                     truePeak = encoded.TruePeak, appliedGain = encoded.AppliedGain, encodingAttempts = encoded.EncodingAttempts,
                     containerTimeline = encoded.ContainerTimeline, mp3Timeline = encoded.Mp3Timeline }, warnings
             }, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested(); reporter.Report(MixStages.Completed, 0, null, true);
             return new(wave, compressed, outputDirectory, MixFormat.SampleRate, frames, capture.Duration100ns / 10, warnings)
                 { WaveSha256 = waveHash, CompressedSha256 = compressedHash, SourceStorageComplete = recovery.IsCleanEnd,
                     WaveTruePeak = peakProtection.After, WaveAppliedGain = renderLevel.AppliedGain * peakProtection.AppliedGain };
