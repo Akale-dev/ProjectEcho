@@ -1,7 +1,9 @@
 # Development status
+
+**M3I Lite下载：** [完整便携ZIP](../artifacts/ProjectEcho-win-x64-20261005-M3I-Lite-Final.zip)；入口同名目录下ProjectEcho.exe。源提交98d3420，ZIP SHA-256 74af54360a02473d6fde2cc5bd0229af3ce6e1bc782395c278dccd896d2788fc。M5C未同步；目标公司电脑验收待完成。
 Updated: 2026-10-05
 
-2026-10-05 **M3I Lite修复本机验证完成，正在封包**：大包、Whisper零时长保全文、正常说明精简、路径校验提速和真实阶段进度。307回归与七项WPF通过；同一小时原轨439→29秒且WAV hash相同。主目录M5C产品代码保持，待用户验收再同步；见[82](docs/82_M3I_LITE_CAPTURE_AND_ASR_FIX.md)、[83](docs/83_M3I_TO_M5C_SYNC_CHECKLIST.md)。
+2026-10-05 **M3I Lite已交付，等待公司电脑验收**：大包、Whisper零时长保全文、正常说明精简、路径校验提速和真实阶段进度。307回归与七项WPF通过；最终包307回归、七项WPF及CPU/Vulkan公开识别通过；同一小时原轨439.393→29.173秒且WAV hash相同。主目录M5C产品代码保持，待用户验收再同步；见[82](docs/82_M3I_LITE_CAPTURE_AND_ASR_FIX.md)、[83](docs/83_M3I_TO_M5C_SYNC_CHECKLIST.md)。
 
 
 ## 目录维护：旧版本与测试数据已清理

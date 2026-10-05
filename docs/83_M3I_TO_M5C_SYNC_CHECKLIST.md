@@ -5,6 +5,7 @@
 ## 版本与边界
 
 - Lite 工作树：`lite/`，分支 `codex/m3i-lite`。
+- M3I修复源码提交：`98d342005fef76dc3571db73a8de157076cc2b70`，完整交付最终665文件ZIP与包内307回归/七WPF/CPU及Vulkan已通过；用户公司验收仍NOT_RUN。
 - 已核验 M3Hfix 源码基线提交：`e734e0557f1bdde826b201c0fefd1f44acab79d8`（基于 M3H 的 `dc26ea8`，有意重建，非历史原始快照）。
 - 原 M3Hfix ZIP SHA-256：`09179e69a3ca36152fd3812e81071af51a1481d71b4b17413721725240e3976a`。
 - Pro 当前产品基线仍为 M5C-Final；主目录存在其未提交源码，禁止 reset/checkout 覆盖。只迁移下面的具体修复，不把 Lite 整棵树覆盖 Pro。

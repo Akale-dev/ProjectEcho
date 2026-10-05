@@ -69,3 +69,18 @@
 3. 主动生成/重试完整混音，观察当前会议卡片阶段百分比与Log中的一次耗时汇总。旧已生成混音重开校验也复用恢复提速，但本轮实时百分比针对生成混音过程。
 
 真实麦克风、长时双设备声学同步、其他硬件、干净Windows等M1/M2旧失败/未测不升级。M5C同步仍等待用户验收；不得整文件覆盖Pro中的Qwen/人物版逻辑。
+## 最终交付及包内复测（2026-10-05）
+
+交付 `artifacts/ProjectEcho-win-x64-20261005-M3I-Lite-Final/ProjectEcho.exe` 与同名ZIP。ZIP **262666645字节**，SHA-256 **`74af54360a02473d6fde2cc5bd0229af3ce6e1bc782395c278dccd896d2788fc`**。664项清单加manifest共665个ZIP文件，中文路径实际解压逐项hash通过，manifest SHA-256 `44a0c2ea710ebd3cf57309e26c8d04431d83d2598ff9b29f26ddf9a0c32ba55a`。包含自带App/Host运行时、CPU/Vulkan/base及原许可；无Pro组件或私人Data。
+
+源码修复提交 **`98d342005fef76dc3571db73a8de157076cc2b70`**；与基线e734e055之间为本轮增量。后续文档收尾提交不改变已测程序。
+
+- 包内原样Core/Capture/Export替换到独立测试运行目录后，**307/0**；App、Host、回归与最终一小时探针的三个生产DLL hash一致。
+- 中文解压后App与Host在无有效外部DOTNET_ROOT下启动/IPC通过。七项包内WPF通过，含三项新增实际界面测试。ASR设置流程的独立合成CLI是开发用framework-dependent测试程序，首轮受无效DOTNET_ROOT影响失败；仅该测试给此CLI提供项目SDK后通过，产品文件没有修改。首轮失败保留，不冒充该测试本身是无SDK环境。
+- 实际随包CPU/base公开11秒JFK识别成功，真实子进程取消及重跑通过；Vulkan0在合成17.345秒暂停、11秒有效音频链路成功，PCM/时钟保持，WAV/MP3/16k/SRT/VTT完整验证。
+- 最终包完整进度版再次处理同一小时原轨 **29173ms**，对照原包439393ms，约 **15.06倍**。156条真实阶段事件数值不倒退；172800000帧及WAV SHA与旧版完全相同，123原件不改。此为同一开发机合成对照，仍不能外推公司电脑。
+- 主目录 **297个Pro源码/测试/协议文件**与本轮前hash相同；旧M3Hfix/M5C两个ZIP保持。M5C修复仍NOT_APPLIED。
+
+包后证据：`.local/M3I/zip-verification-final.json`、`bundled-regression/results.json`、`bundled-ui/runs.json`、`cpu-bundled-final/report.json`、`vulkan-bundled-final/summary.json`、`performance-final-summary.json`、`tested-components-final.json`、`preservation-final.json`。包内说明为封包前快照；同名`.package.json`与本节补充最终核验，未覆盖已验ZIP。
+
+公司Win10/Chrome预览后开录、原一小时会议转写及现场处理耗时仍待用户主动验收；干净Windows、真实mic及旧M1/M2未验范围不变。
