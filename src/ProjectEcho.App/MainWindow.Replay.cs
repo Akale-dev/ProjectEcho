@@ -29,6 +29,7 @@ public partial class MainWindow
     private double nextSubtitleBoundaryMs;
     private bool revealReplaySubtitleOnNextUpdate;
     private bool updatingPlaybackTransport;
+    private bool keepPausedReplaySelection;
     private double playbackSpeed = 1;
     private (string Directory, long Milliseconds)? savedMixPlaybackRequest;
     private string? lastSavedMixReadinessText;
@@ -66,7 +67,15 @@ public partial class MainWindow
         PausePlaybackButton.IsEnabled = canPlay && playbackOpened;
         ReplayPositionSlider.IsEnabled = canPlay && playbackOpened;
         PlaybackSpeedBox.IsEnabled = canPlay;
+        foreach (var button in SkipPlaybackButtons)
+        {
+            button.IsEnabled = canPlay && playbackOpened;
+            int seconds = int.Parse((string)button.Tag, CultureInfo.InvariantCulture);
+            string label = seconds < 0 ? UiText.F($"回退{Math.Abs(seconds)}秒") : UiText.F($"前进{seconds}秒");
+            button.ToolTip = label; AutomationProperties.SetName(button, label);
+        }
         ReplaySegmentsBox.IsEnabled = canPlay;
+        ReplaySegmentsBox.ToolTip = UiText.T("↑/↓选择字幕；播放中会从新选中字幕开始。←/→跳转5秒并保持播放或暂停状态。");
         ReplayRevisionBox.IsEnabled = !WindowCloseRequested && !deletingMeeting && !transcriptBusy;
         ReplayExportSubtitlesButton.IsEnabled = !WindowCloseRequested && !deletingMeeting && !transcriptBusy
             && replayMeetingDirectory == selectedMeetingDirectory
@@ -79,6 +88,7 @@ public partial class MainWindow
         {
             view.PlayListeningButton.IsEnabled = canPlay && (mixedPath is not null || CanRequestSavedMixPlayback);
             view.PauseListeningButton.IsEnabled = canPlay && playbackOpened;
+            view.StopListeningButton.IsEnabled = canPlay;
             view.PlaybackPositionSlider.IsEnabled = canPlay && playbackOpened;
             view.PlaybackSpeedBox.IsEnabled = canPlay;
         }
@@ -156,13 +166,13 @@ public partial class MainWindow
 
     private void UpdatePlaybackTransport()
     {
-        PauseReplayIcon.Data = playbackPaused ? ReplayPlayGeometry : ReplayPauseGeometry;
+        PauseReplayIcon.Data = ReplayPauseGeometry;
         string action = playbackPaused ? UiText.T("继续回放") : UiText.T("暂停回放");
         PausePlaybackButton.ToolTip = action;
         AutomationProperties.SetName(PausePlaybackButton, action);
         if (transcriptionView is { } view)
         {
-            view.PauseListeningIcon.Data = playbackPaused ? ReplayPlayGeometry : ReplayPauseGeometry;
+            view.PauseListeningIcon.Data = ReplayPauseGeometry;
             view.PauseListeningButton.ToolTip = action;
             AutomationProperties.SetName(view.PauseListeningButton, action);
         }
@@ -233,7 +243,8 @@ public partial class MainWindow
         var token = transcriptCancellation?.Token ?? CancellationToken.None;
         try
         {
-            string result = await Task.Run(() => TranscriptSubtitleExporter.Export(directory, revisionId, destinationPath, token, overwrite: true), token);
+            bool labels = transcriptionView!.IncludeSpeakerLabelsBox.IsChecked == true;
+            string result = await Task.Run(() => ExportTranscriptPresentation(directory, revisionId, destinationPath, labels, token), token);
             if (selectedMeetingDirectory == directory && ReplayRevisionBox.SelectedItem is RevisionRow selected && selected.Revision.RevisionId == revisionId)
                 ReplayStatusText.Text = UiText.T("当前版本的完整字幕已保存：") + result;
         }
@@ -262,7 +273,8 @@ public partial class MainWindow
         directory = ValidateRecordingDirectory(directory);
         string revisionId = row.Revision.RevisionId;
         var token = transcriptCancellation?.Token ?? CancellationToken.None;
-        string result = await Task.Run(() => TranscriptSubtitleExporter.ExportText(directory, revisionId, destinationPath, token, overwrite: true), token);
+        bool labels = transcriptionView!.IncludeSpeakerLabelsBox.IsChecked == true;
+        string result = await Task.Run(() => ExportTranscriptPresentation(directory, revisionId, destinationPath, labels, token), token);
         if (selectedMeetingDirectory == directory) ReplayStatusText.Text = UiText.T("当前版本全文已保存（不带时间轴）：") + result;
     }
 
@@ -279,7 +291,7 @@ public partial class MainWindow
         try
         {
             ValidateRecordingDirectory(directory);
-            var revisions = await Task.Run(() => TranscriptService.ListRevisions(directory));
+            var revisions = await Task.Run(() => LoadAllTranscriptPresentations(directory));
             if (WindowCloseRequested || deletingMeeting || generation != replayLoadGeneration || directory != selectedMeetingDirectory) return;
             SetReplayRevisions(directory, revisions, null);
         }
@@ -328,7 +340,9 @@ public partial class MainWindow
                 .OrderBy(segment => segment.StartMs).Select(segment => new TranscriptRow(directory, row.Revision, segment, UiText.T("本场"))).ToArray();
             ReplaySegmentsBox.ItemsSource = segments;
             ReplayStatusText.Text = segments.Length == 0 ? UiText.T("本版文字没有时间戳，不会猜测字幕位置。可切换带时间的版本。")
-                : UiText.F($"{segments.Length} 条字幕 · {row.Revision.Provider} · 点击字幕跳转，暂停和空白时段保持原始时间轴。");
+                : UiText.F($"{segments.Length} 条字幕 · {row.Revision.Provider} · 点击字幕跳转，字幕时间以本场录音为准。");
+            int untimed = row.Revision.Segments.Count(segment => segment.StartMs is null);
+            if (untimed > 0) ReplayStatusText.Text += UiText.F($" 另有 {untimed} 段无时间文字，已保留在转写全文中。");
         }
         UpdatePlaybackPosition();
         UpdateReplayControls();
@@ -371,9 +385,61 @@ public partial class MainWindow
         if (WindowCloseRequested || deletingMeeting || !SessionRules.CanPlayback(state) || !playbackOpened) return;
         if (playbackPaused) player.Play(); else player.Pause();
         playbackPaused = !playbackPaused;
+        if (!playbackPaused) InvalidateReplaySubtitleFollow();
         UpdatePlaybackTransport();
         ResetDisplayPlaybackClock();
         UpdatePlaybackPosition();
+    }
+
+    private Button[] SkipPlaybackButtons => [SkipBack10Button, SkipBack5Button, SkipForward5Button, SkipForward10Button];
+
+    private void SkipPlayback_Click(object sender, RoutedEventArgs e)
+    {
+        if (WindowCloseRequested || deletingMeeting || !SessionRules.CanPlayback(state) || !playbackOpened ||
+            sender is not Button { IsEnabled: true, Tag: string tag } ||
+            !int.TryParse(tag, NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds) || seconds is not (-10 or -5 or 5 or 10)) return;
+        SkipPlaybackBy(seconds);
+    }
+
+    private void SkipPlaybackBy(int seconds)
+    {
+        if (WindowCloseRequested || deletingMeeting || !SessionRules.CanPlayback(state) || !playbackOpened) return;
+        long current = (long)Math.Round(player.Position.TotalMilliseconds, MidpointRounding.AwayFromZero);
+        long seek = Math.Clamp(current + seconds * 1000L, 0, Math.Max(0, (playbackDurationMs ?? 0) - 1));
+        SeekPlaybackMilliseconds(seek);
+        InvalidateReplaySubtitleFollow();
+        ResetDisplayPlaybackClock();
+        UpdatePlaybackPosition(); // Preserve playing/paused state and current speed.
+    }
+
+    private void ReplayShortcut_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Handled || Keyboard.Modifiers != ModifierKeys.None || !ReplayWorkspace.IsVisible ||
+            WindowCloseRequested || deletingMeeting || !SessionRules.CanPlayback(state)) return;
+        for (DependencyObject? target = e.OriginalSource as DependencyObject; target is not null;)
+        {
+            if (target is System.Windows.Controls.Primitives.TextBoxBase or ComboBox or ComboBoxItem or PasswordBox) return;
+            if (ReferenceEquals(target, ReplayWorkspace)) break;
+            target = target is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(target) : LogicalTreeHelper.GetParent(target);
+        }
+        if (e.Key is Key.Left or Key.Right)
+        {
+            if (!playbackOpened) return;
+            SkipPlaybackBy(e.Key == Key.Left ? -5 : 5); e.Handled = true; return;
+        }
+        if (e.Key is not (Key.Up or Key.Down) || ReplaySegmentsBox.Items.Count == 0) return;
+        int current = ReplaySegmentsBox.SelectedIndex;
+        int next = current < 0 ? 0 : Math.Clamp(current + (e.Key == Key.Up ? -1 : 1), 0, ReplaySegmentsBox.Items.Count - 1);
+        e.Handled = true;
+        if (next == current) return;
+        ReplaySegmentsBox.SelectedIndex = next;
+        ReplaySegmentsBox.ScrollIntoView(ReplaySegmentsBox.SelectedItem);
+        if (playbackOpened && !playbackPaused && ReplaySegmentsBox.SelectedItem is TranscriptRow row)
+        {
+            if (row.Segment.StartMs is not null) SeekTranscriptRow(row);
+            else ReplayStatusText.Text = UiText.T("这条字幕没有可用时间，无法定位回听。");
+        }
+        else keepPausedReplaySelection = true;
     }
 
     private void ReplayPosition_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -424,6 +490,7 @@ public partial class MainWindow
 
     private void InvalidateReplaySubtitleFollow()
     {
+        keepPausedReplaySelection = false;
         nextSubtitleBoundaryMs = 0;
         revealReplaySubtitleOnNextUpdate = true;
     }
@@ -471,11 +538,11 @@ public partial class MainWindow
         var active = playbackOpened && replayMeetingDirectory == selectedMeetingDirectory && mixedPath is not null
             && string.Equals(player.Source?.LocalPath, Path.GetFullPath(mixedPath), StringComparison.OrdinalIgnoreCase)
             ? rows.Where(row => row.Segment.StartMs <= milliseconds && row.Segment.EndMs > milliseconds).ToArray() : [];
-        string subtitle = active.Length > 0 ? string.Join("\n", active.Select(row => row.Segment.Text))
+        string subtitle = active.Length > 0 ? string.Join("\n", active.Select(row => row.DisplayText))
             : playbackOpened ? UiText.T("此处没有字幕") : SavedMixReadinessText ?? UiText.T("播放时在这里显示当前字幕");
         if (CurrentSubtitleText.Text != subtitle) CurrentSubtitleText.Text = subtitle;
         // Rows are ordered by start time. With overlapping cues, select the most
         // recently started one while retaining every active cue in the text display.
-        FollowReplaySubtitle(active.LastOrDefault());
+        if (!keepPausedReplaySelection || (playbackOpened && !playbackPaused)) FollowReplaySubtitle(active.LastOrDefault());
     }
 }

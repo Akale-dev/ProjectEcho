@@ -1,0 +1,21 @@
+{
+  "开始": "Start",
+  "结束": "End",
+  "选中字幕开始时间": "Selected subtitle start time",
+  "选中字幕结束时间": "Selected subtitle end time",
+  "HH:mm:ss.fff；毫秒可省略，无时间字幕同时留空。": "HH:mm:ss.fff; milliseconds are optional. Leave both fields blank for untimed text.",
+  "时间格式须为 HH:mm:ss.fff（毫秒可省略）；无时间字幕请同时留空。": "Use HH:mm:ss.fff (milliseconds are optional); leave both fields blank for untimed text.",
+  "开始和结束时间必须同时填写或同时留空。": "Enter both start and end times, or leave both blank.",
+  "结束时间须晚于开始，且不能超过完整录音时长。": "End time must follow start time and stay within the full recording.",
+  "字幕文字不能为空、包含空字符或超过十万字符。": "Subtitle text cannot be blank, contain NUL, or exceed 100,000 characters.",
+  "字幕时间不能超过已校验的完整回听音频时长。": "Subtitle times must stay within the verified listening audio.",
+  "本版本 {0} 段未保存；点击“保存修订”一次保存全部修改，之后可导出。": "{0} unsaved cues in this version. Save revision to save all edits together and enable export.",
+  "另有 {0} 个版本含未保存草稿；切回对应会议和版本可继续修改。": "{0} other versions have unsaved drafts. Return to the corresponding meeting and version to continue editing.",
+  "文字和时间修改暂存在内存；点击“保存修订”才创建新版本。": "Text and time edits stay in memory. Save revision creates one new version.",
+  "还有 {0} 个字幕版本的修改未保存。是否放弃这些修改并关闭？\n选择“否”返回，点击“保存修订”后再关闭。": "{0} subtitle versions have unsaved edits. Discard these edits and close?\nChoose No to return, then Save revision before closing.",
+  "字幕修改尚未保存": "Unsaved subtitle edits",
+  "用户批量校订文字和时间": "User batch correction of text and timestamps",
+  "本版本的全部字幕修改已保存为一个新修订；父版本、原稿和原始音频均保留。": "All edits in this version were saved as one new revision. The parent, original transcript and source audio are preserved.",
+  "没有尚未保存的字幕修改。": "There are no unsaved subtitle edits.",
+  "时间无效。": "Invalid timestamp."
+}

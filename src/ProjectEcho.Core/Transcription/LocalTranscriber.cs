@@ -12,7 +12,7 @@ public sealed record LocalTranscriptionConfiguration(string BackendId, string Ex
     string Language = "auto", int Threads = 2, string? ModelName = null,
     string? ExpectedModelSha256 = null, bool ModelLicenseAcknowledged = false,
     LocalTranscriptionHardware Hardware = LocalTranscriptionHardware.Cpu, int GpuDeviceIndex = 0,
-    string? InitialPrompt = null)
+    string? InitialPrompt = null, QwenAlignmentConfiguration? QwenAlignment = null)
 {
     // Keep the deployed whisper.json contract readable without migrating or replacing existing configuration.
     public static LocalTranscriptionConfiguration FromWhisper(WhisperConfiguration configuration)
@@ -25,16 +25,17 @@ public sealed record LocalTranscriptionConfiguration(string BackendId, string Ex
     }
 }
 
-/// <summary>The entire saved meeting timeline, including pauses; audio preparation belongs outside the adapter.</summary>
+/// <summary>The entire saved audio timeline; pause policy is preserved by preparation, never reapplied by ASR.</summary>
 public sealed record LocalTranscriptionRequest(string MeetingDirectory, string MeetingId, long MeetingDurationMs,
-    string WavePath, string ExpectedWaveSha256, LocalTranscriptionConfiguration Configuration, bool IsSynthetic = false);
+    string WavePath, string ExpectedWaveSha256, LocalTranscriptionConfiguration Configuration, bool IsSynthetic = false,
+    string? SourceMixSha256 = null, string TimelinePolicy = "elapsed-v1");
 
 public sealed record LocalTranscriptionReadiness(bool Ready, string Message);
 
 public enum LocalTranscriptionStatus { NotConfigured, Succeeded, NoSpeech, Cancelled, Failed }
 
 // Append new stages so existing values retain their numeric identity.
-public enum LocalTranscriptionStage { Validating, Recognizing, Saving, LoadingModel }
+public enum LocalTranscriptionStage { Validating, Recognizing, Saving, LoadingModel, Aligning }
 
 /// <summary>
 /// Percent is engine-reported seek/window recognition progress, not elapsed work or total task time.
@@ -88,7 +89,7 @@ public sealed class WhisperCppLocalTranscriber : ILocalTranscriber
         if (!readiness.Ready) return new(LocalTranscriptionStatus.NotConfigured, "", 0, null, readiness.Message);
         var result = await WhisperTranscriber.RunAsync(new(request.MeetingDirectory, request.MeetingId,
             request.MeetingDurationMs, request.WavePath, request.ExpectedWaveSha256, ToWhisper(request.Configuration),
-            request.IsSynthetic), cancellationToken, progress).ConfigureAwait(false);
+            request.IsSynthetic, request.SourceMixSha256, request.TimelinePolicy), cancellationToken, progress).ConfigureAwait(false);
         var status = result.Status switch
         {
             "NotConfigured" => LocalTranscriptionStatus.NotConfigured,
@@ -118,7 +119,6 @@ public static class LocalTranscriptionBackends
 {
     public static ILocalTranscriber Default { get; } = new WhisperCppLocalTranscriber();
 
-    // Do not infer Qwen runtime, input format, time alignment or language capabilities from Whisper's adapter.
-    public static FutureLocalTranscriberPreparation Qwen3Asr { get; } = new("qwen3-asr", "Qwen3-ASR",
-        "NotImplemented", "后续独立实现本地适配器，核验运行环境、模型及许可、完整时间轴、时间戳能力、取消与原稿保留后才能启用。当前未部署、不可运行。");
+    // Independent verified native ASR + raw acoustic alignment; never replaces the existing default.
+    public static ILocalTranscriber Qwen3Asr { get; } = new QwenTranscriber();
 }

@@ -70,7 +70,7 @@ public static class WhisperTranscriber
             modelHash = TranscriptFiles.Hash(model, cancellationToken);
             executableHash = TranscriptFiles.Hash(executable, cancellationToken); waveHash = TranscriptFiles.Hash(wave, cancellationToken);
             if (!string.Equals(waveHash, request.ExpectedWaveSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("ASR 输入 WAV 哈希改变。");
-            bool digitalSilence = ValidateWave(wave, request.MeetingDurationMs, cancellationToken);
+            bool digitalSilence = ValidateWave(wave, request.MeetingDurationMs, cancellationToken, out long frameCount);
             if (digitalSilence)
             {
                 status = "NoSpeech"; message = "输入 PCM 全为数字零，未调用模型且未生成文字。该检查不代表其他安静片段已通过语音识别验收。";
@@ -130,10 +130,20 @@ public static class WhisperTranscriber
                 {
                     revision = TranscriptService.ImportWhisper(new(meeting, request.MeetingId, request.MeetingDurationMs, srt,
                         "whisper.cpp（本地，待人工校对）", request.Configuration.ModelName ?? Path.GetFileName(request.Configuration.ModelPath),
-                        IsSynthetic: request.IsSynthetic), outputBase + ".json", cancellationToken);
+                        IsSynthetic: request.IsSynthetic), outputBase + ".json", cancellationToken, request, frameCount);
                     status = "Succeeded"; message = "本地转写已保存独立原稿；按句末标点及可用 token 时间分句，时间仍为 approximate，文字需人工核对。" + hardwareParser.Describe();
+                    int untimedCount = revision.Segments.Count(segment => segment.StartMs is null);
+                    if (untimedCount > 0)
+                        message = $"文字已完整保存；{untimedCount} 个片段时间待校对，不能定位回听。其余有时间片段可正常回听；可导出 TXT 全文，" +
+                            "本版暂不能导出 SRT/VTT，以免丢失无时间文字。" + hardwareParser.Describe();
                     foreach (string warning in revision.Warnings.Where(value => value.StartsWith("Whisper 尾端时间", StringComparison.Ordinal)))
                         message += "\n" + warning;
+                    var overrunWarnings = revision.Warnings.Where(value => value.StartsWith(WhisperOverrunTimestamp.DiagnosticPrefix, StringComparison.Ordinal)).ToArray();
+                    foreach (string warning in overrunWarnings.Take(20)) message += "\n" + warning;
+                    if (overrunWarnings.Length > 20) message += "\n其余越界时间诊断保存在本版原稿和本次 attempt.json，全部原始字幕仍保留。";
+                    var zeroWarnings = revision.Warnings.Where(value => value.StartsWith("Whisper 零时长片段", StringComparison.Ordinal)).ToArray();
+                    foreach (string warning in zeroWarnings.Take(20)) message += "\n" + warning;
+                    if (zeroWarnings.Length > 20) message += "\n其余零时长诊断保存在本版原稿和本次 attempt.json，全部原始字幕仍保留。";
                 }
             }
         }
@@ -163,7 +173,11 @@ public static class WhisperTranscriber
                 hardwareEvidence = hardwareParser.Evidence, hardwarePolicy = WhisperHardwareParser.Policy,
                 modelHashPolicy = "audit-only-no-expected-comparison", maxSegmentLength = 0,
                 fullTokenJson = true, subtitleSegmentation = WhisperSentenceSegmenter.Policy, priorityNote,
-                timestampBoundaryPolicy = WhisperTimestampBoundary.Policy, request.MeetingDurationMs,
+                timestampBoundaryPolicy = WhisperTimestampBoundary.Policy,
+                // Former diagnostic field remains readable; v2 covers each raw out-of-range cue.
+                finalCueTimestampPolicy = WhisperOverrunTimestamp.Policy,
+                outOfRangeTimestampPolicy = WhisperOverrunTimestamp.Policy,
+                zeroDurationPolicy = WhisperZeroDurationTimestamp.Policy, request.MeetingDurationMs,
                 transcriptWarnings = revision?.Warnings,
                 modelLicenseAcknowledged = request.Configuration.ModelLicenseAcknowledged,
                 // These are adapter-contract references, not the identity/version of the chosen
@@ -212,7 +226,7 @@ public static class WhisperTranscriber
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
     }
 
-    private static bool ValidateWave(Stream stream, long durationMs, CancellationToken token)
+    private static bool ValidateWave(Stream stream, long durationMs, CancellationToken token, out long frameCount)
     {
         stream.Position = 0;
         using var reader = new BinaryReader(stream, Encoding.ASCII, true);
@@ -261,6 +275,6 @@ public static class WhisperTranscriber
             if (buffer.AsSpan(0, read).IndexOfAnyExcept((byte)0) >= 0) allZero = false;
             remaining -= read;
         }
-        stream.Position = 0; return allZero;
+        frameCount = dataLength / 2; stream.Position = 0; return allZero;
     }
 }

@@ -1,0 +1,5 @@
+{
+  "文字已保存，有 {0} 段待定位。": "Text saved; {0} segments still need timing.",
+  "待定位文字不能定位回听；TXT 保留全文，完成定位前不能导出 SRT/VTT。": "Untimed text cannot seek audio. TXT retains the full text; SRT/VTT export is unavailable until timing is complete.",
+  "已用时 {0:F1} 秒。": "Elapsed: {0:F1} seconds."
+}

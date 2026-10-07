@@ -1,0 +1,55 @@
+{
+  "Schema": "m5b-model-sources-1",
+  "RecordedDate": "2026-10-04",
+  "BaseBundleNoticeSha256": "41eadbfc9a26fdf86fef7aa23375f485d08090d372ce51421e3317c95ef292cc",
+  "DefaultEmbeddingModel": "Models/Sherpa/nemo_en_titanet_large.onnx",
+  "LegacyEmbeddingModel": "Models/Sherpa/3dspeaker-eres2net.onnx",
+  "Model": {
+    "Name": "NVIDIA NeMo TitaNet-Large speaker verification model, sherpa-onnx ONNX conversion",
+    "Author": "NVIDIA",
+    "License": "CC-BY-4.0",
+    "LicenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "Source": "https://huggingface.co/nvidia/speakerverification_en_titanet_large/tree/0dc382f40121a5fbd34db10a2bb04d826c2be6a8",
+    "ConversionRelease": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models",
+    "ConversionSource": "https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.8/scripts/nemo/speaker-verification",
+    "ConversionSourceLicense": "Apache-2.0",
+    "ConversionCopyright": "Copyright 2024 Xiaomi Corp. (author: Fangjun Kuang)",
+    "Changes": "Upstream NeMo model converted to ONNX by sherpa-onnx; ProjectEcho redistributes the downloaded ONNX bytes without further modification. The packaged v1.13.8 conversion script is source reference, not proof of the historical converter commit used for the released asset.",
+    "Endorsement": "No endorsement by NVIDIA, Xiaomi, sherpa-onnx contributors or Creative Commons is implied."
+  },
+  "Downloads": [
+    {
+      "Path": "models/nemo_en_titanet_large.onnx",
+      "BundlePath": "Models/Sherpa/nemo_en_titanet_large.onnx",
+      "Bytes": 101405493,
+      "Sha256": "d51abcf31717ef28162f26acb9d44dd4127c3d44c9b8624f699f3425daca8e77",
+      "Url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_large.onnx"
+    },
+    {
+      "Path": "provenance/titanet-large-model-card-pinned.md",
+      "BundlePath": "LICENSES/Sherpa/titanet-large-model-card.md",
+      "Bytes": 8114,
+      "Sha256": "fc21d601b62a6645490308611caf681958d8141dcf21e7fc5c53f1d7bc97e2f7",
+      "Url": "https://huggingface.co/nvidia/speakerverification_en_titanet_large/raw/0dc382f40121a5fbd34db10a2bb04d826c2be6a8/README.md"
+    },
+    {
+      "Path": "provenance/CC-BY-4.0.txt",
+      "BundlePath": "LICENSES/Sherpa/CC-BY-4.0.txt",
+      "Sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+      "Url": "https://creativecommons.org/licenses/by/4.0/legalcode.txt"
+    },
+    {
+      "Path": "provenance/titanet-export-onnx.py.txt",
+      "BundlePath": "LICENSES/Sherpa/titanet-export-onnx.py.txt",
+      "Sha256": "9254a77f40f32fd80a76698bbe1e3eeb63781a8f0a9434dae4363d8e72c9903d",
+      "Url": "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.8/scripts/nemo/speaker-verification/export-onnx.py"
+    },
+    {
+      "Path": "provenance/titanet-conversion-README.md",
+      "BundlePath": "LICENSES/Sherpa/titanet-conversion-README.md",
+      "Sha256": "e2813fef3077b3d034b7fd85f2973bbac15075f8fdf596fd32bbba0eee49bb65",
+      "Url": "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.8/scripts/nemo/speaker-verification/README.md"
+    }
+  ],
+  "Policy": "Only public licensed runtime, models and notices are bundled. Never copy Data, diagnostic directories, audio fixtures, transcripts, model embeddings or user settings. Existing meeting/user model configuration is preserved; the default applies to a new bundled preset only."
+}

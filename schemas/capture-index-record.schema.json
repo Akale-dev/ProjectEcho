@@ -57,6 +57,10 @@
             "storageVersion": {
               "const": "m1-recording-1",
               "type": "string"
+            },
+            "timelinePolicy": {
+              "description": "Missing means legacy elapsed-v1. pause-excluded-v1 uses each segment's cumulative pause offset while preserving raw QPC/device clocks.",
+              "enum": ["elapsed-v1", "pause-excluded-v1"]
             }
           }
         },
@@ -85,6 +89,11 @@
             "processingMode": {
               "description": "Observed per-stream processing selection; absent/null in legacy records. Does not replace raw clocks or integrity validation.",
               "enum": [null, "shared-default", "shared-raw", "shared-converted"]
+            },
+            "excludedPause100ns": {
+              "description": "Cumulative pause/preparation exclusion for this segment. Required by the semantic reader for pause-excluded-v1; missing is zero only for legacy elapsed-v1.",
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
             },
             "format": {
               "type": "object",
@@ -364,6 +373,7 @@
                 null,
                 "crossing_frame",
                 "after_boundary",
+                "outside_active_boundary",
                 "timestamp_ambiguous"
               ]
             },

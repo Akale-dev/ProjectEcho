@@ -54,6 +54,20 @@
         }]
       }
     },
+    "alignment": {
+      "type": ["object", "null"], "additionalProperties": false,
+      "required": ["evidenceFile", "evidenceSha256", "inputWaveSha256", "sourceMixSha256", "sampleRate", "frameCount", "timelinePolicy", "policy"],
+      "properties": {
+        "evidenceFile": { "type": "string", "pattern": "^transcripts/original/[0-9a-f]{32}/alignment\\.json$" },
+        "evidenceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "inputWaveSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "sourceMixSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "sampleRate": { "const": 16000 },
+        "frameCount": { "type": "integer", "minimum": 1 },
+        "timelinePolicy": { "enum": ["elapsed-v1", "pause-excluded-v1", "file-v1"] },
+        "policy": { "type": "string", "minLength": 1 }
+      }
+    },
     "warnings": { "type": "array", "maxItems": 10000, "items": { "type": "string" } }
   },
   "allOf": [{

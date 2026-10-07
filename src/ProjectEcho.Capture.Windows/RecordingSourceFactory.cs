@@ -8,6 +8,8 @@ namespace ProjectEcho.Capture.Windows;
 
 internal sealed class RecordingSourceFactory : IRecordingSourceFactory
 {
+    public IRecordingProcessLifetime? WatchProcess(CaptureOptions options) => options.Mode == SourceMode.ProcessTree
+        ? new RecordingProcessLifetime(options.ProcessSource!.Root) : null;
     public void Preflight(RecordingOptions options)
     {
         if (options.MaximumSeconds is < 1 or > 28800 || options.ExpectedMinutes is < 1 or > 480)
@@ -151,8 +153,8 @@ internal sealed class RecordingSourceFactory : IRecordingSourceFactory
                     finally { if (frames > 0) readMetrics.Released(heldAt, Stopwatch.GetTimestamp()); }
                 }
                 if (frames <= 0) return null;
-                if (copied == ScratchCopyResult.ExceedsPacketLimit) throw new IOException("音频包超过1MiB限额。");
-                if (copied == ScratchCopyResult.ExceedsScratchCapacity) throw new IOException("音频包超过已协商的预分配采集缓冲区；未扩大采集范围。");
+                if (copied == ScratchCopyResult.ExceedsPacketLimit) throw new IOException($"音频包超过1MiB限额；rawFrames={frames}，retainedFrames={keep}，blockAlign={Format.BlockAlign}，reportedBufferFrames={bufferFrames}，scratchBytes={scratch.Capacity}。未扩大采集范围。");
+                if (copied == ScratchCopyResult.ExceedsScratchCapacity) throw new IOException($"音频包超过预分配采集缓冲区；rawFrames={frames}，retainedFrames={keep}，blockAlign={Format.BlockAlign}，reportedBufferFrames={bufferFrames}，scratchBytes={scratch.Capacity}。未扩大采集范围。");
                 if (copied == ScratchCopyResult.MissingPointer) throw new IOException("非静音包为空指针。");
                 byte[] pcm = scratch.MaterializeAndClear();
                 return new(pcm, frames, keep, unchecked((ulong)device), unchecked((ulong)qpc), (int)flags,

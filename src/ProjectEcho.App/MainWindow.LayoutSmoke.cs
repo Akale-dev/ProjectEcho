@@ -50,7 +50,7 @@ public partial class MainWindow
                 {
                     NavigateTo(page);
                     await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
-                    if (!ScopeText.IsVisible || StopButton.IsVisible != (page == 0) || ReplayPlayerBar.IsVisible != (page == 5))
+                    if (ScopeText.IsVisible != (page is 0 or 4) || StopButton.IsVisible != (page == 0) || ReplayPlayerBar.IsVisible != (page == 5))
                         throw new InvalidOperationException("录音栏/回听栏未限制在对应页面。");
                     SaveLayoutImage(directory, $"{size.Label}-page-{page + 1}-light.png", 1, files);
                     if (page == 3 && transcriptionView is not null)

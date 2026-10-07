@@ -10,8 +10,11 @@ internal static class M2TimelineRenderer
     internal const float PeakCeiling = 0.8912509f;
     private const int BlockFrames = 8192;
 
-    internal static TimelineRenderLevel Render(CaptureResult capture, string destination, CancellationToken token)
+    internal static TimelineRenderLevel Render(CaptureResult capture, string destination, CancellationToken token, IProgress<MixProgress>? progress = null)
     {
+        var reporter = new MixProgressReporter(progress);
+        RecordingTimeline.Validate(capture.TimelinePolicy);
+        foreach (var track in capture.Tracks) RecordingTimeline.Validate(capture.TimelinePolicy, track.ExcludedPause100ns);
         long frames = FramesForDuration(capture.Duration100ns);
         var sourceGroups = capture.Tracks.GroupBy(t => t.SourceId, StringComparer.Ordinal).ToArray();
         if (sourceGroups.Length > 2 || sourceGroups.Any(g => g.Key is not ("remote" or "mic")))
@@ -25,18 +28,21 @@ internal static class M2TimelineRenderer
             // 0.4 gain lowered every quiet recording, while unity followed by
             // PCM clipping would irreversibly distort overlapping loud tracks.
             var meter = new TruePeakMeter(SampleRate);
+            reporter.Report(MixStages.RenderAnalysis, 0, frames, true);
             for (long start = 0; start < frames; start += BlockFrames)
             {
                 token.ThrowIfCancellationRequested(); int count = (int)Math.Min(BlockFrames, frames - start);
                 Array.Clear(mix);
                 foreach (var source in sources) source.Add(start, count, mix, token);
                 meter.AppendSamples(mix.AsSpan(0, count));
+                reporter.Report(MixStages.RenderAnalysis, start + count, frames);
             }
             var peak = meter.Complete();
             double ceiling = Math.Pow(10, (TruePeakProtection.ProcessingCeilingDbTp - 0.01) / 20);
             double gain = peak.TruePeakLinear > ceiling ? ceiling / peak.TruePeakLinear : 1;
             foreach (var source in sources) source.Reset();
             using var output = new MonoPcmWriter(destination, frames);
+            reporter.Report(MixStages.Rendering, 0, frames, true);
             for (long start = 0; start < frames; start += BlockFrames)
             {
                 token.ThrowIfCancellationRequested(); int count = (int)Math.Min(BlockFrames, frames - start);
@@ -44,6 +50,7 @@ internal static class M2TimelineRenderer
                 foreach (var source in sources) source.Add(start, count, mix, token);
                 if (gain < 1) for (int i = 0; i < count; i++) mix[i] *= (float)gain;
                 output.Write(mix.AsSpan(0, count));
+                reporter.Report(MixStages.Rendering, start + count, frames);
             }
             output.Finish();
             return new(gain, peak, sources.Sum(source => source.SmoothedPackets), sources.Select(source => source.MaximumCorrection100ns).DefaultIfEmpty().Max());
@@ -88,11 +95,11 @@ internal static class M2TimelineRenderer
                 long nextOffset = 0;
                 foreach (var packet in track.Packets)
                 {
-                    if (!packet.TimestampValid || (packet.Flags & 4) != 0 || packet.FrameCount <= 0 ||
+                    if (!packet.TimestampValid || (packet.Flags & 4) != 0 || packet.QpcPosition100ns < epoch || packet.FrameCount <= 0 ||
                         packet.RetainedFrameOffset < 0 || packet.RetainedFrameOffset + (long)packet.FrameCount > packet.RawFrameCount || packet.WaveFrameOffset != nextOffset)
                         throw new InvalidDataException("原轨 packet 时间或存储范围无效。");
                     nextOffset = checked(nextOffset + packet.FrameCount);
-                    double start = (double)((Int128)packet.QpcPosition100ns - epoch) * SampleRate / AudioClock.UnitsPerSecond +
+                    double start = (double)RecordingTimeline.RawPosition100ns(packet.QpcPosition100ns, epoch, track.ExcludedPause100ns) * SampleRate / AudioClock.UnitsPerSecond +
                         (double)packet.RetainedFrameOffset * SampleRate / track.Format.SampleRate;
                     double end = start + (double)packet.FrameCount * SampleRate / track.Format.SampleRate;
                     if (start < -0.0001 || end > totalFrames + 0.01) throw new InvalidDataException("包时间越过已确认完整会话边界。");
@@ -118,7 +125,7 @@ internal static class M2TimelineRenderer
                     b.Packet.ClockJitter100ns != DevicePacketClock.BoundedJitter100ns(
                         a.Track.SourceId, a.Track.Format.SampleRate, a.Packet, b.Packet)))
                     throw new InvalidDataException("混音的时钟抖动声明缺少连续设备帧/原始QPC证据。");
-                double rawStart = (double)((Int128)a.Packet.QpcPosition100ns - epoch) * SampleRate / AudioClock.UnitsPerSecond;
+                double rawStart = (double)RecordingTimeline.RawPosition100ns(a.Packet.QpcPosition100ns, epoch, a.Track.ExcludedPause100ns) * SampleRate / AudioClock.UnitsPerSecond;
                 double rawDuration = (double)(b.Packet.QpcPosition100ns - a.Packet.QpcPosition100ns) * SampleRate / AudioClock.UnitsPerSecond;
                 double nominal = (double)a.Packet.RawFrameCount * SampleRate / a.Track.Format.SampleRate;
                 // Apply the existing quantization tolerance to the complete raw
@@ -160,6 +167,27 @@ internal static class M2TimelineRenderer
                     a.Packet.RetainedFrameOffset + (long)a.Packet.FrameCount == a.Packet.RawFrameCount &&
                     deviceOrderValid && deviation < 0 && deviation >= -AudioClock.UnitsPerSecond;
                 if (!declaredJitter && !quantizedContiguous && !negativeQuantization) continue;
+                int firstRetainedOffset = previous[0].Packet.RetainedFrameOffset;
+                if (firstRetainedOffset > 0)
+                {
+                    // Resume can discard a raw packet's pre-Start prefix. Its
+                    // first retained frame is a confirmed privacy/start boundary,
+                    // not an interior point that jitter correction may move into
+                    // the preceding recording segment. Anchor the retained start
+                    // exactly, then map only its retained suffix to the next raw
+                    // QPC anchor. Map all chunk fragments together as before.
+                    double retainedStart = previous[0].Start;
+                    double retainedDuration = rawStart + rawDuration - retainedStart;
+                    int retainedRawFrames = a.Packet.RawFrameCount - firstRetainedOffset;
+                    if (retainedRawFrames <= 0 || retainedDuration <= 0)
+                        throw new InvalidDataException("恢复首包的保留区间不能映射到下一实际时钟锚点。");
+                    foreach (var fragment in previous)
+                    {
+                        fragment.Start = retainedStart + retainedDuration * (fragment.Packet.RetainedFrameOffset - firstRetainedOffset) / retainedRawFrames;
+                        fragment.End = retainedStart + retainedDuration * (fragment.Packet.RetainedFrameOffset + fragment.Packet.FrameCount - firstRetainedOffset) / retainedRawFrames;
+                    }
+                    continue;
+                }
                 foreach (var fragment in previous)
                 {
                     fragment.Start = rawStart + rawDuration * fragment.Packet.RetainedFrameOffset / fragment.Packet.RawFrameCount;
@@ -232,7 +260,7 @@ internal static class M2TimelineRenderer
                     foreach (var span in packets[index])
                     {
                         double mapped = startTime + (double)((Int128)span.Packet.DevicePosition + span.Packet.RetainedFrameOffset - firstDevice) * step;
-                        double raw = (double)((Int128)span.Packet.QpcPosition100ns - epoch) * SampleRate / AudioClock.UnitsPerSecond
+                        double raw = (double)RecordingTimeline.RawPosition100ns(span.Packet.QpcPosition100ns, epoch, span.Track.ExcludedPause100ns) * SampleRate / AudioClock.UnitsPerSecond
                             + (double)span.Packet.RetainedFrameOffset * SampleRate / span.Track.Format.SampleRate;
                         maximum = Math.Max(maximum, Math.Max(Math.Abs(mapped - raw),
                             Math.Abs(mapped + span.Packet.FrameCount * step - raw - (double)span.Packet.FrameCount * SampleRate / span.Track.Format.SampleRate)));

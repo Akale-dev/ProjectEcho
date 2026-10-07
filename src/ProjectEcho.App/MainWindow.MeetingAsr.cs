@@ -34,6 +34,7 @@ public partial class MainWindow
 
     private WhisperConfiguration? ReadDefaultWhisperConfiguration()
     {
+        EnsureDataRootAvailable();
         var config = PortableWhisperConfiguration.Load(WhisperConfigurationPath, AppContext.BaseDirectory);
         return config is null ? null : config with { InitialPrompt = null };
     }
@@ -65,7 +66,7 @@ public partial class MainWindow
     }
 
     // Capture before starting an import/recording. Executing the returned action cannot pick up a later default edit.
-    private Action<string> PrepareNewMeetingWhisperDefaults()
+    private Action<string> PrepareLegacyMeetingWhisperDefaults()
     {
         WhisperConfiguration? snapshot;
         try

@@ -202,15 +202,24 @@ internal static class M1IntegrationProbe
             perSegment.Any(pair => pair.Value > (long)(30.2 * ProbeToneSource.SampleRate) && chunkSegments.Values.Count(id => id == pair.Key) >= 2);
         var orderedTracks = recovery.Capture.Tracks.Where(track => track.Packets.Count > 0)
             .OrderBy(track => track.Packets[0].QpcPosition100ns).ToArray();
-        double maximumPacketGap = 0;
+        double maximumPacketGap = 0, maximumRecordingGap = 0;
         var ranges = orderedTracks.SelectMany(track => track.Packets.Select(packet => (
             Start: ((double)packet.QpcPosition100ns - recovery.Capture.EpochQpc100ns) / 10_000_000 + packet.RetainedFrameOffset / (double)track.Format.SampleRate,
-            End: ((double)packet.QpcPosition100ns - recovery.Capture.EpochQpc100ns) / 10_000_000 + (packet.RetainedFrameOffset + packet.FrameCount) / (double)track.Format.SampleRate)))
+            End: ((double)packet.QpcPosition100ns - recovery.Capture.EpochQpc100ns) / 10_000_000 + (packet.RetainedFrameOffset + packet.FrameCount) / (double)track.Format.SampleRate,
+            ExcludedSeconds: track.ExcludedPause100ns / 10_000_000d)))
             .OrderBy(range => range.Start).ToArray();
-        for (int i = 1; i < ranges.Length; i++) maximumPacketGap = Math.Max(maximumPacketGap, ranges[i].Start - ranges[i - 1].End);
+        for (int i = 1; i < ranges.Length; i++)
+        {
+            maximumPacketGap = Math.Max(maximumPacketGap, ranges[i].Start - ranges[i - 1].End);
+            maximumRecordingGap = Math.Max(maximumRecordingGap,
+                ranges[i].Start - ranges[i].ExcludedSeconds - (ranges[i - 1].End - ranges[i - 1].ExcludedSeconds));
+        }
         if (segments.Count < 2) errors.Add("resume_did_not_create_new_segment");
         if (!crossed) errors.Add("resumed_segment_did_not_cross_30_second_chunk");
-        if (gap is < 1.8 or > 3.5 || maximumPacketGap is < 1.8 or > 3.7) errors.Add("pause_timeline_gap_mismatch");
+        // Raw QPC must still contain the real stop interval. Only the persisted
+        // listening/ACK timeline changes; never turn that removal into a claim
+        // of device continuity or discard the independent raw-gap check.
+        errors.AddRange(CheckPauseTimeline(recovery.Capture.TimelinePolicy, gap, maximumPacketGap, maximumRecordingGap));
         if (!boundaries.Any(boundary => boundary.Operation == "pause") || !boundaries.Any(boundary => boundary.Operation == "stop")) errors.Add("missing_persisted_capture_boundary");
         if (bookmark.Operation != "bookmark" || bookmark.EffectiveSessionUs > pause.EffectiveSessionUs) errors.Add("bookmark_ack_order_mismatch");
         var expectedEvents = new Dictionary<string, string>
@@ -233,7 +242,8 @@ internal static class M1IntegrationProbe
         }
         if (expectedEvents.Count != 0) errors.Add("acknowledged_control_event_not_persisted");
         if (Directory.EnumerateFiles(directory, "*.partial", SearchOption.AllDirectories).Any()) errors.Add("unfinalized_partial_file");
-        return new(errors.Count == 0, segments.Count, chunkFrames.Count, gap, maximumPacketGap, crossed, perSegment, errors);
+        return new(errors.Count == 0, segments.Count, chunkFrames.Count, gap, maximumPacketGap, crossed, perSegment, errors,
+            recovery.Capture.TimelinePolicy, maximumRecordingGap);
     }
 
     private static SignalReport Analyze(CaptureResult capture)
@@ -257,6 +267,8 @@ internal static class M1IntegrationProbe
                     used += count;
                 }
                 var packet = track.Packets.First(packet => offset >= packet.WaveFrameOffset && offset < packet.WaveFrameOffset + packet.FrameCount);
+                // These windows identify signals emitted at a known producer
+                // wall-clock time, so deliberately use raw QPC, not compact playback time.
                 double at = ((double)packet.QpcPosition100ns - capture.EpochQpc100ns) / 10_000_000 +
                     (packet.RetainedFrameOffset + offset - packet.WaveFrameOffset) / (double)track.Format.SampleRate;
                 double sine660 = 0, cosine660 = 0, sine880 = 0, cosine880 = 0;
@@ -290,8 +302,37 @@ internal static class M1IntegrationProbe
     }
 
     private static string Hash(string file) { using var stream = File.OpenRead(file); return Convert.ToHexString(SHA256.HashData(stream)); }
+
+    private static List<string> CheckPauseTimeline(string policy, double acknowledgementGap, double rawPacketGap, double recordingGap)
+    {
+        var errors = new List<string>();
+        if (rawPacketGap is < 1.8 or > 3.7) errors.Add("pause_raw_capture_gap_mismatch");
+        if (policy == RecordingTimeline.ExcludePaused)
+        {
+            if (acknowledgementGap != 0 || recordingGap > .25) errors.Add("pause_recording_timeline_not_compact");
+        }
+        else if (policy != RecordingTimeline.Elapsed) errors.Add("unknown_recording_timeline_policy");
+        else if (acknowledgementGap is < 1.8 or > 3.5) errors.Add("pause_timeline_gap_mismatch");
+        return errors;
+    }
+
+    internal static void RunTimelineSyntheticChecks()
+    {
+        void Need(bool value, string message) { if (!value) throw new InvalidDataException(message); }
+        Need(CheckPauseTimeline(RecordingTimeline.Elapsed, 2, 2.01, 2.01).Count == 0, "Legacy elapsed pause audit changed.");
+        Need(CheckPauseTimeline(RecordingTimeline.ExcludePaused, 0, 2.01, .01).Count == 0,
+            "Compact recording clock was confused with a shortened raw capture stop interval.");
+        Need(CheckPauseTimeline(RecordingTimeline.ExcludePaused, 0, .01, .01).Contains("pause_raw_capture_gap_mismatch"),
+            "Pause compaction disabled the independent raw capture-gap check.");
+        Need(CheckPauseTimeline(RecordingTimeline.ExcludePaused, 2, 2.01, 2.01).Contains("pause_recording_timeline_not_compact"),
+            "Audit accepted paused silence in a new compact recording timeline.");
+        Need(CheckPauseTimeline("future-unknown", 0, 2.01, .01).Contains("unknown_recording_timeline_policy"),
+            "Audit guessed an unknown time mapping.");
+    }
+
     private sealed record StorageReport(bool Pass, int SegmentCount, int ChunkCount, double AcknowledgedPauseSeconds,
-        double LargestPacketTimelineGapSeconds, bool CrossedThirtySecondChunk, Dictionary<string, long> SegmentFrames, IReadOnlyList<string> Errors);
+        double LargestPacketTimelineGapSeconds, bool CrossedThirtySecondChunk, Dictionary<string, long> SegmentFrames, IReadOnlyList<string> Errors,
+        string TimelinePolicy, double LargestRecordingTimelineGapSeconds);
     private sealed record ToneWindow(double StartSeconds, double Seconds, double Amplitude660, double Amplitude880);
     private sealed record SignalReport(bool Pass, double Main660Peak, double Main660EquivalentSeconds, bool Initial880Detected,
         double Final880Peak, double Final880EquivalentSeconds, double? Final880StartSeconds, double? Final880EndSeconds,

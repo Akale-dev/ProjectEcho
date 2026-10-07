@@ -14,6 +14,7 @@ namespace ProjectEcho.App;
 public partial class MainWindow : Window
 {
     private readonly string projectRoot;
+    private readonly bool isolatedTestWindow;
     private string dataRoot;
     private MediaPlayer player = new() { Volume = 1 };
     private SessionState state = SessionState.Idle;
@@ -42,32 +43,36 @@ public partial class MainWindow : Window
     private string? pendingControl;
     private string? pendingControlRequestId;
     private long elapsedUs;
+    // Capture-thread ACKs own the frozen active timeline, including while Stop
+    // drains a paused session. Delayed health events cannot advance this boundary.
+    private long? pausedRecordingElapsedUs;
     private Action<string>? pendingMeetingWhisperDefaults;
     private SourceSnapshot? snapshot;
 
     public MainWindow() : this(enumerateSourcesOnLoad: true) { }
 
-    internal MainWindow(bool enumerateSourcesOnLoad)
+    internal MainWindow(bool enumerateSourcesOnLoad, string? dataRootPreferencePathOverride = null, bool? refreshLibraryOnLoad = null)
     {
         projectRoot = FindProjectRoot();
+        isolatedTestWindow = !enumerateSourcesOnLoad;
         levelPreviewNativeEnabled = enumerateSourcesOnLoad;
         UiText.SetLanguage(enumerateSourcesOnLoad ? ReadInterfaceLanguage() : "zh-CN");
         InitializeComponent();
-        dataRoot = File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.json"))
-            ? Path.Combine(AppContext.BaseDirectory, "Data") : Path.Combine(projectRoot, ".local");
-        dataRoot = ValidateLocalDataRoot(dataRoot);
+        dataRoot = InitializeDataRoot(enumerateSourcesOnLoad, dataRootPreferencePathOverride);
         InitializeTranscription();
         InitializeReplay();
         InitializeRecordingValidation();
         InitializeLevelMeterDisplay();
         ResetRecordingLevelCounters();
-        DataRootText.Text = dataRoot;
+        ShowDataRootState();
         TitleBox.Text = SessionDefaults.Title(DateTimeOffset.Now);
         EnvironmentText.Text = UiText.F($"Windows build {Environment.OSVersion.Version.Build} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · NAudio 3.1.0 · 不采集的预检");
         initialized = true;
         UpdateLanguageLabel();
         UpdateNavigation();
         UpdateControls();
+        if (refreshLibraryOnLoad ?? enumerateSourcesOnLoad)
+            Loaded += (_, _) => { if (!libraryRead && startupLibraryWork.IsCompleted) startupLibraryWork = RefreshStartupLibraryAsync(); };
         if (enumerateSourcesOnLoad) Loaded += async (_, _) => await RefreshSourcesAsync();
     }
 
@@ -82,6 +87,7 @@ public partial class MainWindow : Window
 
     private void SetStatus(string message)
     {
+        message = PresentRecordingDiagnostic(message);
         StatusBox.Text = message;
         LogRecordingStatus(message);
     }
@@ -113,6 +119,7 @@ public partial class MainWindow : Window
 
     private CaptureOptions OptionsForCurrentSelection(bool trial = false)
     {
+        EnsureDataRootAvailable();
         var directory = Path.Combine(dataRoot, trial ? "M0Recordings" : "M1Recordings",
             DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
         return new CaptureOptions(ModeBox.SelectedIndex == 0 ? SourceMode.ProcessTree : SourceMode.EndpointLoopback,
@@ -138,14 +145,14 @@ public partial class MainWindow : Window
         // The mic control stays reachable during a meeting. Lock source fields individually.
         SelectionPanel.IsEnabled = !WindowCloseRequested && !deletingMeeting;
         var selectionEditable = editable && !refreshing && !preflighting && !preparingCapturePreviewStop && !microphonePreviewStopping;
-        ModeBox.IsEnabled = BrowserSetupExpander.IsEnabled = RefreshButton.IsEnabled = selectionEditable;
+        ModeBox.IsEnabled = RefreshButton.IsEnabled = selectionEditable;
         RecoveryPanel.IsEnabled = editable && !recoveryBusy;
         RecoveryBox.IsEnabled = CanNavigateMeetings;
         InspectRecoveryButton.IsEnabled = editable && !recoveryBusy && selectedMeetingDirectory is not null;
         RecoverButton.IsEnabled = InspectRecoveryButton.IsEnabled && !selectedMeetingImported;
         TitleBox.IsEnabled = selectionEditable;
-        PreflightButton.IsEnabled = selectionEditable;
-        StartButton.IsEnabled = selectionEditable;
+        UpdateAutoStopControls(selectionEditable);
+        StartButton.IsEnabled = selectionEditable && DataRootAvailable;
         StopButton.IsEnabled = state is SessionState.Recording or SessionState.Paused;
         var canControl = !WindowCloseRequested && !isTrial && !starting && pendingControl is null && state is (SessionState.Recording or SessionState.Paused);
         PauseButton.IsEnabled = canControl;
@@ -158,6 +165,8 @@ public partial class MainWindow : Window
             ? UiText.T("试听混音（有警告）") : UiText.T("播放完整录音");
         StopPlaybackButton.IsEnabled = !WindowCloseRequested && SessionRules.CanPlayback(state);
         UpdateExportControls();
+        RefreshRecordingProcessingCard();
+        RefreshMeetingDuration();
         if (preflighting || preparingCapturePreviewStop || microphonePreviewStopping) DataRootButton.IsEnabled = ImportAudioButton.IsEnabled = false;
         UpdateTranscriptionControls();
         UpdateReplayControls();
@@ -190,7 +199,7 @@ public partial class MainWindow : Window
         : state switch
         {
             SessionState.Recording => isTrial ? UiText.T("正在进行 10 秒试录") : UiText.T("正在录音"),
-            SessionState.Paused => UiText.T("已暂停 · 时间轴继续，不采集"),
+            SessionState.Paused => UiText.T("已暂停 · 计时停止，两路均不采集"),
             SessionState.Saved => UiText.T("原轨已保存"),
             SessionState.SavedIncomplete => UiText.T("原件已保留 · 完整性有警告"),
             SessionState.Faulted or SessionState.StoppedWithError => UiText.T("录音异常 · 保存状态请查看详情"),
@@ -198,12 +207,6 @@ public partial class MainWindow : Window
         };
 
     private static string FormatElapsed(long microseconds) => TimelineTimestamp.FromMicroseconds(microseconds);
-
-    private async void Preflight_Click(object sender, RoutedEventArgs e)
-    {
-        if (!PreflightButton.IsEnabled) return;
-        await ValidateRecordingBeforeStartAsync(OptionsForCurrentSelection(), trial: false);
-    }
 
     private static string DescribePreflight(PreflightResult result, bool trial) =>
         $"{(result.CanStart ? UiText.T("静态预检通过；实际 API 激活与有声结果待主动录音验证") : UiText.T("不能开始录音"))}\n{result.ScopeDescription}\n" +
@@ -217,7 +220,10 @@ public partial class MainWindow : Window
     private async Task StartCaptureAsync(bool trial)
     {
         if (!SessionRules.CanStart(state) || refreshing || preflighting || preparingCapturePreviewStop || microphonePreviewStopping || WindowCloseRequested || deletingMeeting) return;
+        if (!DataRootAvailable) { ShowDataRootState(); return; }
         var options = OptionsForCurrentSelection(trial);
+        var autoStop = AutoStopForCurrentSelection();
+        confirmedAutoStop = autoStop;
         string titleBeforeStart = TitleBox.Text;
         // The user-enabled microphone preview must relinquish the device before
         // preflight/recording owns a capture client. Preview PCM is never written.
@@ -228,16 +234,20 @@ public partial class MainWindow : Window
         // clear a usable historical mix or strand every meeting in Faulted.
         if (!await ValidateRecordingBeforeStartAsync(options, trial)) { preparingCapturePreviewStop = false; UpdateControls(); return; }
         if (WindowCloseRequested || deletingMeeting || !SessionRules.CanStart(state)) { preparingCapturePreviewStop = false; UpdateControls(); return; }
+        YieldQwenToRecording();
+        if (!trial) BeginRecordingProcessing(options.SessionDirectory, options.Title);
+        else ClearRecordingProcessing();
         pendingMeetingWhisperDefaults = trial ? null : PrepareNewMeetingWhisperDefaults();
         FlushMeetingWhisperPrompt();
         recordingLogDirectory = trial ? null : options.SessionDirectory;
         pendingRecordingLog.Clear();
-        LogRecordingStatus($"Ver. M3H · Windows {Environment.OSVersion.Version} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · NAudio 3.1.0\n录音请求：{options.Mode}；MicEnabled={options.MicrophoneEnabled}。");
+        LogRecordingStatus($"Ver. M5E Pro · Windows {Environment.OSVersion.Version} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · NAudio 3.1.0\n录音请求：{options.Mode}；MicEnabled={options.MicrophoneEnabled}。");
         isTrial = trial;
         fixedMicrophoneId = options.MicrophoneDeviceId;
         fixedMicrophoneName = options.MicrophoneEnabled ? (MicBox.SelectedItem as AudioDevice)?.Name : null;
         microphoneEnabled = options.MicrophoneEnabled;
         elapsedUs = 0;
+        pausedRecordingElapsedUs = null;
         pendingControl = null;
         pendingControlRequestId = null;
         pendingMicrophone = null;
@@ -272,7 +282,7 @@ public partial class MainWindow : Window
                 if (ReferenceEquals(host, createdHost)) HandleHostEvent(value);
             });
             if (trial) await host.StartAsync(options, projectRoot, () => stopRequested);
-            else await host.StartRecordingAsync(new RecordingOptions(options), projectRoot, () => stopRequested);
+            else await host.StartRecordingAsync(new RecordingOptions(options, AutoStop: autoStop), projectRoot, () => stopRequested);
             launching = false;
             if (stopRequested) await host.StopAsync();
         }
@@ -289,6 +299,7 @@ public partial class MainWindow : Window
             state = SessionState.StoppedWithError;
             ConnectionText.Text = UiText.T("捕获连接：已结束");
             StorageText.Text = UiText.T("保存状态：未确认完整保存");
+            MarkRecordingProcessingUnconfirmed();
             SetStatus(UiText.T("未确认完整录音：") + ex.Message);
             recordingLogDirectory = null;
             ResetConsentAfterSession();
@@ -341,13 +352,19 @@ public partial class MainWindow : Window
                 if (!stopRequested) SetStatus(value.Message ?? (isTrial ? UiText.T("正在试录") : UiText.T("正在录音")));
                 break;
             case "health" when value.Health is { } health && state is (SessionState.Recording or SessionState.Paused or SessionState.Stopping):
-                elapsedUs = health.ElapsedUs;
-                SetLevelMeterTargets(state == SessionState.Paused ? 0 : health.RemotePeak,
-                    state == SessionState.Paused || !microphoneEnabled ? 0 : health.MicPeak);
-                RemoteHealth.Text = UiText.F($"{health.RemoteStatus} · {health.RemoteFrames:N0} 帧");
-                MicHealth.Text = UiText.F($"{health.MicStatus} · {health.MicFrames:N0} 帧");
+                bool clockPaused = pausedRecordingElapsedUs is not null || state == SessionState.Paused;
+                if (!clockPaused && !health.Paused)
+                {
+                    elapsedUs = Math.Max(elapsedUs, health.ElapsedUs);
+                    SetLevelMeterTargets(health.RemotePeak, microphoneEnabled && health.MicrophoneEnabled ? health.MicPeak : 0);
+                    RemoteHealth.Text = UiText.F($"{health.RemoteStatus} · {health.RemoteFrames:N0} 帧");
+                    if (!microphoneEnabled) MicHealth.Text = UiText.T("关闭 · 不采集");
+                    else if (health.MicrophoneEnabled) MicHealth.Text = UiText.F($"{health.MicStatus} · {health.MicFrames:N0} 帧");
+                }
+                else if (clockPaused) ShowPausedCaptureHealth();
                 ConnectionText.Text = UiText.T("捕获连接：CaptureHost 健康回报已收到");
-                StorageText.Text = UiText.F($"保存状态：写入中；最近持久检查点 {FormatElapsed(health.LastCheckpointUs)}；可用磁盘 {health.AvailableBytes / 1_000_000:N0} MB");
+                if (state != SessionState.Stopping)
+                    StorageText.Text = UiText.F($"保存状态：写入中；最近持久检查点 {FormatElapsed(health.LastCheckpointUs)}；可用磁盘 {health.AvailableBytes / 1_000_000:N0} MB");
                 break;
             case "ack" when value.Ack is { } ack:
                 // Health reports never complete a requested privacy/state transition.
@@ -356,6 +373,8 @@ public partial class MainWindow : Window
                 if (state is not (SessionState.Recording or SessionState.Paused) ||
                     (!systemPause && (pendingControl != ack.Operation || pendingControlRequestId != ack.RequestId))) break;
                 if (!systemPause) { pendingControl = null; pendingControlRequestId = null; }
+                if (ack.Operation == "auto_stop_settings" && ack.AutoStopSettings is { } automaticSettings)
+                { confirmedAutoStop = automaticSettings; SetAutoStopSelection(confirmedAutoStop); }
                 if (ack.Operation == "mic_on" && ack.MicrophoneEnabled && pendingMicrophone is { } enabledDevice)
                 {
                     fixedMicrophoneId = enabledDevice.Id;
@@ -365,13 +384,21 @@ public partial class MainWindow : Window
                 microphoneEnabled = ack.MicrophoneEnabled;
                 SetMicrophoneRequested(microphoneEnabled);
                 state = ack.Paused ? SessionState.Paused : SessionState.Recording;
-                elapsedUs = Math.Max(elapsedUs, ack.EffectiveSessionUs);
                 if (ack.Paused)
                 {
-                    ResetLevelMeterDisplay();
-                    RemoteHealth.Text = UiText.T("暂停 · 不采集");
-                    MicHealth.Text = microphoneEnabled ? UiText.T("暂停 · 不采集，恢复后开启") : UiText.T("关闭 · 不采集");
+                    // Pause's capture boundary is authoritative even if a health
+                    // report arrived first. Other paused controls cannot add time.
+                    pausedRecordingElapsedUs = ack.Operation == "pause" ? ack.EffectiveSessionUs
+                        : pausedRecordingElapsedUs ?? elapsedUs;
+                    elapsedUs = pausedRecordingElapsedUs.Value;
+                    ShowPausedCaptureHealth();
                 }
+                else if (ack.Operation == "resume")
+                {
+                    pausedRecordingElapsedUs = null;
+                    elapsedUs = ack.EffectiveSessionUs;
+                }
+                else elapsedUs = Math.Max(elapsedUs, ack.EffectiveSessionUs);
                 if (!ack.MicrophoneEnabled) { ResetLevelMeterDisplay(microphoneOnly: true); MicHealth.Text = UiText.T("关闭 · 不采集"); }
                 SetStatus((systemPause ? UiText.T("检测到系统/调度时间缺口；CaptureHost 已确认暂停，两路均已停采。可明确恢复录音，或停止并保存。") :
                     ack.Message ?? UiText.F($"已确认{ControlDescription(ack.Operation)}")) +
@@ -381,14 +408,19 @@ public partial class MainWindow : Window
                 if (pendingControlRequestId != value.RequestId || pendingControl is null ||
                     state is not (SessionState.Recording or SessionState.Paused)) break;
                 var rejectedOperation = pendingControl;
+                if (rejectedOperation == "auto_stop_settings") SetAutoStopSelection(confirmedAutoStop);
                 pendingControl = null;
                 pendingControlRequestId = null;
                 pendingMicrophone = null;
                 SetStatus(UiText.F($"{ControlDescription(rejectedOperation)}未完成：{value.Message}\n当前开关和录音状态按上次实际回执显示；可重试或停止并保存。"));
                 break;
             case "levels" when value.Levels is { } levels && state is (SessionState.Recording or SessionState.Paused or SessionState.Stopping):
-                SetLevelMeterTargets(state == SessionState.Paused ? 0 : levels.RemotePeak,
-                    state == SessionState.Paused || !microphoneEnabled ? 0 : levels.MicrophonePeak);
+                if (pausedRecordingElapsedUs is not null || state == SessionState.Paused)
+                {
+                    ShowPausedCaptureHealth();
+                    break;
+                }
+                SetLevelMeterTargets(levels.RemotePeak, !microphoneEnabled ? 0 : levels.MicrophonePeak);
                 RemoteHealth.Text = levels.RemoteFrames == 0 ? UiText.T("尚未收到音频包") : UiText.F($"{levels.RemoteFrames:N0} 帧 · 峰值 {levels.RemotePeak:F3}");
                 MicHealth.Text = microphoneEnabled ? UiText.F($"{levels.MicrophoneFrames:N0} 帧 · 峰值 {levels.MicrophonePeak:F3}") : UiText.T("关闭 · 不采集");
                 if (!string.IsNullOrEmpty(levels.Status)) SetStatus(levels.Status);
@@ -397,7 +429,8 @@ public partial class MainWindow : Window
                 state = SessionState.Stopping;
                 starting = false;
                 StorageText.Text = UiText.T("保存状态：正在排空并收尾，尚未确认保存");
-                SetStatus(value.Message ?? UiText.T("正在保存"));
+                SetStatus(value.AutoStop is { } automatic ? DescribeAutomaticStop(automatic) + UiText.T(" 正在停止并保存。")
+                    : value.Message ?? UiText.T("正在保存"));
                 break;
             case "recording_saved":
             case "recording_incomplete":
@@ -406,6 +439,7 @@ public partial class MainWindow : Window
                 {
                     state = exitConfirmed ? SessionState.StoppedWithError : SessionState.Faulted;
                     StorageText.Text = UiText.T("保存状态：缺少持久结果或 Host 退出确认");
+                    MarkRecordingProcessingUnconfirmed();
                     SetStatus(UiText.T("未确认完整保存；请保留原件。") + value.Message);
                 }
                 else
@@ -415,9 +449,11 @@ public partial class MainWindow : Window
                     state = saved ? SessionState.Saved : SessionState.SavedIncomplete;
                     StorageText.Text = saved ? UiText.T("保存状态：原轨及索引已收尾") : UiText.T("保存状态：原件已保留，完整性有警告");
                     SetStatus($"{(saved ? UiText.T("录音原轨已保存。") : UiText.T("录音原件已保留，不能称作完整录音。"))}" +
+                        (recordingResult.AutoStop is { } automaticResult ? "\n" + DescribeAutomaticStop(automaticResult) : "") +
                         UiText.F($"\n目录：{recordingResult.SessionDirectory}\n") +
                         string.Join(Environment.NewLine, recordingResult.Warnings) +
                         UiText.T("\n原轨保存结束；后台混音不阻止开始下一场。"));
+                    MarkRecordingProcessingSaved(recordingResult.SessionDirectory);
                     SelectMeeting(recordingResult.SessionDirectory, loadSavedMix: false);
                     RefreshRecovery_Click(this, new RoutedEventArgs());
                     if (!closeAfterSave) QueueMix(recordingResult.SessionDirectory);
@@ -470,6 +506,7 @@ public partial class MainWindow : Window
                 ResetConsentAfterSession();
                 break;
             case "error":
+                MarkRecordingProcessingUnconfirmed();
                 state = exitConfirmed ? SessionState.StoppedWithError : SessionState.Faulted;
                 ConnectionText.Text = exitConfirmed ? UiText.T("捕获连接：CaptureHost 已退出") : UiText.T("捕获连接：未确认退出");
                 StorageText.Text = UiText.T("保存状态：未确认完整保存，原件保留");
@@ -510,6 +547,7 @@ public partial class MainWindow : Window
         launching = false;
         pendingControl = null;
         pendingControlRequestId = null;
+        pausedRecordingElapsedUs = null;
         microphoneEnabled = false;
         fixedMicrophoneId = null;
         fixedMicrophoneName = null;
@@ -520,6 +558,13 @@ public partial class MainWindow : Window
         MicBox.SelectedIndex = -1;
         ResetRecordingLevelCounters();
         TitleBox.Text = SessionDefaults.Title(DateTimeOffset.Now);
+    }
+
+    private void ShowPausedCaptureHealth()
+    {
+        ResetLevelMeterDisplay();
+        RemoteHealth.Text = UiText.T("暂停 · 不采集");
+        MicHealth.Text = microphoneEnabled ? UiText.T("暂停 · 不采集，恢复后开启") : UiText.T("关闭 · 不采集");
     }
 
     private void SetMicrophoneRequested(bool enabled)
@@ -592,10 +637,11 @@ public partial class MainWindow : Window
     private static string ControlDescription(string command) => command switch
     {
         "pause" => UiText.T("暂停"), "resume" => UiText.T("恢复录音"), "mic_off" => UiText.T("关闭麦克风"),
-        "mic_on" => UiText.T("开启麦克风"), "bookmark" => UiText.T("标记此刻"), _ => command
+        "mic_on" => UiText.T("开启麦克风"), "bookmark" => UiText.T("标记此刻"),
+        "auto_stop_settings" => UiText.T("自动结束设置"), _ => command
     };
 
-    private async Task RequestControlAsync(string command)
+    private async Task RequestControlAsync(string command, RecordingAutoStopOptions? automatic = null)
     {
         if (isTrial || starting || host is null || pendingControl is not null ||
             state is not (SessionState.Recording or SessionState.Paused)) return;
@@ -603,7 +649,7 @@ public partial class MainWindow : Window
         pendingControlRequestId = Guid.NewGuid().ToString("N");
         UpdateControls();
         SetStatus(UiText.F($"正在请求{ControlDescription(command)}；等待实际采集边界确认。"));
-        try { await host.ControlAsync(command, command == "mic_on" ? pendingMicrophone?.Id ?? fixedMicrophoneId : null, pendingControlRequestId); }
+        try { await host.ControlAsync(command, command == "mic_on" ? pendingMicrophone?.Id ?? fixedMicrophoneId : null, pendingControlRequestId, automatic); }
         catch (Exception ex)
         {
             // Never turn a failed send into a successful privacy acknowledgement.
@@ -633,6 +679,20 @@ public partial class MainWindow : Window
         try
         {
             RejectReparseAncestors(mixedPath);
+            // Play is idempotent for the current file: resume at the actual
+            // media position (including a paused seek), without reopening it.
+            if (playbackOpened && string.Equals(player.Source?.LocalPath, Path.GetFullPath(mixedPath), StringComparison.OrdinalIgnoreCase))
+            {
+                player.Play();
+                playbackPaused = false;
+                InvalidateReplaySubtitleFollow();
+                UpdatePlaybackTransport();
+                ResetDisplayPlaybackClock();
+                UpdatePlaybackPosition();
+                return;
+            }
+            // An already queued subtitle seek owns the pending position.
+            if (pendingTranscriptSeek is { } pending && string.Equals(pending.Path, Path.GetFullPath(mixedPath), StringComparison.OrdinalIgnoreCase)) return;
             OpenListeningPosition(mixedPath, 0, meetingDirectory: directory);
             if (currentMix?.CompressedPath == mixedPath)
             {
@@ -649,7 +709,10 @@ public partial class MainWindow : Window
 
     private void StopPlayback_Click(object sender, RoutedEventArgs e) => ResetTranscriptPlayback();
 
-    private string RecordingsRoot => Path.GetFullPath(Path.Combine(dataRoot, "M1Recordings"));
+    private string RecordingsRoot
+    {
+        get { EnsureDataRootAvailable(); return Path.GetFullPath(Path.Combine(dataRoot, "M1Recordings")); }
+    }
 
     // Identity must remain stable as bindings subscribe or recognition changes.
     // Mutable notification fields in a record would change its generated hash and break WPF selection lookup.
@@ -694,7 +757,11 @@ public partial class MainWindow : Window
             bool imported = root.TryGetProperty("importedAt", out var importedAt);
             DateTimeOffset? date = (imported ? importedAt : root.TryGetProperty("startedAtUtc", out var started) ? started : default)
                 is { ValueKind: System.Text.Json.JsonValueKind.String } dateNode && dateNode.TryGetDateTimeOffset(out var value) ? value : null;
-            return new(directory, string.IsNullOrWhiteSpace(filing.Title) ? UiText.T("未命名会议") : filing.Title, date, imported);
+            // Honor each manifest's own pause-excluded, legacy elapsed, or imported timeline.
+            long? durationMs = root.TryGetProperty("duration100ns", out var span) && span.TryGetInt64(out long duration100ns) &&
+                duration100ns >= 0 && duration100ns <= 7L * 24 * 60 * 60 * 10_000_000 ? duration100ns / 10000 : null;
+            return new(directory, string.IsNullOrWhiteSpace(filing.Title) ? UiText.T("未命名会议") : filing.Title,
+                date, imported, durationMs: durationMs);
         }
         catch { return new(directory, UiText.T("信息待检查 · ") + Path.GetFileName(directory)); }
     }
@@ -721,6 +788,7 @@ public partial class MainWindow : Window
     {
         try
         {
+            EnsureDataRootAvailable();
             RejectReparseAncestors(RecordingsRoot);
             Directory.CreateDirectory(RecordingsRoot);
             RejectReparseAncestors(RecordingsRoot);
@@ -732,25 +800,13 @@ public partial class MainWindow : Window
     private void RefreshRecovery_Click(object sender, RoutedEventArgs e)
     {
         if (!SessionRules.CanStart(state) || recoveryBusy) return;
+        CancelStartupLibraryRefresh();
         try
         {
+            EnsureDataRootAvailable();
             var index = new ProjectEcho.Core.Library.MeetingLibraryIndex(dataRoot);
             index.Refresh();
-            var directories = index.Query(libraryQuery).Select(item =>
-                new RecordingDirectory(item.Directory, item.Title, item.Date, item.Imported, item.Project, item.DurationMs, item.Status)).ToArray();
-            foreach (var entry in directories) entry.IsRecognizing = IsRecognitionMeeting(entry.Path);
-            var previouslySelected = selectedMeetingDirectory;
-            synchronizingMeetingSelection = true;
-            try
-            {
-                RecoveryBox.ItemsSource = directories;
-                RecoveryBox.SelectedItem = directories.FirstOrDefault(item => string.Equals(item.Path, previouslySelected, StringComparison.OrdinalIgnoreCase));
-            }
-            finally { synchronizingMeetingSelection = false; }
-            libraryRead = true;
-            MeetingCountText.Text = UiText.F($"{directories.Length} 场会议") + (LibraryFilterActive ? UiText.T(" · 已筛选") : "");
-            LibraryFilterButton.ToolTip = UiText.T(LibraryFilterActive ? "筛选和排序会议（已筛选）" : "筛选和排序会议");
-            RecoveryStatus.Text = UiText.F($"已通过 SQLite 列出 {directories.Length} 场会议；未读取音频。请选择要检查的一场。");
+            ApplyLibraryEntries(index.Query(libraryQuery));
         }
         catch (Exception ex) { RecoveryStatus.Text = UiText.T("未能列出录音目录：") + ex.Message; }
         UpdateControls();
@@ -812,12 +868,6 @@ public partial class MainWindow : Window
         finally { LogMeeting(selected, "diagnostic", RecoveryStatus.Text, DiagnosticLevel(RecoveryStatus.Text)); recoveryBusy = false; UpdateControls(); }
     }
 
-    private void Browser_Click(object sender, RoutedEventArgs e)
-    {
-        try { SetStatus(DedicatedBrowserLauncher.LaunchChrome(projectRoot, dataRoot).Message); }
-        catch (Exception ex) { SetStatus(UiText.T("专用浏览器未启动：") + ex.Message); }
-    }
-
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (closeApproved) return;
@@ -825,6 +875,7 @@ public partial class MainWindow : Window
         // file work has unwound, never while this Closing event is on the stack.
         e.Cancel = true;
         if (windowCloseWork is not null) return;
+        if (!ConfirmDiscardTranscriptDrafts()) return;
         if (!SessionRules.CanStart(state))
         {
             if (state == SessionState.Stopping)
@@ -865,6 +916,8 @@ public partial class MainWindow : Window
             // Recovery has no destructive cancellation API; let its current copy
             // finish safely rather than terminate it midway through an output file.
             await recoveryWork;
+            CancelStartupLibraryRefresh();
+            await startupLibraryWork;
             if (host is not null)
             {
                 var closingHost = host;

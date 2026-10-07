@@ -22,6 +22,8 @@ public partial class MainWindow
 
     private void RefreshSelectedExportStatus()
     {
+        RefreshMixProgressHeader();
+        RefreshRecordingProcessingCard();
         lastExportDirectory = null;
         if (selectedMeetingDirectory is not { } directory)
         {
@@ -29,8 +31,10 @@ public partial class MainWindow
             return;
         }
         EnsureMeetingExportStatus(directory);
+        RefreshRecordingProcessingCard();
         meetingExportStatuses.TryGetValue(directory, out var result);
-        ExportStatus.Text = result?.Text ?? UiText.T("所选会议暂无处理结果；可生成完整混音或导出音频。");
+        ExportStatus.Text = transientMixStatuses.TryGetValue(directory, out string? progressText)
+            ? progressText : result?.Text ?? UiText.T("所选会议暂无处理结果；可生成完整混音或导出音频。");
         if (savedMixStatuses.TryGetValue(directory, out string? validation))
             ExportStatus.Text += "\n\n" + validation;
         if (result?.ExportDirectory is { } exportDirectory)
@@ -70,7 +74,8 @@ public partial class MainWindow
                     throw new InvalidDataException("处理记录缺少本会议的导出凭据。");
                 receipt = ValidateMeetingExportReceipt(directory, exportDirectory, Path.Combine(directory, receiptRelative), saved.ExportReceiptSha256);
             }
-            meetingExportStatuses[directory] = new(UiText.T("上次处理记录（文件仍须独立校验）：\n") + saved.Text, exportDirectory, receipt);
+            meetingExportStatuses[directory] = new(UiText.T("上次处理记录（文件仍须独立校验）：\n") +
+                PresentRecordingDiagnostic(saved.Text), exportDirectory, receipt);
         }
         catch (Exception ex)
         {
@@ -80,6 +85,7 @@ public partial class MainWindow
 
     private void SetMeetingExportStatus(string directory, string text, bool persist = false, string? exportDirectory = null, string? exportReceipt = null)
     {
+        text = PresentRecordingDiagnostic(text);
         string category = string.Equals(directory, activeExportMeetingDirectory, StringComparison.OrdinalIgnoreCase) ? activeProcessingLogCategory :
             exportDirectory is not null || text.Contains("导出", StringComparison.Ordinal) || text.Contains("導出", StringComparison.Ordinal) || text.Contains("匯出", StringComparison.Ordinal) || text.Contains("export", StringComparison.OrdinalIgnoreCase) ? "export" : "mix";
         var statusAt = DateTimeOffset.UtcNow;
@@ -121,10 +127,12 @@ public partial class MainWindow
             }
         }
         if (string.Equals(selectedMeetingDirectory, directory, StringComparison.OrdinalIgnoreCase)) RefreshSelectedExportStatus();
+        RefreshRecordingProcessingCard();
     }
 
     private void SetSavedMixStatus(string directory, string text)
     {
+        text = PresentRecordingDiagnostic(text);
         LogMeeting(directory, "diagnostic", text, DiagnosticLevel(text));
         savedMixStatuses[directory] = text;
         if (string.Equals(selectedMeetingDirectory, directory, StringComparison.OrdinalIgnoreCase)) RefreshSelectedExportStatus();
@@ -169,14 +177,14 @@ public partial class MainWindow
                             throw new InvalidDataException("历史导出分片字段无效。");
                         return UiText.F($"{name} · {bytes:N0} 字节 · {start / 1_000_000d:F3}–{end / 1_000_000d:F3} 秒");
                     }));
-                if (mix.HistoricalOnly) text += "\n" + string.Join("\n", mix.Warnings.Select(UiText.T));
+                if (mix.HistoricalOnly) text += "\n" + PresentRecordingWarnings(mix.Warnings);
                 SetMeetingExportStatus(directory, text, exportDirectory: output, exportReceipt: receipt);
                 return;
             }
         }
         SetMeetingExportStatus(directory, historical + (mix.HistoricalOnly
             ? UiText.F($"历史混音记录时长：{mix.DurationUs / 1_000_000d:F3} 秒。")
-            : UiText.F($"所选会议已有完整回放：{mix.DurationUs / 1_000_000d:F3} 秒。")) + "\n" + string.Join("\n", mix.Warnings.Select(UiText.T)));
+            : UiText.F($"所选会议已有完整回放：{mix.DurationUs / 1_000_000d:F3} 秒。")) + "\n" + PresentRecordingWarnings(mix.Warnings));
     }
 
     private static ProcessingMixMetadata? ReadHistoricalMixMetadata(string directory, CancellationToken token)

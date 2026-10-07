@@ -59,12 +59,14 @@ public static class M2SavedMixLoader
                 throw new InvalidDataException("旧混音使用更早的时间映射规则；请主动重新生成完整混音，原件和旧混音均保留。");
             if (manifest.RootElement.GetProperty("schemaVersion").GetString() != "m1-recording-1" ||
                 r.GetProperty("schemaVersion").GetString() != "m2-render-1" ||
-                r.GetProperty("timeline").GetString() != "complete_elapsed_qpc_packet_mapping" ||
                 ReadHash(r, "sourceManifestSha256") != M2FileSafety.Hash(held[0], cancellationToken) ||
                 ReadHash(r, "sourceIndexSha256") != M2FileSafety.Hash(index, cancellationToken))
                 throw new InvalidDataException("完整混音与所选会议或原始时间索引不一致；请检查后主动重新生成。");
 
             var recovery = M1Recovery.Read(meeting, cancellationToken);
+            string renderPolicy = r.TryGetProperty("timelinePolicy", out var policy) ? policy.GetString()! : RecordingTimeline.Elapsed;
+            if (renderPolicy != recovery.Capture.TimelinePolicy || r.GetProperty("timeline").GetString() != M2ExportService.TimelineFor(recovery.Capture.TimelinePolicy))
+                throw new InvalidDataException("完整混音与原件的暂停时间轴规则不同。");
             if (!recovery.HasCheckpoint || recovery.Issues.Count != 0 ||
                 recovery.Capture.Tracks.Any(track => !track.WavePath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("原件未通过独立存储与哈希检查，不能复用完整混音。 " + string.Join(" | ", recovery.Issues));

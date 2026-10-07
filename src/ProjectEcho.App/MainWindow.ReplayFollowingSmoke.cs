@@ -42,8 +42,17 @@ public partial class MainWindow
         double gapSeconds = (late.Segment.EndMs!.Value + 25) / 1000d;
         ReplayPositionSlider.Value = gapSeconds;
         await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
+        // Media Foundation may acknowledge the seek after the next WPF render.
+        // Check the actual settled media position, without weakening the gap assertion.
+        var seekDeadline = System.Diagnostics.Stopwatch.StartNew();
+        while ((player.Position.TotalMilliseconds < late.Segment.EndMs.Value ||
+                player.Position.TotalMilliseconds >= late.Segment.EndMs.Value + 50) &&
+               seekDeadline.Elapsed < TimeSpan.FromSeconds(2))
+            await Task.Delay(25, token);
+        UpdatePlaybackPosition();
         M3cNeed(ReplaySegmentsBox.SelectedItem is null && !ReplayCopyButton.IsEnabled && playbackPaused &&
-            Math.Abs(player.Position.TotalSeconds - gapSeconds) < .1, "字幕空隙保留错误高亮或自动重新播放。");
+            Math.Abs(player.Position.TotalSeconds - gapSeconds) < .1,
+            $"字幕空隙保留错误高亮或自动重新播放。requested={gapSeconds:F3}, actual={player.Position.TotalSeconds:F3}, selected={ReplaySegmentsBox.SelectedItem is not null}, copy={ReplayCopyButton.IsEnabled}, paused={playbackPaused}");
 
         ReplayPositionSlider.Value = seekSeconds;
         await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);

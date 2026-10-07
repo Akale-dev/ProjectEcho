@@ -1,0 +1,7 @@
+仅在用户明确启动 M5 后执行。先读 AGENTS.md、docs/00_HANDOFF.md、STATUS.md、docs/12_MILESTONES.md、docs/70_M4_M6_LOCAL_ASR_ROADMAP.md、docs/68_MEETING_SPEAKER_DIARIZATION_PLAN.md、docs/69_M3HFIX_PAUSE_RECORDING_TIMELINE.md，核对 M4 的真实能力与未测项。本阶段是同场说话人，不是旧 M5 浏览器扩展。
+
+按 M5-A/B/C 推进：验证 sherpa-onnx 原生 CPU 候选、模型许可与全场聚类；复用经过验证的 Whisper/Qwen 音文映射接字幕；完成显示改名、单段改人、合并/拆出人物、必要人工切点、独立版本及带标签导出。自动人数和已知人数提示分别验，A-B-A-C-A长间隔返回及分窗仍须同场一致；不以每次换人递增编号冒充聚类。
+
+显示名称修改是必交付，内部speakerId稳定；不建立跨会身份库、不推断姓名、不将remote/mic直接当人物。VAD不替代说话人模型，不先删掉疑似非语音再让说话人分析漏检短插话。句内换人缺可靠文字边界时保留全部文字和待确认，不按字长造时间、不捏造重叠双方发言。新旧timelinePolicy分别保留，重跑不覆盖人工修正。
+
+按70号P5-01–04测试真实声音分组、全文不丢不重、重开/索引/导出、约三小时资源及取消故障隔离。无通用LLM，录音优先；不启mic、不入会、不上传、不推动下一阶段。未测保持NOT_RUN，更新STATUS、验收表和本地证据。

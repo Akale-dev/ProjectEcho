@@ -1,5 +1,9 @@
 # 48｜M3b 会后本地 ASR 后端接口
 
+2026-10-04 M4实施更新：`LocalTranscriptionBackends.Qwen3Asr`现为独立`QwenTranscriber`，Default仍为Whisper；Qwen0.6B CPU/Vulkan与原生CPU ForcedAligner已实测。新增专用定位配置、来源时间轴、不可变对齐证据和完整帧窗口，详见[71](71_M4_QWEN_CHINESE_ASR.md)。本机三小时全模型/便携验证已完成；1.7B、其它机器和自然长会质量仍未验，不把下文历史“未实现”与本轮状态混用。
+
+2026-10-04 规划更新：M3Hfix 完成后由用户另行启动 M4 中文识别，详见[70](70_M4_M6_LOCAL_ASR_ROADMAP.md)。Qwen3-ASR/transcribe.cpp 仍未实现；新目标包含 CPU/Vulkan 和现有 Whisper 式句子回听，不要求逐字展示。当前 Whisper 未启用独立 VAD；Qwen 的 VAD 候选与必要音文对齐需实际验证，只有无时间全文或粗窗口定位不算完整 M4 交付。下方接口为现有实现，新增模型能力不得预填。
+
 2026-10-01 M3D更新：配置追加硬件模式、引擎GPU编号、initial prompt，CPU默认兼容；GPU不再强制`-ng`，显式Vulkan/CUDA核对实际后端日志。移除预期模型SHA比对（旧字段仅兼容），音频/原稿完整性保留。当前合同/真实测试及GPU未验边界见[56](56_M3D_IMPLEMENTATION.md)。下文CPU-only字段叙述为原M3b历史。
 
 本轮为未来更换本地识别引擎准备边界。当前默认并且唯一能运行的实现仍为 **whisper.cpp**；**Qwen3-ASR 未部署、未实现适配器、未验收**。没有下载模型、引入 Python/Node、增加网络服务、密钥、上传或数据库。本接口不进入 CaptureHost 或录音回调。
@@ -12,7 +16,7 @@
 
 现有 `WhisperConfiguration`、`whisper.json`、`WhisperTranscriber.Inspect/RunAsync` 保持兼容。`FromWhisper` 无损映射旧配置，`-ng`、SRT/TXT/JSON输出和原件保护沿用。M3b反馈修复取消`-ml 48`长度强切，改为`-ojf`保留完整token时间，并使用句末标点和可核对token边界规范化；缺少可用时间时保留原段，不按字数造时间。详见[45](45_M3_TRANSCRIPTION_CONTRACT.md)。
 
-`LocalTranscriptionRequest` 只接收已保存会议中的完整派生 WAV、预期 SHA-256、会议身份和完整经过时长。格式转换在会后准备层完成。当前 whisper 适配器明确要求 **16 kHz / mono / PCM16**；这个要求不等于麦克风必须16k或48k，也不预设未来 Qwen 的输入规格。准备与识别在后台任务执行，文件校验和失败不占用采集回调。
+`LocalTranscriptionRequest` 只接收已保存会议中的完整派生 WAV、预期 SHA-256、会议身份和该音频的完整录音时长。格式转换在会后准备层完成。新录音遵循 M3Hfix 的去暂停时间轴，旧录音保留 elapsed 时间轴，见[69](69_M3HFIX_PAUSE_RECORDING_TIMELINE.md)。当前 whisper 适配器明确要求 **16 kHz / mono / PCM16**；这个要求不等于麦克风必须16k或48k，也不预设未来 Qwen 的输入规格。准备与识别在后台任务执行，文件校验和失败不占用采集回调。
 
 能力描述区分输入规格、取消、自动/指定语言、说话人和时间质量。当前字幕是 `approximate / segment`，并且不提供说话人识别。支持指定语言参数不是每种语言准确率验收。能力字段必须由具体适配器根据已验证行为声明，不能把 whisper 的能力复制给 Qwen。
 
@@ -20,7 +24,7 @@
 
 统一结果状态为 `NotConfigured / Succeeded / NoSpeech / Cancelled / Failed`，带独立尝试目录、耗时、说明及 `TranscriptRevision`。成功必须有已保存规范化版本；失败/取消不对 UI 返回一个成功版本。取消后保留已有原件、原稿和尝试输出，重试写入新的尝试目录。配置/请求验证等异常仍可抛给调用方，由现有任务状态显示，不伪造成功。
 
-规范化继续使用 `TranscriptService.Import` 和 transcript v2：时间以完整会议的毫秒起止表达，保留暂停、静音、重叠与重复，不按文字推测时间或说话人。原始模型输出、导入原稿、规范化版本与人工修订分别保留，原稿 SHA-256 在重新加载时复核；运行 ASR 不覆盖人工修订。只有文字而没有时间的未来引擎输出必须保持 `untimed`，不能由句长造 SRT。
+规范化继续使用 `TranscriptService.Import` 和 transcript v2：时间以所选完整音频的毫秒起止表达，遵守其时间轴策略，保留真实静音、重叠与重复，不按文字推测时间或说话人。不得把旧录音暂停删去，也不得把新录音已排除的暂停再加回。原始模型输出、导入原稿、规范化版本与人工修订分别保留，原稿 SHA-256 在重新加载时复核；运行 ASR 不覆盖人工修订。只有文字而没有时间的未来引擎输出必须保持 `untimed`，不能由句长造 SRT；这类输出可用于原型，但不满足新 M4 的句子定位闸门。
 
 当前独立 whisper 进程取消会结束其进程树；不停止录音或其他引擎/用户进程。数字零 PCM 先返回 `NoSpeech` 而不启动模型；该保护不是一般噪声/静音幻觉验收。模型返回空字幕同样不是“会议无人讲话”的证明。
 

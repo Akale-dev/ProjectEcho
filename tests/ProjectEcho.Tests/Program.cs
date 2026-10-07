@@ -6,8 +6,16 @@ using ProjectEcho.Capture.Windows;
 using ProjectEcho.Core;
 using ProjectEcho.Export;
 
+if (args.Length == 1 && args[0] == "--m3m-lifetime-child") { _ = Console.ReadLine(); return 0; }
+
 if (args.Length > 0 && args[0] == "-m" && args.Contains("-osrt"))
     return await M3WhisperTests.RunFixtureAsync(args);
+
+if (args.Length == 1 && args[0] == "--version" || args.Length == 3 && args[0] == "-I" && args[2] == "--version")
+    return M4QwenAdapterTests.FixtureVersion();
+
+if (args.Contains("--model") && (args.Contains("--batch-jsonl") || args.Contains("--words-out")))
+    return await M4QwenAdapterTests.Fixture(args);
 
 if (args.Length > 0 && args[0] == "--m3-real-whisper-probe")
     return await M3RealWhisperProbe.RunAsync(args);
@@ -41,6 +49,42 @@ if (args.Length > 0 && args[0] == "--m3d-vulkan-full-probe")
 
 if (args.Length > 0 && args[0] == "--m3h-meter-preview-probe")
     return await M3hAudioLevelPreviewProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m3hfix-asr-probe")
+    return await M3hFixAsrProbe.RunAsync(args);
+
+if (args.Length == 2 && args[0] == "--m4-window-long-probe")
+    return M4QwenWindowTests.RunLongProbe(args[1]);
+
+if (args.Length > 0 && args[0] == "--m4-real-qwen-probe")
+    return await M4RealQwenProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m4-qwen-pause-probe")
+    return await M4QwenPauseProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m4-qwen-index-probe")
+    return M4QwenIndexProbe.Run(args);
+
+if (args.Length > 0 && args[0] == "--m5-speaker-pipeline-probe")
+    return await M5SpeakerPipelineProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m5-speaker-mapping-probe")
+    return await M5SpeakerMappingProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m5-speaker-saved-policy-probe")
+    return await M5SpeakerSavedPolicyProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m5-runtime-boundary-probe")
+    return await M5RuntimeBoundaryProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m5-speaker-reopen-probe")
+    return M5SpeakerReopenProbe.Run(args);
+
+if (args.Length > 0 && args[0] == "--m5-interval-fix-probe")
+    return await M5IntervalFixProbe.RunAsync(args);
+
+if (args.Length > 0 && args[0] == "--m5b-case-probe")
+    return await M5BCaseProbe.RunAsync(args);
 
 if (args.Length > 0 && args[0] == "--m2-revalidate-long-run")
     return await M2LongRunProbe.RunRevalidationAsync(args);
@@ -113,6 +157,8 @@ Run("M0-SYNTH probe signal and isolation fixtures", () => ProbeSignalChecks.RunS
 Run("M0-SYNTH probe consent scope and started handshake", () => ProbeSafetyTests.Run(output));
 Run("M1-SYNTH real microphone probe range assertions", M1MicrophoneProbe.RunSyntheticChecks);
 Run("T54-SYNTH health snapshot ordering never underflows", RecordingHealthTests.Run);
+M3mAutoStopTests.Register(Run, output);
+M3mAutoStopTests.RegisterM3n(Run, output);
 Run("M1-SYNTH microphone reported/client rate policy", MicrophoneFormatPolicyTests.Run);
 MicrophoneFormatPolicyTests.RegisterTimelineTests(Run, output);
 M3bMicrophoneClockTests.Register(Run, output);
@@ -135,7 +181,11 @@ M3AudioPreparationTests.Register(Run, output);
 M3AudioImportTests.Register(Run, output);
 M3SubtitleExportTests.Register(Run, output);
 M3SentenceSegmentationTests.Register(Run, output);
+M3jSentenceBoundaryTests.Register(Run, output);
 M3TranscriptTests.Register(Run, output);
+M3jTranscriptDraftTests.Register(Run, output);
+M3kTimestampInputTests.Register(Run, output);
+M3kDataRootPreferenceTests.Register(Run, output);
 M3cSqliteTests.Register(Run, output);
 M3cTranscriptTests.Register(Run, output);
 M3WhisperTests.Register(Run, output);
@@ -144,10 +194,29 @@ M3dTranscriptVersionTests.Register(Run, output);
 M3dWhisperTests.Register(Run, output);
 M3dPortableWhisperTests.Register(Run, output);
 M3eWhisperTimestampTests.Register(Run, output);
+M3iWhisperTimestampTests.Register(Run, output);
+M3iAsrEndBoundaryTests.Register(Run, output);
+M3iDiagnosticPresentationTests.Register(Run, output);
+M3iMixProgressTests.Register(Run, output);
+M3iRecoveryProgressTests.Register(Run, output);
+M5dAsrProCompatibilityTests.Register(Run, output);
+M5dQwenPartialAlignmentTests.Register(Run, output);
 M3gTimelinePrecisionTests.Register(Run, output);
 M3hMeetingWhisperTests.Register(Run, output);
 M3hAudioLevelPreviewTests.Register(Run);
 M3hMeterDisplayTests.Register(Run);
+M3hFixPauseTests.Register(Run, output);
+M3hFixStorageTests.Register(Run, output);
+M4QwenWindowTests.Register(Run, output);
+M4AlignmentSentenceTests.Register(Run, output);
+M4QwenAdapterTests.Register(Run, output);
+M4QwenPortableSettingsTests.Register(Run, output);
+M5SpeakerIndexTests.Register(Run, output);
+M5SpeakerCoreTests.Register(Run, output);
+M5SpeakerRuntimeTests.Register(Run, output);
+M5DiarizationTimestampTests.Register(Run, output);
+M5BLocalOverlapTests.Register(Run, output);
+M5BSpeakerTextTests.Register(Run, output);
 M3eMeetingLogTests.Register(Run, output);
 M4aTimelineTests.Register(Run, output);
 TruePeakTests.Register(Run, output);

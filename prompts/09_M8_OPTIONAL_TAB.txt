@@ -1,0 +1,3 @@
+仅在用户明确启动 M8、已允许安装扩展且基础版可用时实施可选精确单标签页录音。M8是原M5，不属于当前M5说话人任务。先读AGENTS.md、STATUS.md、docs/12_MILESTONES.md、docs/70_M4_M6_LOCAL_ASR_ROADMAP.md、docs/05_BROWSER_CAPTURE.md、docs/66_M4_M5_PLAN_REVIEW.md及docs/69_M3HFIX_PAUSE_RECORDING_TIMELINE.md，验证当前Chrome tabCapture/MV3 API。
+
+必须用户点击触发、最小权限、捕获音回接保证继续听会；安全本机桥接仅loopback且认证Origin/token，处理clock映射/队列背压/断连。不能同时再录同一浏览器进程导致双录，不能读普通浏览历史、禁用sandbox或绕开组织策略。未获安装授权时只准备方案/可验证源码，不自动安装。暂停真正停采，新录音遵循去暂停时间轴，浏览器时钟不伪装成device/QPC。复用一个CaptureHost及既有原轨/恢复/混音链路。此模块失败不得破坏无扩展版；T44–45分别记录实际证据。

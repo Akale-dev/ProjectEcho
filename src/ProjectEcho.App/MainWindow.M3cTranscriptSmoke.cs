@@ -101,8 +101,14 @@ public partial class MainWindow
             string selectedText = ((TranscriptRow)view.SegmentsBox.SelectedItem).Segment.Text;
             view.CopySegmentButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             M3cNeed(Clipboard.GetText() == selectedText, "复制按钮包含时间戳或其他行。");
-            NavigateTo(5); ReplaySegmentsBox.SelectedIndex = 5; CopyReplaySegment_Click(this, new RoutedEventArgs());
-            M3cNeed(Clipboard.GetText() == ((TranscriptRow)ReplaySegmentsBox.SelectedItem).Segment.Text, "回听复制错误。");
+            NavigateTo(5); ReplaySegmentsBox.SelectedIndex = 5;
+            string replayCopiedText = ((TranscriptRow)ReplaySegmentsBox.SelectedItem).Segment.Text;
+            CopyReplaySegment_Click(this, new RoutedEventArgs());
+            // Clipboard APIs can pump dispatcher messages. Compare with the row at
+            // click time, not a later playback-follow selection after the API returns.
+            string replayClipboard = Clipboard.GetText();
+            M3cNeed(replayClipboard == replayCopiedText,
+                $"回听复制错误。status={ReplayStatusText.Text}; expectedLength={replayCopiedText.Length}; actualLength={replayClipboard.Length}");
             string reviewExport = Path.Combine(folder, "review-full.txt"), replayExport = Path.Combine(folder, "replay-full.txt");
             StartTranscriptWork(() => ExportTranscriptTextAsync(reviewExport)); await transcriptWork.WaitAsync(token);
             StartTranscriptWork(() => ExportReplayTextAsync(replayExport)); await transcriptWork.WaitAsync(token);
@@ -111,23 +117,25 @@ public partial class MainWindow
             NavigateTo(3); view.WorkspaceTabs.SelectedIndex = 1; Width = MinWidth; Height = MinHeight;
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
             await Task.Delay(80, token); // Let the constrained list settle after the window's native resize.
-            Point statusBefore = view.StatusText.TranslatePoint(new Point(), view), playerBefore = view.PlaybackPositionSlider.TranslatePoint(new Point(), view);
+            Point playerBefore = view.PlaybackPositionSlider.TranslatePoint(new Point(), view);
             view.SegmentsBox.ScrollIntoView(view.SegmentsBox.Items[^1]); view.ReviewBodyScroller.ScrollToEnd();
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
             await Task.Delay(80, token); view.ReviewBodyScroller.ScrollToEnd();
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
-            Point statusAfter = view.StatusText.TranslatePoint(new Point(), view), playerAfter = view.PlaybackPositionSlider.TranslatePoint(new Point(), view);
+            Point playerAfter = view.PlaybackPositionSlider.TranslatePoint(new Point(), view);
             File.WriteAllText(Path.Combine(folder, "footer-layout.json"), JsonSerializer.Serialize(new
-            { StatusBefore = statusBefore.ToString(), StatusAfter = statusAfter.ToString(), PlayerBefore = playerBefore.ToString(), PlayerAfter = playerAfter.ToString(),
+            { StatusPanelRemoved = !view.TranscriptStatusPanel.IsVisible, PlayerBefore = playerBefore.ToString(), PlayerAfter = playerAfter.ToString(),
                 ViewHeight = view.ActualHeight, StatusHeight = view.StatusText.ActualHeight, ListHeight = view.SegmentsBox.ActualHeight }, new JsonSerializerOptions { WriteIndented = true }));
             SaveLayoutImage(folder, "m3c-review-minimum.png", 1, images);
-            M3cNeed(statusBefore == statusAfter && playerBefore == playerAfter && playerAfter.Y < statusAfter.Y &&
-                statusAfter.Y + view.StatusText.ActualHeight <= view.ActualHeight + 1 && view.SegmentsBox.ActualHeight >= 70,
+            M3cNeed(!view.TranscriptStatusPanel.IsVisible && playerBefore == playerAfter &&
+                view.PlaybackPositionSlider.TranslatePoint(new Point(0, view.PlaybackPositionSlider.ActualHeight), view).Y <= view.ActualHeight + 1 && view.SegmentsBox.ActualHeight >= 70,
                 "最小窗口字幕滚动改变了固定状态/播放器，或内容超出视口。");
             Point exportPosition = view.ExportTextButton.TranslatePoint(new Point(), view.ReviewBodyScroller);
             M3cNeed(exportPosition.Y >= -1 && exportPosition.Y + view.ExportTextButton.ActualHeight <= view.ReviewBodyScroller.ActualHeight + 1,
                 "最小窗口滚动到底后仍无法触达校订导出按钮。");
-            M3cNeed(((TabItem)view.WorkspaceTabs.Items[^1]).Header?.ToString()?.Contains("导入") == true, "导入文字不是末页。");
+            M3cNeed(view.WorkspaceTabs.Items.Count == 4 && ((TabItem)view.WorkspaceTabs.Items[2]).Header?.ToString()?.Contains("导入") == true &&
+                ((TabItem)view.WorkspaceTabs.Items[3]).Header?.ToString()?.Contains("说话人") == true,
+                "Pro 的导入文字与人物工作页顺序改变。");
             foreach (var locked in new[] { SessionState.Recording, SessionState.Paused, SessionState.Stopping, SessionState.Faulted })
             {
                 state = locked; UpdateControls();
@@ -140,7 +148,7 @@ public partial class MainWindow
             return new { Status = "PASS", SourceMode = "SYNTHETIC FILE IMPORT / MUTED WPF PLAYBACK / NO CAPTURE", PlaybackSmoothness = snapshot,
                 PlaybackRateAdvanceMs = rateAdvance, SharedSeekPauseSpeed = true, FixedFooterAtMinimumWindow = true, CopySelectedText = true,
                 AutomaticSubtitleStartsDuringPlayback = automaticSubtitleStarts.Order().ToArray(), SubtitleFollowing = subtitleFollowing,
-                PlainTextBothViews = true, ImportTabLast = true, RecordingPrivacyGuard = true, Images = images, ClipboardRestored = true,
+                PlainTextBothViews = true, ProImportAndSpeakerTabsPreserved = true, RecordingPrivacyGuard = true, Images = images, ClipboardRestored = true,
                 PhysicalKeyboard = "NOT_RUN; copy button routed event and shared copy implementation tested" };
         }
         finally

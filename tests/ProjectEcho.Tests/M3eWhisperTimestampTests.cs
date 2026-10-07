@@ -11,8 +11,8 @@ internal static class M3eWhisperTimestampTests
     {
         string root = Path.Combine(output, "m3e-whisper-timestamps"); Directory.CreateDirectory(root);
         run("T35/T38-WINDOWS SYNTHETIC CLI M3E 39840ms final timestamp on 39715ms audio preserves raw text and output", () => SmallOverrun(root));
-        run("T35/T38-WINDOWS SYNTHETIC CLI M3E final timestamp tolerance has an inclusive 250ms limit", () => Limit(root));
-        run("T35/T38-WINDOWS SYNTHETIC CLI M3E invalid and unsupported timestamp intervals remain failed with numeric evidence", () => InvalidIntervals(root));
+        run("T35/T38-WINDOWS SYNTHETIC CLI M3E 250ms tolerance stays inclusive and 251ms final text has no invented time", () => Limit(root));
+        run("T35/T38-WINDOWS SYNTHETIC CLI M3J structural errors fail while nonfinal and after-EOF words remain untimed", () => InvalidIntervals(root));
         run("T35/T38-WINDOWS SYNTHETIC CLI M3E timestamp repair keeps original revisions and subtitle round trip", () => Immutable(root));
         run("T35/T38-WINDOWS SYNTHETIC CLI M3E normal Whisper output and manual import keep strict independent rules", () => ManualAndValid(root));
     }
@@ -48,18 +48,19 @@ internal static class M3eWhisperTimestampTests
         var (_, limit) = Run(root, "limit");
         Need(limit.Status == "Succeeded" && limit.Revision!.Segments[^1].EndMs == DurationMs && limit.Message.Contains("250 ms"),
             "250 ms 边界未按合同修正。");
-        var (request, rejected) = Run(root, "large");
-        Need(rejected.Status == "Failed" && rejected.Revision is null && rejected.Message.Contains("251 ms") &&
-            rejected.Message.Contains("39966") && rejected.Message.Contains("39715") &&
-            TranscriptService.ListRevisions(request.MeetingDirectory).Count == 0,
-            "超过有限误差仍成功，或错误缺少具体边界。");
-        Need(File.ReadAllText(Path.Combine(rejected.AttemptDirectory, "whisper-output.srt")).Contains("00:00:39,966"),
-            "失败没有保留原始越界输出。");
+        var (request, retained) = Run(root, "large");
+        Need(retained.Status == "Succeeded" && retained.Revision?.Segments.Single() is { StartMs: null, EndMs: null,
+            TimestampQuality: "untimed", Text: "合成第一句。合成尾句。" } && retained.Message.Contains("251 ms") &&
+            retained.Message.Contains("39966") && retained.Message.Contains("39715") &&
+            TranscriptService.ListRevisions(request.MeetingDirectory).Count == 1,
+            "超过250ms的无支持末段应保留全文但不能猜测其时间，且须报告具体边界。");
+        Need(File.ReadAllText(Path.Combine(retained.AttemptDirectory, "whisper-output.srt")).Contains("00:00:39,966"),
+            "未保留原始越界输出。");
     }
 
     private static void InvalidIntervals(string root)
     {
-        foreach (string variant in new[] { "zero", "backward", "after", "nonfinal" })
+        foreach (string variant in new[] { "backward" })
         {
             var (request, result) = Run(root, variant);
             Need(result.Status == "Failed" && result.Revision is null && result.Message.Contains("segment-") &&
@@ -69,6 +70,19 @@ internal static class M3eWhisperTimestampTests
                 File.Exists(Path.Combine(result.AttemptDirectory, "whisper-output.json")) &&
                 M3TranscriptTests.Hash(request.WavePath) == request.ExpectedWaveSha256,
                 "错误流程修改了音频或丢弃原始引擎输出。");
+        }
+        // M3J v2 extends text preservation to every positive out-of-range raw cue, without
+        // assigning a duration to words outside the audio. This intentionally supersedes M3E.
+        foreach (string variant in new[] { "after", "nonfinal" })
+        {
+            var (request, result) = Run(root, variant);
+            Need(result.Status == "Succeeded" && result.Revision is { } revision &&
+                revision.Segments[0] is { StartMs: null, EndMs: null, Text: "合成第一句。合成尾句。" } &&
+                result.Message.Contains("Whisper 越界时间") &&
+                (variant == "after" ? revision.Segments.Count == 1 : revision.Segments.Count == 2 &&
+                    revision.Segments[1].StartMs == 39000 && revision.Segments[1].EndMs == 39700) &&
+                M3TranscriptTests.Hash(request.WavePath) == request.ExpectedWaveSha256,
+                variant + " v2未保留越界全文，或改变正常后段/原音频。");
         }
     }
 
@@ -130,6 +144,12 @@ internal static class M3eWhisperTimestampTests
     internal static int WriteFixture(string output, string behavior)
     {
         string variant = behavior[Prefix.Length..];
+        if (variant.StartsWith("m5d-", StringComparison.Ordinal))
+            return M5dAsrProCompatibilityTests.WriteFixture(output, variant["m5d-".Length..]);
+        if (variant.StartsWith("m3i-eof-", StringComparison.Ordinal))
+            return M3iAsrEndBoundaryTests.WriteFixture(output, variant["m3i-eof-".Length..]);
+        if (variant.StartsWith("m3i-", StringComparison.Ordinal))
+            return M3iWhisperTimestampTests.WriteFixture(output, variant["m3i-".Length..]);
         long start = variant == "after" ? DurationMs : variant == "backward" ? 39840 : 30000;
         long end = variant switch { "valid" => 39700, "limit" => 39965, "large" => 39966,
             "zero" => start, "backward" => 39000, _ => 39840 };

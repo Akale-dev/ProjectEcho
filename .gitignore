@@ -53,3 +53,7 @@ models/
 *secrets*.json
 credentials*.json
 # Documents intentionally tracked: examples contain synthetic JSON only
+
+# Independent Lite worktree and private diagnostic logs
+/lite/
+/DEBUG/

@@ -83,7 +83,11 @@ public partial class MainWindow
         MeetingTabs.SelectedIndex = 4; await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render, token);
         var images = new List<string>(); SaveLayoutImage(evidence, "meeting-log.png", 1, images);
         Need(host is null && !microphoneEnabled && player.Source is null, "Log smoke opened capture or playback.");
-        return new { Status = "PASS", SourceMode = "SYNTHETIC GENERATED FILES ONLY", CaptureStarted = false,
+        var diagnosticUi = await M3iDiagnosticPresentationSmokeAsync(evidence, token);
+        var mixedTimeUi = await M3iUntimedUiSmokeAsync(evidence, token);
+        var mixProgressUi = await M3iMixProgressSmokeAsync(evidence, token);
+        var qwenPartialUi = await M5dQwenFixUiSmokeAsync(evidence, token);
+        return new { QwenPartialUi = qwenPartialUi, MixProgressUi = mixProgressUi, DiagnosticUi = diagnosticUi, MixedTimeUi = mixedTimeUi, Status = "PASS", SourceMode = "SYNTHETIC GENERATED FILES ONLY", CaptureStarted = false,
             MicrophoneCollected = false, MeetingIsolation = true, PersistedAcrossWindows = true,
             LegacyAttemptImportedWithoutPrompt = true, OriginalsUnchanged = true, Export = destination, Images = images };
         static void Need(bool condition, string message) { if (!condition) throw new InvalidDataException(message); }

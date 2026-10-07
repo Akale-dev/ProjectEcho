@@ -23,6 +23,7 @@ public partial class TranscriptionView : UserControl
     }
 
     internal event EventHandler? SegmentInvoked;
+    internal event EventHandler? SpeakerSegmentInvoked;
     internal event EventHandler? CopySegmentRequested;
 
     private void Segment_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -41,6 +42,21 @@ public partial class TranscriptionView : UserControl
         { CopySegmentRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
         if (e.Key != Key.Enter || SegmentsBox.SelectedItem is null) return;
         SegmentInvoked?.Invoke(this, EventArgs.Empty);
+        e.Handled = true;
+    }
+
+    private void SpeakerSegment_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListBoxItem { IsEnabled: true } item) return;
+        SpeakerSegmentsBox.SelectedItem = item.DataContext;
+        SpeakerSegmentInvoked?.Invoke(this, EventArgs.Empty);
+        e.Handled = true;
+    }
+
+    private void SpeakerSegments_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || SpeakerSegmentsBox.SelectedItem is null) return;
+        SpeakerSegmentInvoked?.Invoke(this, EventArgs.Empty);
         e.Handled = true;
     }
 }

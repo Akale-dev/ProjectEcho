@@ -1,0 +1,7 @@
+仅在用户明确要求开始 M4 后使用本任务模板；保存规划不启动开发。基线为 M3Hfix 完成后的实际交付，先读 AGENTS.md、docs/00_HANDOFF.md、STATUS.md、docs/12_MILESTONES.md、docs/70_M4_M6_LOCAL_ASR_ROADMAP.md、docs/48_M3B_LOCAL_ASR_BACKENDS.md、docs/45_M3_TRANSCRIPTION_CONTRACT.md、docs/69_M3HFIX_PAUSE_RECORDING_TIMELINE.md。
+
+本阶段是中文 ASR，不是旧 M4 项目分析。先做 M4-A：核实现有工具，锁定 Qwen3-ASR + handy-computer/transcribe.cpp 的候选版本、许可和依赖，在目标 Windows 分别验证 CPU/Vulkan、实际设备、中文/混合样本、取消、输出完整性，以及无需 Python/Node 的句子定位方案。1.7B/0.6B及量化按实际样本取舍；不继承 Whisper 的 GPU 验收，不自动换掉现有可用引擎。
+
+用户只需要当前 Whisper 式“点击一句字幕回听该句”，不做逐字界面。当前 Whisper 没有启用独立 VAD；其分句使用标点与可核对 token 时间。Qwen 当前端口无原生时码，VAD 只辅助语音窗口，不等于句子对齐。比较窗口基线/Silero VAD候选；必要音文对齐可在内部产生字词边界，但不得按字数造时间、把窗内多句都挂窗口开头或套用另一份 Whisper 文字时间。ForcedAligner 等候选必须实际证明原生 Windows 便携可用；不可用则记录限制，不以安装 Python 或只交付无时间全文冒充完整 M4。
+
+M4-B完成带保真窗口映射的长会处理与句子定位，M4-C再完成适配、界面和便携交付。按70号P4-01–04验收；新pause-excluded与旧elapsed分别保留，音频/原稿/人工稿不可覆盖，取消/切会/重试归属正确，约三小时完整性与资源独立实测。无需模型仍可录音导出，后处理不阻塞下一场录音。没有明确授权不录音、不启mic、不上传、不推送或关机。未测保持NOT_RUN，不提前实施M5/M6/M7。每个增量报告实现/测试/未测/阻塞、准确环境和证据。

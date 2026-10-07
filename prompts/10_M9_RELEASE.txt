@@ -1,0 +1,5 @@
+仅在用户明确要求发行验证时执行ProjectEcho M9（原M6）。先读AGENTS.md、docs/00_HANDOFF.md、STATUS.md、docs/12_MILESTONES.md、docs/13_ACCEPTANCE_TESTS.md、docs/14_WINDOWS_SETUP.md、docs/18_RELEASE_DEPENDENCIES.md及docs/70_M4_M6_LOCAL_ASR_ROADMAP.md。M2基础便携包和干净Windows证据仍是独立责任，缺少就如实补测，不能声称早已通过。
+
+复核App、CaptureHost、编码器/原生依赖，扩展设备/Windows环境和Edge场景，保留来源/实际版本/hash/许可证并生成SBOM与文件清单。回归长时同步、静音、设备切换、故障恢复、停采末帧、暂停时间策略、锁屏/睡眠、平台模式、离线/无自动外传、安全导出和实际压缩格式。没有用户本次授权不主动录音或启mic。未实测就写未测，不改成PASS。输出中文操作指南与真实已知限制，不把源音频、profile、开发SDK或秘密打包；模型是否随包按已明确许可和发行范围决定。
+
+M9可在M2后独立进行，M3–M8均不作为基础版发行前提；新模型功能只在实际交付时追加对应依赖和回归，不因尚未启动后续阶段阻塞录音导出。

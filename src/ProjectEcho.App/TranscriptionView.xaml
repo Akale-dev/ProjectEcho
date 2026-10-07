@@ -1,12 +1,17 @@
 <UserControl x:Class="ProjectEcho.App.TranscriptionView"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
- xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ProjectEcho.App">
  <AdornerDecorator><Grid>
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <TextBlock x:Name="MeetingText" Visibility="Collapsed" Text="{DynamicResource Loc517D4FE75F371071}" FontWeight="SemiBold" Margin="0,0,0,8"/>
   <TabControl x:Name="WorkspaceTabs" Grid.Row="1" Padding="12" SelectedIndex="1">
    <TabItem Header="{DynamicResource Loc3E6500E922D730FF}">
     <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,12,0,0">
+     <ComboBox x:Name="AsrBackendBox" Width="300" HorizontalAlignment="Left" Margin="0,0,0,12" SelectedIndex="0" AutomationProperties.Name="本地识别引擎">
+      <ComboBoxItem Content="Whisper" Tag="whisper.cpp"/><ComboBoxItem Content="Qwen3-ASR + 句子定位" Tag="qwen3-asr"/>
+     </ComboBox>
+     <Button x:Name="ResetQwenConfigurationButton" Content="重新配置本场引擎" Visibility="Collapsed" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+     <StackPanel x:Name="WhisperConfigurationPanel">
      <TextBlock Text="{DynamicResource LocDA6102899924EA60}" FontSize="19" FontWeight="SemiBold"/>
      <TextBlock Text="{DynamicResource LocFB7E5BA263A597EC}" Margin="0,6,0,14"/>
      <TextBlock x:Name="AudioReadinessText" Margin="0,0,0,12" Padding="5" Visibility="Collapsed"/>
@@ -30,6 +35,27 @@
      <TextBlock Text="{DynamicResource LocEC13F98115D9D5DB}" TextWrapping="Wrap" Margin="0,4,0,10" Opacity="0.75"/>
      <WrapPanel><Button x:Name="RunWhisperButton" Content="{DynamicResource Loc1604C67349FD2F04}" Style="{StaticResource PrimaryButton}"/><Button x:Name="SaveConfigurationButton" Content="{DynamicResource LocFB64D98E27D48E95}"/></WrapPanel>
      <TextBlock Text="{DynamicResource Loc0130625C09E98F25}"/>
+     </StackPanel>
+     <StackPanel x:Name="QwenConfigurationPanel" Visibility="Collapsed">
+      <TextBlock x:Name="QwenDescriptionText" TextWrapping="Wrap" Margin="0,0,0,10"/>
+      <WrapPanel><Button x:Name="QwenExeButton" Content="Qwen 程序"/><TextBlock x:Name="QwenExeText" MaxWidth="650" TextWrapping="Wrap" VerticalAlignment="Center"/></WrapPanel>
+      <WrapPanel><Button x:Name="QwenModelButton" Content="Qwen 模型"/><TextBlock x:Name="QwenModelText" MaxWidth="650" TextWrapping="Wrap" VerticalAlignment="Center"/></WrapPanel>
+      <WrapPanel><Button x:Name="QwenAlignerExeButton" Content="句子定位程序"/><TextBlock x:Name="QwenAlignerExeText" MaxWidth="650" TextWrapping="Wrap" VerticalAlignment="Center"/></WrapPanel>
+      <WrapPanel><Button x:Name="QwenAlignerModelButton" Content="句子定位模型"/><TextBlock x:Name="QwenAlignerModelText" MaxWidth="650" TextWrapping="Wrap" VerticalAlignment="Center"/></WrapPanel>
+      <CheckBox x:Name="QwenLicenseBox" Content="已核对 Qwen 和句子定位模型的来源与许可" Margin="0,4,0,12"/>
+      <WrapPanel>
+       <ComboBox x:Name="QwenLanguageBox" Width="150" SelectedIndex="0" AutomationProperties.Name="识别语言"><ComboBoxItem Content="自动语言" Tag="auto"/><ComboBoxItem Content="中文" Tag="zh"/><ComboBoxItem Content="English" Tag="en"/></ComboBox>
+       <StackPanel><TextBlock x:Name="QwenRecognitionHardwareLabel" Text="识别硬件"/><ComboBox x:Name="QwenHardwareBox" Width="160" SelectedIndex="0" AutomationProperties.Name="识别硬件"><ComboBoxItem Content="CPU" Tag="Cpu"/><ComboBoxItem Content="Vulkan" Tag="Vulkan"/><ComboBoxItem Content="自动硬件" Tag="Auto"/></ComboBox></StackPanel>
+       <StackPanel Margin="8,0,0,0"><TextBlock x:Name="QwenAlignmentHardwareLabel" Text="句子定位方式"/><ComboBox x:Name="QwenAlignmentHardwareBox" Width="220" SelectedIndex="0" AutomationProperties.Name="句子定位方式"><ComboBoxItem Content="CPU（原生）" Tag="Cpu"/><ComboBoxItem Content="CPU（官方 Python，可选）" Tag="OfficialPython"/><ComboBoxItem Content="Vulkan（原生）" Tag="Vulkan"/></ComboBox></StackPanel>
+       <StackPanel Margin="8,0"><TextBlock x:Name="QwenThreadsLabel" Text="CPU 线程"/><TextBox x:Name="QwenThreadsBox" Width="70" Text="4" MaxLength="2"/></StackPanel>
+       <StackPanel Margin="8,0"><TextBlock x:Name="QwenDeviceLabel" Text="GPU 编号"/><TextBox x:Name="QwenDeviceBox" Width="70" Text="0" MaxLength="2"/></StackPanel>
+      </WrapPanel>
+      <CheckBox x:Name="QwenDisableCpuAccelerationBox" Content="兼容旧 CPU（关闭 AVX2/FMA 等加速）" Margin="0,8,0,4"/>
+      <TextBlock x:Name="QwenAlignmentEffectiveText" TextWrapping="Wrap" Margin="0,0,0,4" Opacity="0.8"/>
+      <TextBlock x:Name="QwenPromptLabel" Text="本场提示词（可选）" Margin="0,12,0,4"/>
+      <TextBox x:Name="QwenPromptBox" AcceptsReturn="True" TextWrapping="Wrap" Height="68" MaxLength="4000" VerticalScrollBarVisibility="Auto"/>
+      <WrapPanel Margin="0,10,0,0"><Button x:Name="RunQwenButton" Content="开始识别和句子定位" Style="{StaticResource PrimaryButton}"/><Button x:Name="SaveQwenDefaultsButton" Content="保存为新会默认"/><Button x:Name="QwenHelpButton" Content="如何配置 Qwen"/></WrapPanel>
+     </StackPanel>
     </StackPanel></ScrollViewer>
    </TabItem>
    <TabItem Header="{DynamicResource LocA500D66C17CF2736}">
@@ -39,17 +65,29 @@
       <StackPanel>
      <StackPanel x:Name="ReviewHeaderPanel">
       <DockPanel><Button x:Name="RefreshButton" Content="{DynamicResource LocB54FCCE8D92A39CF}" DockPanel.Dock="Left"/><ComboBox x:Name="RevisionBox" DisplayMemberPath="Label" ToolTip="{DynamicResource Loc20392C4EE9287E9A}"/></DockPanel>
-      <DockPanel Margin="0,4,0,4"><Button x:Name="SearchButton" Content="{DynamicResource Loc44CE7AE909BBB28B}" DockPanel.Dock="Right"/><TextBox x:Name="SearchBox" ToolTip="{DynamicResource LocA8085407611A2C4A}"/></DockPanel>
+      <DockPanel x:Name="ReviewSearchRow" Height="32" Margin="0,4,0,4"><Button x:Name="SearchButton" Content="{DynamicResource Loc44CE7AE909BBB28B}" DockPanel.Dock="Right" Height="32" MinHeight="0" Padding="12,3" Margin="8,0,0,0"/><TextBox x:Name="SearchBox" Height="32" MinHeight="0" Padding="8,3" AcceptsReturn="False" ToolTip="{DynamicResource LocA8085407611A2C4A}"/></DockPanel>
       <CheckBox x:Name="AllMeetingsBox" Content="{DynamicResource Loc473292021E58B242}" Margin="0,0,0,6"/>
+      <TextBlock x:Name="ReviewAlignmentNotice" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,0,0,6"/>
      </StackPanel>
      <ListBox x:Name="SegmentsBox" Height="160" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" PreviewKeyDown="Segments_KeyDown">
       <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><EventSetter Event="PreviewMouseLeftButtonUp" Handler="Segment_MouseLeftButtonUp"/></Style></ListBox.ItemContainerStyle>
       <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" Margin="6"/></DataTemplate></ListBox.ItemTemplate>
      </ListBox>
      <StackPanel x:Name="ReviewEditorPanel">
-      <TextBlock x:Name="SegmentTimeText" Text="{DynamicResource LocA9E4E21CD3D0D003}" Margin="0,5,0,4"/>
-      <TextBox x:Name="EditBox" AcceptsReturn="True" TextWrapping="Wrap" Height="65" VerticalScrollBarVisibility="Auto" MaxLength="100000"/>
+      <Grid x:Name="SubtitleEditorGrid" Margin="0,6,0,0">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+       <Grid Margin="0,0,10,0">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <TextBlock x:Name="StartTimestampLabel" VerticalAlignment="Center" Margin="0,0,5,5"/>
+        <local:FixedTimestampEditor x:Name="StartTimestampBox" Grid.Column="1" Margin="0,0,0,5"/>
+        <TextBlock x:Name="EndTimestampLabel" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,5,0"/>
+        <local:FixedTimestampEditor x:Name="EndTimestampBox" Grid.Row="1" Grid.Column="1"/>
+       </Grid>
+       <TextBox x:Name="EditBox" Grid.Column="1" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="65" Height="65" VerticalScrollBarVisibility="Auto" MaxLength="100000"/>
+      </Grid>
       <WrapPanel Margin="0,6,0,0"><Button x:Name="SaveRevisionButton" Content="{DynamicResource Loc001160AB52A7C2D1}"/><Button x:Name="CopySegmentButton" Content="{DynamicResource Loc63D90D977348AB1F}" ToolTip="{DynamicResource LocFB0C048039205276}"/><Button x:Name="SeekButton" Content="{DynamicResource Loc03C50FD4658C3D91}"/><Button x:Name="ExportSubtitlesButton" Content="{DynamicResource LocB6F9CDCE098B05BC}"/><Button x:Name="ExportTextButton" Content="{DynamicResource LocC427FACC1C43327F}"/></WrapPanel>
+      <WrapPanel><Button x:Name="OpenSpeakersButton" Content="同场说话人"/><CheckBox x:Name="IncludeSpeakerLabelsBox" Content="导出包含说话人标签" IsChecked="True" VerticalAlignment="Center" Margin="8,0"/></WrapPanel>
      </StackPanel>
       </StackPanel>
      </ScrollViewer>
@@ -57,9 +95,9 @@
       <StackPanel>
        <DockPanel><TextBlock x:Name="PlaybackTimeText" Text="00:00:00.00 / 00:00:00.00" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0"/><Slider x:Name="PlaybackPositionSlider" Minimum="0" Maximum="1" SmallChange="0.01" LargeChange="1" IsMoveToPointEnabled="True" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource Loc83EF2AD3A861021A}"/></DockPanel>
        <WrapPanel Margin="0,5,0,0">
-        <Button x:Name="PlayListeningButton" Width="42" ToolTip="{DynamicResource LocB696D803A6D75012}" AutomationProperties.Name="{DynamicResource LocB696D803A6D75012}"><Path Data="M 2 0 L 15 8 L 2 16 Z" Width="14" Height="14" Stretch="Uniform" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
-        <Button x:Name="PauseListeningButton" Width="42" ToolTip="{DynamicResource Loc17CC2D94EDAE7CFD}" AutomationProperties.Name="{DynamicResource Loc17CC2D94EDAE7CFD}"><Path x:Name="PauseListeningIcon" Data="M 1 0 H 6 V 16 H 1 Z M 10 0 H 15 V 16 H 10 Z" Width="14" Height="14" Stretch="Uniform" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
-        <Button x:Name="StopListeningButton" Width="42" ToolTip="{DynamicResource Loc0493B52724BE910D}" AutomationProperties.Name="{DynamicResource Loc0493B52724BE910D}"><Path Data="M 0 0 H 14 V 14 H 0 Z" Width="14" Height="14" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
+        <Button x:Name="PlayListeningButton" Style="{StaticResource PrimaryTransportButton}" ToolTip="{DynamicResource LocC3396195E91CCDD8}" AutomationProperties.Name="{DynamicResource LocC3396195E91CCDD8}"><Path Data="{StaticResource PlayPlaybackGeometry}" Width="16" Height="16" Stretch="Uniform" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
+        <Button x:Name="PauseListeningButton" Style="{StaticResource TransportButton}" ToolTip="{DynamicResource Loc17CC2D94EDAE7CFD}" AutomationProperties.Name="{DynamicResource Loc17CC2D94EDAE7CFD}"><Path x:Name="PauseListeningIcon" Data="M 1 0 H 6 V 16 H 1 Z M 10 0 H 15 V 16 H 10 Z" Width="16" Height="16" Stretch="Uniform" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
+        <Button x:Name="StopListeningButton" Style="{StaticResource TransportButton}" ToolTip="{DynamicResource Loc0493B52724BE910D}" AutomationProperties.Name="{DynamicResource Loc0493B52724BE910D}"><Path Data="M 0 0 H 14 V 14 H 0 Z" Width="14" Height="14" Stretch="Uniform" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></Button>
         <ComboBox x:Name="PlaybackSpeedBox" Width="85" SelectedIndex="2" ToolTip="{DynamicResource LocF7FBDB84467E7546}"><ComboBoxItem Content="0.5×" Tag="0.5"/><ComboBoxItem Content="0.75×" Tag="0.75"/><ComboBoxItem Content="1×" Tag="1"/><ComboBoxItem Content="1.25×" Tag="1.25"/><ComboBoxItem Content="1.5×" Tag="1.5"/><ComboBoxItem Content="2×" Tag="2"/></ComboBox>
         <TextBlock Text="{DynamicResource LocD6529CBBD21874E2}" VerticalAlignment="Center" FontSize="11" Margin="8,0,0,0"/>
        </WrapPanel>
@@ -85,8 +123,63 @@
      <Button x:Name="ImportButton" Content="{DynamicResource Loc26FA44ADE0B35161}" HorizontalAlignment="Left"/>
     </StackPanel></ScrollViewer>
    </TabItem>
+   <TabItem x:Name="SpeakersTab" Header="同场说话人">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,8,0,0">
+     <TextBlock x:Name="SpeakerDescriptionText" TextWrapping="Wrap" Margin="0,0,0,10"/>
+     <Expander x:Name="SpeakerConfigurationExpander" Header="本地 CPU 模型配置" IsExpanded="False" Margin="0,0,0,8">
+      <StackPanel Margin="0,8,0,0">
+       <WrapPanel><Button x:Name="SpeakerWorkerButton" Content="说话人程序"/><TextBlock x:Name="SpeakerWorkerText" TextWrapping="Wrap" MaxWidth="620" VerticalAlignment="Center"/></WrapPanel>
+       <WrapPanel><Button x:Name="SpeakerSegmentationButton" Content="分段模型"/><TextBlock x:Name="SpeakerSegmentationText" TextWrapping="Wrap" MaxWidth="620" VerticalAlignment="Center"/></WrapPanel>
+       <WrapPanel><ComboBox x:Name="SpeakerEmbeddingPresetBox" Width="205" DisplayMemberPath="Label" VerticalAlignment="Center"/><Button x:Name="SpeakerEmbeddingButton" Content="声音特征模型"/><TextBlock x:Name="SpeakerEmbeddingText" TextWrapping="Wrap" MaxWidth="620" VerticalAlignment="Center"/></WrapPanel>
+       <CheckBox x:Name="SpeakerLicenseBox" Content="已核对本地说话人模型的来源与许可" Margin="0,4,0,8"/>
+       <WrapPanel>
+        <StackPanel Margin="0,0,16,0"><TextBlock x:Name="SpeakerCountLabel" Text="已知人数（留空自动估计）"/><TextBox x:Name="SpeakerCountBox" Width="180" MaxLength="2" HorizontalAlignment="Left"/></StackPanel>
+        <StackPanel><TextBlock x:Name="SpeakerThreadsLabel" Text="CPU 线程"/><TextBox x:Name="SpeakerThreadsBox" Text="2" Width="80" MaxLength="2"/></StackPanel>
+       </WrapPanel>
+      </StackPanel>
+     </Expander>
+     <DockPanel><Button x:Name="RunSpeakersButton" Content="按说话人分段" Style="{StaticResource PrimaryButton}" DockPanel.Dock="Left"/><ComboBox x:Name="SpeakerRevisionBox" DisplayMemberPath="Label" VerticalAlignment="Center"/></DockPanel>
+     <DockPanel Margin="0,3,0,3"><Button x:Name="ApplySpeakerAnalysisButton" Content="应用已保存分析" DockPanel.Dock="Right"/><ComboBox x:Name="SpeakerAnalysisBox" DisplayMemberPath="Label" VerticalAlignment="Center"/></DockPanel>
+     <TextBlock x:Name="SpeakerVersionText" TextWrapping="Wrap" Margin="0,3,0,6" Opacity="0.75"/>
+     <ListBox x:Name="SpeakerSegmentsBox" Height="145" DisplayMemberPath="Label" ScrollViewer.HorizontalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" PreviewKeyDown="SpeakerSegments_KeyDown">
+      <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><EventSetter Event="PreviewMouseLeftButtonUp" Handler="SpeakerSegment_MouseLeftButtonUp"/></Style></ListBox.ItemContainerStyle>
+     </ListBox>
+     <TextBlock x:Name="SpeakerSelectionText" TextWrapping="Wrap" Margin="0,6,0,4"/>
+     <WrapPanel>
+      <ComboBox x:Name="SpeakerIdentityBox" Width="180" DisplayMemberPath="Label"/>
+      <TextBox x:Name="SpeakerDisplayNameBox" Width="180" MaxLength="100"/>
+      <Button x:Name="RenameSpeakerButton" Content="保存显示名称"/>
+     </WrapPanel>
+     <WrapPanel>
+      <ComboBox x:Name="SpeakerAssigneeBox" Width="180" DisplayMemberPath="Label"/>
+      <Button x:Name="AssignSpeakerButton" Content="改这段的说话人"/>
+      <Button x:Name="MergeSpeakerButton" Content="将上方人物合并到此人"/>
+      <Button x:Name="SplitOutSpeakerButton" Content="将这段拆出为新人物"/>
+     </WrapPanel>
+     <Expander x:Name="SpeakerCutExpander" Header="人工确认句内换人" Margin="0,6,0,0">
+      <StackPanel Margin="0,6,0,0">
+       <TextBlock x:Name="SpeakerCutHelpText" TextWrapping="Wrap" Margin="0,0,0,5"/>
+       <TextBox x:Name="SpeakerCutTextBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Height="64" VerticalScrollBarVisibility="Auto"/>
+       <WrapPanel Margin="0,5,0,0">
+        <CheckBox x:Name="SpeakerManualCutBox" VerticalAlignment="Center" Margin="0,0,8,0"/>
+        <TextBox x:Name="SpeakerManualCutTimeBox" Width="150" MaxLength="12" IsEnabled="False"/>
+        <TextBlock x:Name="SpeakerManualCutFormatText" VerticalAlignment="Center" Margin="6,0,0,0"/>
+       </WrapPanel>
+       <WrapPanel Margin="0,5,0,0">
+        <ComboBox x:Name="SpeakerCutTimeBox" Width="160" DisplayMemberPath="Label"/>
+        <ComboBox x:Name="SpeakerCutLeftBox" Width="150" DisplayMemberPath="Label"/>
+        <ComboBox x:Name="SpeakerCutRightBox" Width="150" DisplayMemberPath="Label"/>
+        <Button x:Name="SplitSpeakerTextButton" Content="在光标处分成两段"/>
+       </WrapPanel>
+      </StackPanel>
+     </Expander>
+     <TextBlock x:Name="SpeakerCorrectionNoticeText" TextWrapping="Wrap" Margin="0,8,0,4" Opacity="0.75"/>
+     <Button x:Name="SpeakerBackToReviewButton" Content="回到校订与导出" HorizontalAlignment="Left"/>
+    </StackPanel></ScrollViewer>
+   </TabItem>
   </TabControl>
-  <Grid Grid.Row="2" Margin="0,8,0,0">
+  <Grid x:Name="TranscriptStatusPanel" Grid.Row="2" Margin="0,8,0,0">
+   <Grid.Style><Style TargetType="Grid"><Style.Triggers><DataTrigger Binding="{Binding SelectedIndex, ElementName=WorkspaceTabs}" Value="1"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Grid.Style>
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <StackPanel><StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,5">
     <DockPanel LastChildFill="True"><StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center"><TextBlock x:Name="ProgressElapsedText" Opacity="0.7"/><ProgressBar x:Name="RecognitionActivityBar" Width="42" Height="4" IsIndeterminate="True" Margin="8,0,0,0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False"/></StackPanel><TextBlock x:Name="ProgressText" TextWrapping="Wrap"/></DockPanel>

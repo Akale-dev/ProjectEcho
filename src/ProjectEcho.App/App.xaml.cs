@@ -8,6 +8,7 @@ public partial class App : Application
 {
     private SingleInstanceCoordinator? singleInstance;
     private bool activationPending;
+    private bool isolatedSmokeSession;
 
     private void ActivateExistingWindow()
     {
@@ -17,6 +18,12 @@ public partial class App : Application
         WindowActivation.Restore(MainWindow);
     }
 
+    private void ShutdownForStartup(int exitCode)
+    {
+        if (isolatedSmokeSession && MainWindow is ProjectEcho.App.MainWindow testWindow)
+            testWindow.PrepareTranscriptDraftSmokeShutdown();
+        Shutdown(exitCode);
+    }
     protected override void OnExit(ExitEventArgs e)
     {
         singleInstance?.Dispose();
@@ -55,6 +62,23 @@ public partial class App : Application
         bool m3hUiSmoke = e.Args.Contains("--m3h-ui-smoke");
         bool m3hAsrSmoke = e.Args.Contains("--m3h-meeting-asr-smoke");
         bool m3hPreviewSmoke = e.Args.Contains("--m3h-preview-smoke");
+        bool m3hFixPauseSmoke = e.Args.Contains("--m3h-fix-pause-smoke");
+        bool m5dUiSmoke = e.Args.Contains("--m5d-ui-smoke") || e.Args.Contains("--m3j-ui-smoke");
+        bool m4QwenSmoke = e.Args.Contains("--m4-qwen-smoke");
+        bool m4RealQwenSmoke = e.Args.Contains("--m4-real-qwen-smoke");
+        bool m4WithoutModelsSmoke = e.Args.Contains("--m4-without-models-smoke");
+        bool m5SpeakerSmoke = e.Args.Contains("--m5-speaker-smoke");
+        bool m5RealSpeakerSmoke = e.Args.Contains("--m5-real-speaker-smoke");
+        bool m5bUiSmoke = e.Args.Contains("--m5b-ui-smoke");
+        bool m3jCompactSmoke = e.Args.Contains("--m3j-compact-layout-smoke");
+        bool m3jEditingSmoke = e.Args.Contains("--m3j-transcript-editing-smoke");
+        bool m3kTimeSmoke = e.Args.Contains("--m3k-timestamp-input-smoke");
+        bool m3kDataSmoke = e.Args.Contains("--m3k-data-root-smoke");
+        bool m3lUiSmoke = e.Args.Contains("--m3l-ui-smoke");
+        bool m3mUiSmoke = e.Args.Contains("--m3m-auto-stop-smoke");
+        bool m3nUiSmoke = e.Args.Contains("--m3n-playback-smoke");
+        bool m3lStartupProbe = e.Args.Length >= 2 && e.Args[0] == "--m3l-startup-library-probe";
+        bool m3kDataProbe = e.Args.Length >= 2 && (e.Args[0] == "--m3k-data-root-probe" || m3lStartupProbe);
         try
         {
             if (e.Args.Contains("--single-instance-probe"))
@@ -67,13 +91,163 @@ public partial class App : Application
             bool isolatedSmoke = exportCloseSmoke || exportHistorySmoke || playbackSmoke || layoutSmoke
                 || transcriptionSmoke || m3ReplaySmoke || realWhisperSmoke || whisperProgressSmoke
                 || m3cTranscriptSmoke || m3cLibrarySmoke || m3dVersionSmoke || m3dNavigationSmoke || m3dSettingsSmoke
-                || m3fUiSmoke || m3fRecordingSmoke || m3fReplaySmoke || m3gUiSmoke || m3gTimeSmoke || m3hUiSmoke || m3hAsrSmoke || m3hPreviewSmoke || e.Args.Contains("--smoke-test")
-                || e.Args.Contains("--m3e-ui-smoke") || e.Args.Contains("--m3e-log-smoke");
+                || m3fUiSmoke || m3fRecordingSmoke || m3fReplaySmoke || m3gUiSmoke || m3gTimeSmoke || m3hUiSmoke || m3hAsrSmoke || m3hPreviewSmoke || m3hFixPauseSmoke || e.Args.Contains("--smoke-test")
+                || e.Args.Contains("--m3e-ui-smoke") || e.Args.Contains("--m3e-log-smoke") || m4QwenSmoke || m4RealQwenSmoke || m4WithoutModelsSmoke || m5SpeakerSmoke || m5RealSpeakerSmoke || m5bUiSmoke || m5dUiSmoke || m3jCompactSmoke || m3jEditingSmoke || m3kTimeSmoke || m3kDataSmoke || m3kDataProbe || m3lUiSmoke || m3mUiSmoke || m3nUiSmoke;
+            isolatedSmokeSession = isolatedSmoke;
             if (!isolatedSmoke)
             {
                 singleInstance = await SingleInstanceCoordinator.AcquireOrActivateAsync(
                     () => Dispatcher.BeginInvoke(new Action(ActivateExistingWindow)));
-                if (singleInstance is null) { Shutdown(0); return; }
+                if (singleInstance is null) { ShutdownForStartup(0); return; }
+            }
+            if (m3kDataProbe)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M3K-TimeFix");
+                Directory.CreateDirectory(folder);
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false, dataRootPreferencePathOverride: Path.GetFullPath(e.Args[1]), refreshLibraryOnLoad: m3lStartupProbe);
+                MainWindow = testWindow;
+                _ = testWindow.M3kDataRootProcessProbe(e.Args.Length > 2 ? Path.GetFullPath(e.Args[2]) : null);
+                if (m3lStartupProbe)
+                {
+                    testWindow.Show();
+                    await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    await testWindow.WaitForStartupLibraryAsync();
+                }
+                var result = testWindow.M3kDataRootProcessProbe(null);
+                File.WriteAllText(Path.Combine(folder, "data-root-process.json"), JsonSerializer.Serialize(result,
+                    new JsonSerializerOptions { WriteIndented = true }));
+                ShutdownForStartup(0); return;
+            }
+            if (m3kTimeSmoke || m3kDataSmoke || m3lUiSmoke || m3mUiSmoke || m3nUiSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", m3nUiSmoke ? "M3O" : m3mUiSmoke ? "M3M" : m3lUiSmoke ? "M3L" : "M3K-TimeFix", "ui-" + DateTime.UtcNow.ToString("HHmmssfff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                var result = m3nUiSmoke ? await testWindow.M3nPlaybackSmokeAsync(folder, deadline.Token)
+                    : m3mUiSmoke ? await testWindow.M3mAutoStopSmokeAsync(folder, deadline.Token)
+                    : m3lUiSmoke ? await testWindow.M3lUiSmokeAsync(folder, deadline.Token)
+                    : m3kDataSmoke ? await testWindow.M3kDataRootSmokeAsync(folder, deadline.Token)
+                    : await testWindow.M3kTimestampInputSmokeAsync(folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
+                ShutdownForStartup(0); return;
+            }
+            if (m3jCompactSmoke || m3jEditingSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M3J-20261006",
+                    (m3jCompactSmoke ? "compact-" : "editing-") + DateTime.UtcNow.ToString("HHmmssfff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                var result = m3jCompactSmoke
+                    ? await testWindow.M3jCompactLayoutSmokeAsync(folder, deadline.Token)
+                    : await testWindow.M3jTranscriptEditingSmokeAsync(folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
+                ShutdownForStartup(0); return;
+            }
+            if (m5dUiSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M5D", "ui-" + DateTime.UtcNow.ToString("HHmmssfff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                var result = await testWindow.M3jUiSmokeAsync(folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
+                ShutdownForStartup(0); return;
+            }
+            if (m5bUiSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M5B", "ui-" + DateTime.UtcNow.ToString("HHmmssfff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                var result = await testWindow.M5bUiSmokeAsync(folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
+                Shutdown(0); return;
+            }
+            if (m5SpeakerSmoke || m5RealSpeakerSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M5", (m5RealSpeakerSmoke ? "real-ui-" : "ui-") + DateTime.UtcNow.ToString("HHmmssfff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                string Option(string name)
+                {
+                    int index = Array.IndexOf(e.Args, name);
+                    return index >= 0 && index + 1 < e.Args.Length ? e.Args[index + 1] : throw new ArgumentException("Missing smoke option: " + name);
+                }
+                var result = m5RealSpeakerSmoke ? await testWindow.M5RealSpeakerSmokeAsync(Option("--audio"), Option("--cli"), Option("--segmentation"), Option("--embedding"), folder, deadline.Token,
+                    e.Args.Contains("--whisper-cli") ? Option("--whisper-cli") : null, e.Args.Contains("--whisper-model") ? Option("--whisper-model") : null)
+                    : await testWindow.M5SpeakerSmokeAsync(folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
+                Shutdown(0); return;
+            }
+            if (m4RealQwenSmoke || m4WithoutModelsSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M4", (m4RealQwenSmoke ? "real-ui-" : "without-models-") + DateTime.UtcNow.ToString("HHmmssfff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(6));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                string Option(string name)
+                {
+                    int index = Array.IndexOf(e.Args, name);
+                    return index >= 0 && index + 1 < e.Args.Length ? e.Args[index + 1] : throw new ArgumentException("Missing smoke option: " + name);
+                }
+                var result = m4WithoutModelsSmoke ? await testWindow.M4WithoutModelsSmokeAsync(folder, deadline.Token) :
+                    await testWindow.M4RealQwenSmokeAsync(Option("--audio"), Option("--cli"), Option("--model"), Option("--aligner"), Option("--aligner-model"), folder, deadline.Token,
+                        e.Args.Contains("--cpu") ? ProjectEcho.Core.Transcription.LocalTranscriptionHardware.Cpu : ProjectEcho.Core.Transcription.LocalTranscriptionHardware.Vulkan,
+                        e.Args.Contains("--alignment-vulkan") ? ProjectEcho.Core.Transcription.LocalTranscriptionHardware.Vulkan : ProjectEcho.Core.Transcription.LocalTranscriptionHardware.Cpu,
+                        e.Args.Contains("--alignment-python") ? new ProjectEcho.Core.Transcription.QwenPythonAlignmentConfiguration(
+                            Option("--python"), Option("--python-model"), e.Args.Contains("--python-bridge") ? Option("--python-bridge") :
+                                Path.Combine(AppContext.BaseDirectory, "Tools", "qwen-python", "qwen_aligner_bridge.py")) : null,
+                        e.Args.Contains("--disable-cpu-acceleration"));
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
+                Shutdown(0); return;
+            }
+            if (m4QwenSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M4", "ui-" + DateTime.UtcNow.ToString("HHmmssfff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                var result = await testWindow.M4QwenSmokeAsync(folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
+                Shutdown(0); return;
+            }
+            if (m3hFixPauseSmoke)
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M3Hfix", "ui-" + DateTime.UtcNow.ToString("HHmmssfff"));
+                Directory.CreateDirectory(folder);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
+                MainWindow = testWindow; testWindow.Show();
+                var result = await testWindow.M3hFixPauseSmokeAsync(folder, deadline.Token);
+                File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
+                { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
+                Shutdown(0); return;
             }
             if (m3hUiSmoke || m3hAsrSmoke || m3hPreviewSmoke)
             {
@@ -89,7 +263,7 @@ public partial class App : Application
                     : await testWindow.M3hPreviewSmokeAsync(folder, deadline.Token);
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
                 { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0); return;
+                ShutdownForStartup(0); return;
             }
             if (m3gUiSmoke || m3gTimeSmoke)
             {
@@ -104,7 +278,7 @@ public partial class App : Application
                     : await testWindow.M3gTimeSmokeAsync(folder, deadline.Token);
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
                 { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0); return;
+                ShutdownForStartup(0); return;
             }
             if (m3fUiSmoke || m3fRecordingSmoke || m3fReplaySmoke)
             {
@@ -120,7 +294,7 @@ public partial class App : Application
                     : await testWindow.M3fReplayReadinessSmokeAsync(folder, deadline.Token);
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
                 { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0); return;
+                ShutdownForStartup(0); return;
             }
             if (e.Args.Contains("--m3e-ui-smoke") || e.Args.Contains("--m3e-log-smoke"))
             {
@@ -135,7 +309,7 @@ public partial class App : Application
                     : await testWindow.M3eUiSmokeAsync(folder, deadline.Token);
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
                 { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0); return;
+                ShutdownForStartup(0); return;
             }
             if (exportHistorySmoke)
             {
@@ -149,7 +323,7 @@ public partial class App : Application
                 var result = await testWindow.ExportHistorySmokeAsync(folder, deadline.Token);
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
                 { Os = Environment.OSVersion.Version.ToString(), Result = result }, new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0); return;
+                ShutdownForStartup(0); return;
             }
             if (m3dVersionSmoke || m3dNavigationSmoke || m3dSettingsSmoke)
             {
@@ -166,7 +340,7 @@ public partial class App : Application
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
                 { Os = Environment.OSVersion.Version.ToString(), Architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(), Result = result },
                     new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0); return;
+                ShutdownForStartup(0); return;
             }
             if (m3cTranscriptSmoke || m3cLibrarySmoke)
             {
@@ -183,7 +357,7 @@ public partial class App : Application
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
                 { Os = Environment.OSVersion.Version.ToString(), Architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(), Result = result },
                     new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0); return;
+                ShutdownForStartup(0); return;
             }
             if (m3ReplaySmoke || realWhisperSmoke || whisperProgressSmoke)
             {
@@ -208,7 +382,7 @@ public partial class App : Application
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
                 { Os = Environment.OSVersion.Version.ToString(), Architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(), Result = result },
                     new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0); return;
+                ShutdownForStartup(0); return;
             }
             if (layoutSmoke || transcriptionSmoke)
             {
@@ -222,7 +396,7 @@ public partial class App : Application
                 File.WriteAllText(Path.Combine(folder, "report.json"), JsonSerializer.Serialize(new
                 { Os = Environment.OSVersion.Version.ToString(), Architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(), Result = result },
                     new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0); return;
+                ShutdownForStartup(0); return;
             }
             if (playbackSmoke)
             {
@@ -248,7 +422,7 @@ public partial class App : Application
                 ProjectEcho.App.MainWindow.AppendPlaybackSmokeStage(progress, "before_final_report", new { result.Passed });
                 File.WriteAllText(Path.Combine(folder, "m2-wpf-playback-" + stamp + ".json"), JsonSerializer.Serialize(result.Report, new JsonSerializerOptions { WriteIndented = true }));
                 ProjectEcho.App.MainWindow.AppendPlaybackSmokeStage(progress, "report_saved_before_shutdown", new { result.Passed });
-                Shutdown(result.Passed ? 0 : 1);
+                ShutdownForStartup(result.Passed ? 0 : 1);
                 return;
             }
             if (exportCloseSmoke)
@@ -265,7 +439,7 @@ public partial class App : Application
                 var evidence = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics", "m2-wpf-export-close-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".json");
                 Directory.CreateDirectory(Path.GetDirectoryName(evidence)!);
                 File.WriteAllText(evidence, JsonSerializer.Serialize(new { Status = "PASS", Os = Environment.OSVersion.Version.ToString(), Results = results }, new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0);
+                ShutdownForStartup(0);
                 return;
             }
             var window = new MainWindow();
@@ -279,35 +453,59 @@ public partial class App : Application
                 var output = Path.Combine(Directory.GetCurrentDirectory(), ".local", "diagnostics", "m0-wpf-smoke.json");
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
                 File.WriteAllText(output, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
-                Shutdown(0);
+                ShutdownForStartup(0);
             }
         }
         catch (Exception ex)
         {
+            if (m5dUiSmoke)
+            {
+                string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M5D", "ui-failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
+                Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
+                Shutdown(1); return;
+            }
+            if (m5bUiSmoke)
+            {
+                string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M5B", "ui-failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
+                Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
+                Shutdown(1); return;
+            }
+            if (m5SpeakerSmoke || m5RealSpeakerSmoke)
+            {
+                string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M5", "failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
+                Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
+                Shutdown(1); return;
+            }
+            if (m4QwenSmoke || m4RealQwenSmoke || m4WithoutModelsSmoke || m3jCompactSmoke || m3jEditingSmoke || m3kTimeSmoke || m3kDataSmoke || m3kDataProbe || m3lUiSmoke || m3mUiSmoke || m3nUiSmoke)
+            {
+                string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M4", "failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
+                Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
+                ShutdownForStartup(1); return;
+            }
             if (e.Args.Any(argument => argument.StartsWith("--m3h-", StringComparison.Ordinal)))
             {
                 string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M3H", "failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
-                Shutdown(1); return;
+                ShutdownForStartup(1); return;
             }
             if (e.Args.Any(argument => argument.StartsWith("--m3g-", StringComparison.Ordinal)))
             {
                 string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M3G", "failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
-                Shutdown(1); return;
+                ShutdownForStartup(1); return;
             }
             if (e.Args.Any(argument => argument.StartsWith("--m3f-", StringComparison.Ordinal)))
             {
                 string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M3F", "failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
-                Shutdown(1); return;
+                ShutdownForStartup(1); return;
             }
-            if (e.Args.Contains("--single-instance-probe")) { Shutdown(1); return; }
+            if (e.Args.Contains("--single-instance-probe")) { ShutdownForStartup(1); return; }
             if (e.Args.Any(argument => argument.StartsWith("--m3e-", StringComparison.Ordinal)))
             {
                 string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M3E", "failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
-                Shutdown(1); return;
+                ShutdownForStartup(1); return;
             }
             if (exportHistorySmoke || exportCloseSmoke || playbackSmoke || layoutSmoke || transcriptionSmoke || m3ReplaySmoke || realWhisperSmoke || whisperProgressSmoke || m3cTranscriptSmoke || m3cLibrarySmoke || m3dVersionSmoke || m3dNavigationSmoke || m3dSettingsSmoke)
             {
@@ -316,7 +514,7 @@ public partial class App : Application
                 File.WriteAllText(evidence, ex.ToString());
             }
             else if (!e.Args.Contains("--smoke-test")) MessageBox.Show(ex.Message, UiText.T("ProjectEcho 启动失败"));
-            Shutdown(1);
+            ShutdownForStartup(1);
         }
     }
 }

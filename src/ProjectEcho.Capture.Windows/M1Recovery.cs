@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -11,15 +12,22 @@ namespace ProjectEcho.Capture.Windows;
 public sealed record M1RecoveryResult(CaptureResult Capture, bool HasCheckpoint, bool IsCleanEnd,
     IReadOnlyList<string> Issues, long LastCheckpointSequence);
 
+/// <summary>Actual bytes read/hashed in one stage; 100% is not a successful recovery verdict.</summary>
+public sealed record M1RecoveryProgress(string Stage, long Completed, long? Total);
+
 /// <summary>Reconstructs only checkpoint-confirmed PCM using the on-disk journal, never live capture state.</summary>
 public static class M1Recovery
 {
     private const long MaximumJournalBytes = 2L * 1024 * 1024 * 1024;
     private const int MaximumRecords = 4_000_000, MaximumLineBytes = 1_048_576;
 
-    public static M1RecoveryResult Read(string directory, CancellationToken cancellationToken = default)
+    public static M1RecoveryResult Read(string directory, CancellationToken cancellationToken = default) =>
+        Read(directory, cancellationToken, null);
+
+    public static M1RecoveryResult Read(string directory, CancellationToken cancellationToken, IProgress<M1RecoveryProgress>? progress)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var reporter = new RecoveryProgressReporter(progress, cancellationToken);
         directory = Path.GetFullPath(directory); M1Paths.NoReparseAncestors(directory);
         string index = M1Paths.Resolve(directory, "journal/capture-index.jsonl");
         if (new FileInfo(index).Length > MaximumJournalBytes) throw new InvalidDataException("索引超过离线恢复读取上限。");
@@ -33,9 +41,11 @@ public static class M1Recovery
         long expected = 0, lastCheckpoint = -1, duration = 0, checkpointDuration = 0, previousObservationUs = 0;
         ulong epoch = 0; DateTimeOffset started = default;
         bool synthetic = false, readSession = false;
+        string timelinePolicy = RecordingTimeline.Elapsed;
         try
         {
-            foreach (var bytes in Lines(index, cancellationToken))
+            foreach (var bytes in Lines(index, cancellationToken,
+                (completed, total) => reporter.Report("index", completed, total)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (expected >= MaximumRecords) throw new InvalidDataException("索引记录数超过恢复上限。");
@@ -48,6 +58,8 @@ public static class M1Recovery
                 {
                     case "session":
                         if (expected != 0 || S(data, "storageVersion") != "m1-recording-1") throw new InvalidDataException("不是支持的 M1 session。");
+                        timelinePolicy = data.TryGetProperty("timelinePolicy", out _) ? S(data, "timelinePolicy") : RecordingTimeline.Elapsed;
+                        RecordingTimeline.Validate(timelinePolicy);
                         epoch = U(data, "epochQpc100ns"); started = data.GetProperty("startedAtUtc").GetDateTimeOffset();
                         synthetic = envelope.GetProperty("isSynthetic").GetBoolean(); readSession = true;
                         break;
@@ -57,6 +69,12 @@ public static class M1Recovery
                         string? processingMode = data.TryGetProperty("processingMode", out var mode) && mode.ValueKind != JsonValueKind.Null
                             ? mode.GetString() : null;
                         M1Storage.ValidateProcessingMode(processingMode);
+                        ulong excludedPause100ns = data.TryGetProperty("excludedPause100ns", out _)
+                            ? U(data, "excludedPause100ns") : timelinePolicy == RecordingTimeline.Elapsed ? 0UL
+                            : throw new InvalidDataException("暂停排除时间轴缺少 segment 时钟映射。");
+                        RecordingTimeline.Validate(timelinePolicy, excludedPause100ns);
+                        if (segments.Values.Any(previous => previous.SourceId == sourceId && previous.ExcludedPause100ns > excludedPause100ns))
+                            throw new InvalidDataException("同一来源累计暂停扣除倒退。");
                         if (segments.Values.Any(s => s.SourceId == sourceId && !s.Closed)) throw new InvalidDataException("同来源存在未结束 segment。");
                         var formatData = data.GetProperty("format"); var format = Format(formatData);
                         var anchor = data.GetProperty("anchor"); var quality = Quality(anchor);
@@ -64,9 +82,9 @@ public static class M1Recovery
                         long sessionUs = Nonnegative(anchor, "sessionStartUs");
                         if ((quality == "invalid") != (qpc is null) || (quality == "device_referenced") != (device is not null))
                             throw new InvalidDataException("segment 锚点与时间质量不一致。");
-                        if (qpc is { } anchorQpc && anchorQpc < epoch) throw new InvalidDataException("segment 锚点早于会话起点。");
+                        if (qpc is { } anchorQpc && anchorQpc < epoch) throw new InvalidDataException("segment原始锚点早于会话QPC起点。");
                         segments.Add(id, new(id, sourceId, format, formatData.GetProperty("validBitsPerSample").GetInt32(), qpc, device, sessionUs, quality)
-                            { ProcessingMode = processingMode });
+                            { ProcessingMode = processingMode, ExcludedPause100ns = excludedPause100ns });
                         break;
                     }
                     case "packet":
@@ -74,11 +92,14 @@ public static class M1Recovery
                         string segmentId = S(data, "segmentId"), chunkId = S(data, "chunkId"), relative = S(data, "path");
                         var segment = segments[segmentId];
                         if (segment.Closed) throw new InvalidDataException("停采边界之后仍有 PCM。");
-                        M1Paths.Resolve(directory, relative);
                         if (!relative.StartsWith("sources/", StringComparison.Ordinal) || !relative.EndsWith(".wav", StringComparison.Ordinal))
                             throw new InvalidDataException("原轨不在 sources WAV 路径。");
                         if (!chunks.TryGetValue(chunkId, out var chunk))
                         {
+                            // Resolve and inspect filesystem ancestors once per new chunk, not per
+                            // packet. Every later packet must still match this exact path and segment;
+                            // ResolveChunk/manifest validation recheck ancestors before opening files.
+                            M1Paths.Resolve(directory, relative);
                             if (!paths.Add(relative)) throw new InvalidDataException("多个 chunk 引用相同路径。");
                             chunks.Add(chunkId, chunk = new(chunkId, relative, segment));
                         }
@@ -99,7 +120,10 @@ public static class M1Recovery
                         if ((valid && (flags & 4) != 0) || (quality == "device_referenced" && !deviceValid) || (quality == "qpc_referenced" && deviceValid))
                             throw new InvalidDataException("时间质量与API标志冲突。");
                         long sessionUs = Nonnegative(data, "sessionStartUs");
-                        long derived = valid ? Math.Max(0, checked((long)((((Int128)qpc - epoch) * segment.Format.SampleRate + (Int128)offset * AudioClock.UnitsPerSecond) / (segment.Format.SampleRate * 10L)))) : 0;
+                        Int128 position = valid ? RecordingTimeline.RawPosition100ns(qpc, epoch, segment.ExcludedPause100ns) : 0;
+                        Int128 retainedPosition = position * segment.Format.SampleRate + (Int128)offset * AudioClock.UnitsPerSecond;
+                        if (valid && retainedPosition < 0) throw new InvalidDataException("保留PCM起点早于录音时间轴起点。");
+                        long derived = valid ? checked((long)(retainedPosition / (segment.Format.SampleRate * 10L))) : 0;
                         if (derived != sessionUs) throw new InvalidDataException("派生 session 时间与原始 QPC/保留偏移不一致。");
                         long clockJitter = data.TryGetProperty("clockJitter100ns", out var jitterField) ? jitterField.GetInt64() : 0;
                         var packet = new CapturedPacket(chunkOffset, count, raw, device, qpc, flags, valid, deviceValid, offset, clockJitter);
@@ -144,7 +168,7 @@ public static class M1Recovery
                             (Int128)(offset + count) * AudioClock.UnitsPerSecond);
                         else segment.HasInvalidTimestamp = true;
                         if (deviceValid) segment.MaximumDeviceEnd = UInt128.Max(segment.MaximumDeviceEnd, (UInt128)device + (uint)(offset + count));
-                        if (valid) duration = Math.Max(duration, checked((long)((Int128)qpc - epoch + ((Int128)(offset + count) * AudioClock.UnitsPerSecond + segment.Format.SampleRate - 1) / segment.Format.SampleRate)));
+                        if (valid) duration = Math.Max(duration, checked((long)(position + ((Int128)(offset + count) * AudioClock.UnitsPerSecond + segment.Format.SampleRate - 1) / segment.Format.SampleRate)));
                         break;
                     }
                     case "boundary":
@@ -154,13 +178,14 @@ public static class M1Recovery
                         if (segment.Closed || operation is not ("stop" or "pause" or "mic_off") || (operation == "mic_off" && segment.SourceId != "mic"))
                             throw new InvalidDataException("重复或非法停采边界。");
                         ulong cutoff = U(data, "effectiveQpc100ns");
-                        if (cutoff < epoch || Nonnegative(data, "effectiveSessionUs") != (long)((cutoff - epoch) / 10)) throw new InvalidDataException("边界时间不一致。");
+                        Int128 mappedCutoff = RecordingTimeline.Position100ns(cutoff, epoch, segment.ExcludedPause100ns);
+                        if (Nonnegative(data, "effectiveSessionUs") != checked((long)(mappedCutoff / 10))) throw new InvalidDataException("边界时间不一致。");
                         var accepted = data.GetProperty("acceptedThroughSequence");
                         long? sequence = accepted.ValueKind == JsonValueKind.Null ? null : accepted.GetInt64();
                         if (sequence != segment.LastSequence) throw new InvalidDataException("边界 acceptedThroughSequence 不是末个获准包。");
                         long discarded = Nonnegative(data, "discardedFrameCount");
                         string? reason = data.GetProperty("discardReason").GetString();
-                        if (reason is not (null or "crossing_frame" or "after_boundary" or "timestamp_ambiguous") || (discarded > 0 && reason is null)) throw new InvalidDataException("未知或缺少边界丢弃原因。");
+                        if (reason is not (null or "crossing_frame" or "after_boundary" or "outside_active_boundary" or "timestamp_ambiguous") || (discarded > 0 && reason is null)) throw new InvalidDataException("未知或缺少边界丢弃原因。");
                         ulong? forbidden = NullableU(data, "firstForbiddenDeviceFrame");
                         if (segment.Last is not null)
                         {
@@ -169,7 +194,7 @@ public static class M1Recovery
                             if (forbidden is { } boundary && segment.MaximumDeviceEnd > boundary)
                                 throw new InvalidDataException("PCM 超过首个禁存设备帧。");
                         }
-                        segment.Closed = true; duration = Math.Max(duration, checked((long)(cutoff - epoch)));
+                        segment.Closed = true; duration = Math.Max(duration, checked((long)mappedCutoff));
                         break;
                     }
                     case "checkpoint":
@@ -215,6 +240,8 @@ public static class M1Recovery
             issues.Add("旧checkpoint缺少observedSessionUs；仅恢复包/边界已确认时长，不能确认Pause/无callback经过时间。");
         duration = checkpointDuration;
         var tracks = new List<CapturedTrack>();
+        long pcmCompleted = 0, pcmTotal = checkpoint?.Values.Sum(water => water.Bytes) ?? 0;
+        reporter.Report("pcm", 0, pcmTotal);
         foreach (var (id, water) in checkpoint ?? [])
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -227,9 +254,11 @@ public static class M1Recovery
                 using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
                 if (stream.Length < checked(water.Offset + water.Bytes)) throw new InvalidDataException("WAV短于已确认水位，存在已保存数据损失。");
                 stream.Position = water.Offset;
-                if (HashBytes(stream, water.Bytes, cancellationToken) != water.Hash) throw new InvalidDataException("已确认PCM哈希不匹配，存在损坏。");
+                if (HashBytes(stream, water.Bytes, cancellationToken, bytes =>
+                    { pcmCompleted += bytes; reporter.Report("pcm", pcmCompleted, pcmTotal); }) != water.Hash)
+                    throw new InvalidDataException("已确认PCM哈希不匹配，存在损坏。");
                 tracks.Add(new(chunk.Segment.SourceId, file, chunk.Segment.Format, water.Frames, chunk.Packets.Take(water.PacketCount).ToArray(),
-                    chunk.Segment.Id, chunk.Segment.ProcessingMode));
+                    chunk.Segment.Id, chunk.Segment.ProcessingMode, chunk.Segment.ExcludedPause100ns));
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or OverflowException)
             { issues.Add($"{id} 未恢复：{ex.Message}"); }
@@ -245,6 +274,8 @@ public static class M1Recovery
                 var m = document.RootElement;
                 if (S(m, "schemaVersion") != "m1-recording-1" || U(m, "epochQpc100ns") != epoch || m.GetProperty("finalCheckpointSequence").GetInt64() != lastCheckpoint)
                     throw new InvalidDataException("manifest 与最终 checkpoint 不一致。");
+                string manifestPolicy = m.TryGetProperty("timelinePolicy", out _) ? S(m, "timelinePolicy") : RecordingTimeline.Elapsed;
+                if (manifestPolicy != timelinePolicy) throw new InvalidDataException("manifest 与索引时间轴规则不一致。");
                 long savedDuration = Nonnegative(m, "duration100ns");
                 if (savedDuration < checkpointDuration) throw new InvalidDataException("manifest 截短时间轴。");
                 if ((!checkpointHasObservedTime && savedDuration != checkpointDuration) ||
@@ -256,6 +287,19 @@ public static class M1Recovery
                 var listed = m.GetProperty("chunks").EnumerateArray().ToArray();
                 if (listed.Length != checkpoint?.Count) throw new InvalidDataException("manifest chunk 数不一致。");
                 var seen = new HashSet<string>(StringComparer.Ordinal);
+                // Count real on-disk file bytes, not PCM length or a guessed header size.
+                // Files are resolved again immediately before their existing hash opens below.
+                reporter.Report("files", 0, null);
+                var fileSizes = new Dictionary<string, long>(StringComparer.Ordinal);
+                long filesCompleted = 0; long? filesTotal = 0;
+                foreach (string chunkId in checkpoint!.Keys)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    string countedFile = M1Paths.Resolve(directory, chunks[chunkId].Path);
+                    long length = new FileInfo(countedFile).Length;
+                    fileSizes.Add(chunkId, length); filesTotal = checked(filesTotal.Value + length);
+                }
+                reporter.Report("files", 0, filesTotal);
                 foreach (var entry in listed)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -266,9 +310,14 @@ public static class M1Recovery
                         entry.GetProperty("DataOffsetBytes").GetInt64() != water.Offset || HashString(entry, "PcmSha256") != water.Hash)
                         throw new InvalidDataException("manifest chunk 元数据不一致。");
                     if (entry.GetProperty("Format").Deserialize<PcmFormat>() != chunk.Segment.Format) throw new InvalidDataException("manifest 格式与segment不同。");
+                    ulong manifestOffset = entry.TryGetProperty("ExcludedPause100ns", out var offsetValue) ? offsetValue.GetUInt64() : 0;
+                    if (manifestOffset != chunk.Segment.ExcludedPause100ns) throw new InvalidDataException("manifest 与segment暂停扣除不一致。");
                     string file = M1Paths.Resolve(directory, chunk.Path);
                     using var stream = File.OpenRead(file);
-                    if (HashBytes(stream, stream.Length, cancellationToken) != HashString(entry, "FileSha256")) throw new InvalidDataException("最终WAV文件hash不一致。");
+                    if (stream.Length != fileSizes[id]) filesTotal = null; // Changed size is still checked by the original hash rule.
+                    if (HashBytes(stream, stream.Length, cancellationToken, bytes =>
+                        { filesCompleted += bytes; reporter.Report("files", filesCompleted, filesTotal); }) != HashString(entry, "FileSha256"))
+                        throw new InvalidDataException("最终WAV文件hash不一致。");
                 }
                 bool storageComplete = m.GetProperty("storageComplete").GetBoolean();
                 duration = savedDuration;
@@ -289,7 +338,7 @@ public static class M1Recovery
         if (clean && !legacyClockComplete)
             captureWarnings.Add("原件及索引已完成验证；旧式完整捕获/设备时钟条件未通过，Complete仍为false。");
         return new(new(directory, index, started, epoch, Math.Max(0, duration), tracks, clean && legacyClockComplete,
-            captureWarnings.Concat(issues).ToArray()), checkpoint is not null, clean, issues, lastCheckpoint);
+            captureWarnings.Concat(issues).ToArray(), timelinePolicy), checkpoint is not null, clean, issues, lastCheckpoint);
     }
 
     public static CaptureResult RecoverTo(string sourceDirectory, string destinationDirectory)
@@ -389,10 +438,13 @@ public static class M1Recovery
         }
         catch { document.Dispose(); throw; }
     }
-    private static IEnumerable<byte[]> Lines(string path, CancellationToken cancellationToken = default)
+    private static IEnumerable<byte[]> Lines(string path, CancellationToken cancellationToken = default,
+        Action<long, long>? progress = null)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         using var line = new MemoryStream(); var utf8 = new UTF8Encoding(false, true); var buffer = new byte[65536];
+        long bytesRead = 0, totalBytes = stream.Length;
+        progress?.Invoke(0, totalBytes);
         int count;
         while ((count = stream.Read(buffer)) != 0)
         {
@@ -407,6 +459,8 @@ public static class M1Recovery
                 }
                 else { if (line.Length >= MaximumLineBytes) throw new InvalidDataException("索引行超过上限。"); line.WriteByte(buffer[i]); }
             }
+            bytesRead += count;
+            progress?.Invoke(bytesRead, totalBytes);
         }
         if (line.Length != 0) throw new InvalidDataException("索引末行被截断（缺少换行）。");
     }
@@ -454,11 +508,46 @@ public static class M1Recovery
         if (File.Exists(final) == File.Exists(partial)) throw new InvalidDataException("chunk final/partial缺失或并存，拒绝猜测原件。");
         return File.Exists(final) ? final : partial;
     }
-    private static string HashBytes(Stream stream, long bytes, CancellationToken cancellationToken = default)
+    private static string HashBytes(Stream stream, long bytes, CancellationToken cancellationToken = default,
+        Action<int>? progress = null)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256); var buffer = new byte[65536];
-        while (bytes > 0) { cancellationToken.ThrowIfCancellationRequested(); int n = stream.Read(buffer, 0, (int)Math.Min(bytes, buffer.Length)); if (n == 0) throw new EndOfStreamException(); hash.AppendData(buffer, 0, n); bytes -= n; }
+        while (bytes > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int n = stream.Read(buffer, 0, (int)Math.Min(bytes, buffer.Length));
+            if (n == 0) throw new EndOfStreamException();
+            hash.AppendData(buffer, 0, n); bytes -= n; progress?.Invoke(n);
+        }
         return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    private sealed class RecoveryProgressReporter(IProgress<M1RecoveryProgress>? observer, CancellationToken token)
+    {
+        private string? lastStage;
+        private long lastCompleted = -1, lastReport;
+        private long? lastTotal;
+        private bool disabled;
+        internal void Report(string stage, long completed, long? total)
+        {
+            token.ThrowIfCancellationRequested();
+            if (observer is null || disabled) return;
+            long now = Stopwatch.GetTimestamp();
+            bool changedStage = stage != lastStage, changedTotal = total != lastTotal;
+            if (!changedStage && !changedTotal && completed == lastCompleted) return;
+            bool finished = total is > 0 && completed == total;
+            if (!changedStage && !changedTotal && !finished && Stopwatch.GetElapsedTime(lastReport, now) < TimeSpan.FromMilliseconds(100)) return;
+            lastStage = stage; lastCompleted = completed; lastTotal = total; lastReport = now;
+            try { observer.Report(new(stage, completed, total)); }
+            catch (Exception)
+            {
+                // Observation cannot invalidate authoritative recovery. A real caller cancellation
+                // is never swallowed, including cancellation requested by a progress callback.
+                token.ThrowIfCancellationRequested();
+                disabled = true;
+            }
+            token.ThrowIfCancellationRequested();
+        }
     }
     private static (long DataOffset, WaveFormat Format) InspectWave(string file, PcmFormat expected, int? expectedValidBits)
     {
@@ -500,6 +589,7 @@ public static class M1Recovery
         public string Id = id, SourceId = source, AnchorQuality = quality;
         public PcmFormat Format = format; public int ValidBits = validBits;
         public string? ProcessingMode;
+        public ulong ExcludedPause100ns;
         public ulong? AnchorQpc = qpc, AnchorDevice = device; public long AnchorUs = us;
         public bool Closed; public long? LastSequence; public CapturedPacket? Last;
         public bool HasInvalidTimestamp, HasTimelineGap;

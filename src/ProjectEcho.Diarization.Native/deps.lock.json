@@ -1,0 +1,53 @@
+{
+  "Schema": "projectecho-speaker-native-deps-1",
+  "Files": [
+    {
+      "Sha256": "4f40f17d8a5a1052b83de568fe2e951fa37a3a21c38676e5b1da5707029cce61",
+      "Path": ".tools/vulkan-build/w64devkit/bin/g++.exe"
+    },
+    {
+      "Sha256": "55d6688c9c8bfead9eb8d28c5fef3a09ae2f4f519516b7c89922bc955570435a",
+      "Path": ".tools/vulkan-build/w64devkit/bin/windres.exe"
+    },
+    {
+      "Sha256": "25ef048fd5197c00cbf8b5e4cb0c7a94d0a94b8edd8deb7659aeba010c76bb50",
+      "Path": ".tools/vulkan-build/w64devkit/bin/ld.exe"
+    },
+    {
+      "Sha256": "86c7807d12982aa31c5cae57c686f30df9e5d5db4309b314d1efd5c873a8333c",
+      "Path": ".local/M5/runtime/sherpa-onnx-v1.13.8-win-x64-shared-MT-Release-no-tts/lib/sherpa-onnx-c-api.dll"
+    },
+    {
+      "Sha256": "7f66f939a881baf4f46a2216496798edf4a1429878b646d12674aa62f27d8a25",
+      "Path": ".local/M5/runtime/sherpa-onnx-v1.13.8-win-x64-shared-MT-Release-no-tts/lib/onnxruntime.dll"
+    },
+    {
+      "Sha256": "551d0e1fe4c227d8542314ba718d52f4379e0c7bfe729a37c59833a884e27b4d",
+      "Path": ".local/M5/runtime/sherpa-onnx-v1.13.8-win-x64-shared-MT-Release-no-tts/lib/onnxruntime_providers_shared.dll"
+    },
+    {
+      "Sha256": "d4b8d6b36c59a1a4a1199bece1c6b342031aaa37dfd698c84f8e9296a7b2c50a",
+      "Path": ".local/M5/runtime/sherpa-onnx-v1.13.8-win-x64-shared-MT-Release-no-tts/include/sherpa-onnx/c-api/c-api.h"
+    },
+    {
+      "Sha256": "d683537d0fdc29e977b5520f7f15d87a0ac212ae6d94fa9be8893a52655621ae",
+      "Path": "src/ProjectEcho.Diarization.Native/include/onnxruntime_c_api.h"
+    },
+    {
+      "Sha256": "28b21dfc371fb53d1ba67356adeb124f36643ee5ab6f1ad2e9afbf09eb4bf305",
+      "Path": "src/ProjectEcho.Diarization.Native/include/onnxruntime_cxx_api.h"
+    },
+    {
+      "Sha256": "c41b9a11aac46851f68f4bd888bb2444a0e1eb6b37eadb41bf15f5154b48ea31",
+      "Path": "src/ProjectEcho.Diarization.Native/include/onnxruntime_cxx_inline.h"
+    },
+    {
+      "Sha256": "6c4db3d1954b266c4febe413351af86cac922e3448538e7e452e51d646e56a4a",
+      "Path": "src/ProjectEcho.Diarization.Native/include/onnxruntime_float16.h"
+    }
+  ],
+  "OrtHeader": "1.22.2 official Microsoft",
+  "Sherpa": "1.13.8/11afbd00",
+  "OrtRuntime": "1.28.2",
+  "Compiler": "w64devkit2.9.1/GCC16.2"
+}

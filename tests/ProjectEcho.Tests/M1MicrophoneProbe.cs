@@ -111,8 +111,9 @@ internal static class M1MicrophoneProbe
             if (!boundary.Pass) errors.AddRange(boundary.Errors);
             if (!unchanged) errors.Add("original_changed_during_read_only_validation");
             if (!unexpectedAcks.IsEmpty) errors.Add("unexpected_capture_control_ack");
-            if (result.DurationUs is < 17_000_000 or > 30_500_000) errors.Add("unexpected_session_duration");
-            CheckHealth(health.ToArray(), recovered.Capture.EpochQpc100ns, controls, errors);
+            long minimumDuration = recovered.Capture.TimelinePolicy == RecordingTimeline.ExcludePaused ? 12_000_000 : 17_000_000;
+            if (result.DurationUs < minimumDuration || result.DurationUs > 30_500_000) errors.Add("unexpected_session_duration");
+            CheckHealth(health.ToArray(), recovered.Capture.EpochQpc100ns, controls, errors, recovered.Capture.TimelinePolicy);
         }
         catch (Exception ex)
         {
@@ -194,7 +195,7 @@ internal static class M1MicrophoneProbe
 
     private static BoundaryReport CheckDisk(string directory, M1RecoveryResult recovery, IReadOnlyList<ControlObservation> controls)
     {
-        var segments = new Dictionary<string, (string Source, int Rate)>();
+        var segments = new Dictionary<string, (string Source, int Rate, ulong Excluded)>();
         var packets = new List<PacketRange>();
         var boundaries = new List<Boundary>();
         var timingErrors = new List<string>();
@@ -205,7 +206,8 @@ internal static class M1MicrophoneProbe
             var data = document.RootElement.GetProperty("data");
             string type = data.GetProperty("type").GetString()!;
             if (type == "segment") segments.Add(data.GetProperty("segmentId").GetString()!,
-                (data.GetProperty("sourceId").GetString()!, data.GetProperty("format").GetProperty("sampleRate").GetInt32()));
+                (data.GetProperty("sourceId").GetString()!, data.GetProperty("format").GetProperty("sampleRate").GetInt32(),
+                data.TryGetProperty("excludedPause100ns", out var excluded) ? ulong.Parse(excluded.GetString()!, System.Globalization.CultureInfo.InvariantCulture) : 0));
             if (type == "packet")
             {
                 string id = data.GetProperty("segmentId").GetString()!;
@@ -220,7 +222,8 @@ internal static class M1MicrophoneProbe
             }
             if (type == "boundary") boundaries.Add(new(data.GetProperty("segmentId").GetString()!,
                 data.GetProperty("operation").GetString()!, data.GetProperty("requestId").GetString()!,
-                ulong.Parse(data.GetProperty("effectiveQpc100ns").GetString()!, System.Globalization.CultureInfo.InvariantCulture)));
+                ulong.Parse(data.GetProperty("effectiveQpc100ns").GetString()!, System.Globalization.CultureInfo.InvariantCulture),
+                segments[data.GetProperty("segmentId").GetString()!].Excluded));
         }
         var errors = CheckRanges(packets, boundaries, controls, recovery.Capture.EpochQpc100ns);
         errors.AddRange(timingErrors);
@@ -292,7 +295,7 @@ internal static class M1MicrophoneProbe
                 errors.Add("boundary_control_mismatch:" + group.Key);
             if (control is not null)
             {
-                var ackUpper = (Int128)epoch + control.Ack.EffectiveSessionUs * 10L + 9;
+                var ackUpper = (Int128)epoch + boundary.ExcludedPause100ns + control.Ack.EffectiveSessionUs * 10L + 9;
                 if (boundary.CutoffQpc100ns > ackUpper || boundary.CutoffQpc100ns < control.RequestQpc100ns)
                     errors.Add("boundary_outside_request_ack:" + group.Key);
             }
@@ -310,7 +313,8 @@ internal static class M1MicrophoneProbe
         }
     }
 
-    private static void CheckHealth(RecordingHealth[] health, ulong epoch, IReadOnlyList<ControlObservation> controls, List<string> errors)
+    private static void CheckHealth(RecordingHealth[] health, ulong epoch, IReadOnlyList<ControlObservation> controls, List<string> errors,
+        string timelinePolicy = RecordingTimeline.Elapsed)
     {
         if (health.Length < 5 || !health.Any(value => value.MicrophoneEnabled && value.MicFrames > 0)) errors.Add("missing_live_microphone_health");
         long onRequestUs = AudioClock.SessionMicroseconds(controls[0].RequestQpc100ns, epoch);
@@ -322,10 +326,16 @@ internal static class M1MicrophoneProbe
             errors.Add("mic_off_health_did_not_remain_stopped");
         if (off.Length < 2 || off[^1].RemoteFrames <= off[0].RemoteFrames)
             errors.Add("remote_did_not_continue_while_mic_off");
-        var paused = health.Where(value => value.ElapsedUs > controls[3].Ack.EffectiveSessionUs &&
-            value.ElapsedUs < AudioClock.SessionMicroseconds(controls[4].RequestQpc100ns, epoch)).ToArray();
+        var paused = timelinePolicy == RecordingTimeline.ExcludePaused
+            ? health.Where(value => value.Paused).ToArray()
+            : health.Where(value => value.ElapsedUs > controls[3].Ack.EffectiveSessionUs &&
+                value.ElapsedUs < AudioClock.SessionMicroseconds(controls[4].RequestQpc100ns, epoch)).ToArray();
         if (paused.Length < 2 || paused.Any(value => !value.Paused) || paused.Select(value => (value.MicFrames, value.RemoteFrames)).Distinct().Count() != 1)
             errors.Add("pause_health_did_not_stop_both_sources");
+        if (timelinePolicy == RecordingTimeline.ExcludePaused &&
+            (paused.Any(value => value.ElapsedUs != controls[3].Ack.EffectiveSessionUs) ||
+             controls[4].Ack.EffectiveSessionUs != controls[3].Ack.EffectiveSessionUs))
+            errors.Add("pause_health_or_resume_did_not_freeze_recording_time");
     }
 
     private static SignalStatistics ReadMicStatistics(CaptureResult capture)
@@ -385,6 +395,35 @@ internal static class M1MicrophoneProbe
         Require(CheckRanges(packets, boundaries.Take(4).ToArray(), controls, epoch).Count != 0, "Missing stop boundary accepted.");
         Require(CheckRanges(packets.Append(new("mic4", "mic", 48000, At(7), 0, 48000)).ToArray(), boundaries, controls, epoch).Count != 0,
             "Unrequested extra microphone segment accepted.");
+        var compactControls = controls.ToArray(); compactControls[4] = compactControls[4] with
+            { Ack = compactControls[4].Ack with { EffectiveSessionUs = 13_000_000 } };
+        var compactBoundaries = boundaries.Select(boundary => boundary.SegmentId is "mic3" or "remote2"
+            ? boundary with { ExcludedPause100ns = 20_000_000 } : boundary).ToArray();
+        Require(CheckRanges(packets, compactBoundaries, compactControls, epoch).Count == 0,
+            "Compact recording timeline was mistaken for a raw capture boundary violation.");
+        // A preceding excluded interval moves every raw device/QPC observation
+        // without moving its active ACK time. The auditor must add each segment's
+        // offset while still rejecting an actual post-cutoff PCM frame.
+        var shiftedPackets = packets.Select(packet => packet with { Qpc100ns = packet.Qpc100ns + 20_000_000 }).ToArray();
+        var shiftedControls = controls.Select(control => control with { RequestQpc100ns = control.RequestQpc100ns + 20_000_000 }).ToArray();
+        var shiftedBoundaries = boundaries.Select(boundary => boundary with
+            { CutoffQpc100ns = boundary.CutoffQpc100ns + 20_000_000, ExcludedPause100ns = 20_000_000 }).ToArray();
+        Require(CheckRanges(shiftedPackets, shiftedBoundaries, shiftedControls, epoch).Count == 0,
+            "Segment pause offset was not applied when comparing active ACK with raw boundary.");
+        shiftedPackets[0] = shiftedPackets[0] with { Frames = shiftedPackets[0].Frames + 1 };
+        Require(CheckRanges(shiftedPackets, shiftedBoundaries, shiftedControls, epoch).Contains("pcm_after_actual_capture_boundary:mic1"),
+            "Segment pause offset weakened the raw post-boundary privacy check.");
+        RecordingHealth H(long elapsed, bool paused, bool enabled, long remote, long mic) =>
+            new(elapsed, paused, enabled, 0, 0, remote, mic, "synthetic", "synthetic", elapsed, 1L << 40);
+        RecordingHealth[] snapshots = [H(0, false, false, 0, 0), H(2_000_000, false, true, 96000, 480),
+            H(7_000_000, false, false, 336000, 192000), H(8_000_000, false, false, 384000, 192000),
+            H(13_000_000, true, true, 624000, 336000), H(13_000_000, true, true, 624000, 336000),
+            H(13_000_000, false, true, 624000, 336000), H(16_000_000, false, true, 768000, 480000)];
+        var compactHealthErrors = new List<string>(); CheckHealth(snapshots, epoch, compactControls, compactHealthErrors, RecordingTimeline.ExcludePaused);
+        Require(compactHealthErrors.Count == 0, "Frozen health was rejected: " + string.Join(" | ", compactHealthErrors));
+        var movingHealth = snapshots.ToArray(); movingHealth[5] = movingHealth[5] with { ElapsedUs = 14_000_000 };
+        var movingErrors = new List<string>(); CheckHealth(movingHealth, epoch, compactControls, movingErrors, RecordingTimeline.ExcludePaused);
+        Require(movingErrors.Contains("pause_health_or_resume_did_not_freeze_recording_time"), "Audit accepted advancing paused health.");
         static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
     }
 
@@ -392,7 +431,7 @@ internal static class M1MicrophoneProbe
     private static ulong Now100ns() => (ulong)AudioClock.CounterTo100ns(Stopwatch.GetTimestamp(), Stopwatch.Frequency);
     private sealed record ControlObservation(string Operation, ulong RequestQpc100ns, RecordingAck Ack);
     private sealed record PacketRange(string SegmentId, string SourceId, int Rate, ulong Qpc100ns, int Offset, int Frames);
-    private sealed record Boundary(string SegmentId, string Operation, string RequestId, ulong CutoffQpc100ns);
+    private sealed record Boundary(string SegmentId, string Operation, string RequestId, ulong CutoffQpc100ns, ulong ExcludedPause100ns = 0);
     private sealed record BoundaryReport(bool Pass, int Segments, int Packets, int Boundaries, double MicSeconds, IReadOnlyList<string> Errors);
     private sealed record SignalStatistics(long Samples, long NonzeroSamples, double Peak, double Rms, string Observation);
 }

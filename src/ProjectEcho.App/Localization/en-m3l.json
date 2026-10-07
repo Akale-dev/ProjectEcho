@@ -1,0 +1,8 @@
+{
+  "百分秒（0–99，1 表示 0.01 秒）": "Hundredths (0–99; 1 means 0.01 seconds)",
+  "依次填写小时、分钟、秒、百分秒，只输入数字。冒号和小数点固定；点击 × 或按 Ctrl+Delete 清空此时间。": "Enter hours, minutes, seconds and hundredths. Separators are fixed; × or Ctrl+Delete clears the time.",
+  "时:分:秒.百分秒（两位小数）；分隔符固定。× 清空此时间。": "HH:mm:ss.ff (two decimals); fixed separators. × clears the time.",
+  "正在读取会议库…": "Loading meeting library…",
+  "会议库读取失败，可点击刷新重试": "Library could not load. Refresh to retry.",
+  "字幕操作未完成": "Subtitle operation could not complete"
+}

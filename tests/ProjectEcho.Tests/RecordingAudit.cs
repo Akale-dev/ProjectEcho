@@ -53,6 +53,11 @@ internal static class RecordingAudit
         var json = manifest.RootElement;
         Check(json.GetProperty("schemaVersion").GetString() == "m0-spike-1", "manifest_schema");
         var result = json.GetProperty("result").Deserialize<CaptureResult>() ?? throw new InvalidDataException();
+        // This command audits the original M0 single-segment schema only. M1
+        // multi-segment captures must be verified by M1Recovery and the M1
+        // boundary probes, rather than silently applying M0 elapsed-time math.
+        Check(result.TimelinePolicy == RecordingTimeline.Elapsed && result.Tracks.All(track => track.ExcludedPause100ns == 0),
+            "m0_unsupported_timeline_policy");
         var microphoneEnabled = json.GetProperty("microphoneEnabled").GetBoolean();
         var mode = json.GetProperty("sourceMode").GetString();
         Check(mode is "ProcessTree" or "EndpointLoopback", "source_mode");

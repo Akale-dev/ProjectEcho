@@ -48,7 +48,15 @@ internal static class UiText
 
     private static Dictionary<string, string> Read(string language)
     {
-        using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("ProjectEcho.Localization." + language + ".json");
-        return stream is null ? new(StringComparer.Ordinal) : JsonSerializer.Deserialize<Dictionary<string, string>>(stream) ?? new(StringComparer.Ordinal);
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        var assembly = Assembly.GetExecutingAssembly();
+        string prefix = "ProjectEcho.Localization." + language;
+        foreach (string name in assembly.GetManifestResourceNames().Where(name =>
+            (name == prefix + ".json" || name.StartsWith(prefix + "-", StringComparison.Ordinal)) && name.EndsWith(".json", StringComparison.Ordinal)))
+        {
+            using var stream = assembly.GetManifestResourceStream(name)!;
+            foreach (var item in JsonSerializer.Deserialize<Dictionary<string, string>>(stream)!) values[item.Key] = item.Value;
+        }
+        return values;
     }
 }

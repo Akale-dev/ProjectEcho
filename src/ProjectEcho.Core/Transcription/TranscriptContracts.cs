@@ -12,7 +12,13 @@ public sealed record TranscriptRevision(int SchemaVersion, bool IsSynthetic, str
     DateTimeOffset ImportedAt, long MeetingDurationMs, string? InputExportId, string? InputPartId,
     string? SourceMixSha256, int? MappingSampleRate, IReadOnlyList<TranscriptTimeSpan> SourceTimeMapping,
     string OriginalFile, string OriginalSha256, string? ReviewNote,
-    IReadOnlyList<TranscriptSegment> Segments, IReadOnlyList<string> Warnings);
+    IReadOnlyList<TranscriptSegment> Segments, IReadOnlyList<string> Warnings,
+    TranscriptAlignmentProvenance? Alignment = null);
+
+/// <summary>Immutable acoustic evidence for this original text; reviewed text does not become newly aligned.</summary>
+public sealed record TranscriptAlignmentProvenance(string EvidenceFile, string EvidenceSha256,
+    string InputWaveSha256, string? SourceMixSha256, int SampleRate, long FrameCount,
+    string TimelinePolicy, string Policy);
 
 public sealed record TranscriptImportRequest(string MeetingDirectory, string MeetingId,
     long MeetingDurationMs, string InputPath, string ProviderName = "手动导入", string? ModelName = null,
@@ -38,7 +44,8 @@ public sealed record WhisperConfiguration(string ExecutablePath, string ModelPat
 public sealed record WhisperReadiness(bool Ready, string Message);
 
 public sealed record WhisperRequest(string MeetingDirectory, string MeetingId, long MeetingDurationMs,
-    string WavePath, string ExpectedWaveSha256, WhisperConfiguration Configuration, bool IsSynthetic = false);
+    string WavePath, string ExpectedWaveSha256, WhisperConfiguration Configuration, bool IsSynthetic = false,
+    string? SourceMixSha256 = null, string TimelinePolicy = "elapsed-v1");
 
 public sealed record WhisperRunResult(string Status, string AttemptDirectory, long ElapsedMilliseconds,
     TranscriptRevision? Revision, string Message);

@@ -1,0 +1,13 @@
+{
+  "自动结束会议录音": "Auto-end recording",
+  "无声音": "No sound",
+  "{0}分钟": "{0} min",
+  "无声音自动结束时长": "Auto-end inactivity interval",
+  "勾选后，所选根进程退出，或录音来源连续无声音达到所选时长时，自动停止并保存。": "When checked, stop and save when the selected root process exits or no sound is detected for the selected interval.",
+  "勾选后，所选输出设备连续无声音达到所选时长时，自动停止并保存。": "When checked, stop and save when no sound is detected on the selected output device for the selected interval.",
+  " 已开启的麦克风声音也会重置计时；暂停不计时，恢复后重新计时。无音频包也计入无声音时长，但不会标为已证实的静音。": " Sound from an enabled microphone also resets the timer. Pausing suspends the timer; resuming starts a new interval. Missing packets count as inactivity, but are not classified as confirmed silence.",
+  "自动结束：所选应用进程已退出。": "Auto-ended: the selected application process exited.",
+  "自动结束：连续{0}分钟未检测到声音。": "Auto-ended: no sound detected for {0} minutes.",
+  " 结束时部分来源未收到音频包，不等于已证实的静音；完整性以保存结果为准。": " Some sources had no recent packets at the end. This is not confirmed silence; see the saved completeness result.",
+  " 正在停止并保存。": " Stopping and saving."
+}

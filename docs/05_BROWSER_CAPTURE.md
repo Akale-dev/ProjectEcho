@@ -13,7 +13,7 @@ Chrome 用专门的 `--user-data-dir`，只在该实例中开会议；平时 Chr
 ## 公司管理限制
 组织策略可能限制独立 profile、扩展或音频访问。不修改注册表策略、不带禁用 sandbox 参数、不绕开限制。不支持时清楚报告；可选全端点兼容必须用户同意，不能偷偷退化。
 
-## 可选后续：精确 tabCapture（M5）
+## 可选后续：精确 tabCapture（M8，原 M5）
 经用户手动安装/许可的 Manifest V3 扩展，最小 `tabCapture` / offscreen 权限，用户点击扩展选择当前会议标签页。不扫浏览历史、不全站内容注入，不用 DevTools 强行抓媒体。
 Chrome 官方说明 capture 后标签页原音频会停止直接输出；扩展必须将捕获流接回 AudioContext destination 保证用户继续听会，并测试输出路由/重复播放。API 必须由用户操作触发；不是后台全自动监听。[S03]
 
@@ -21,4 +21,4 @@ Chrome 官方说明 capture 后标签页原音频会停止直接输出；扩展�
 
 音频通过 AudioWorklet 输出 sequence/帧数/浏览器 clock，桌面桥接校准到会话时钟；不能直接把 JS timestamp 当 QPC。PCM 背压/断连显式记缺口。MediaRecorder 分片不是每片都可独立解码；如采用它，必须定义 init/header与恢复协议，不直接当标准 WAV 块。
 
-M5 不允许同时再捕获同一浏览器进程/同输出端点，避免双录。麦克风仍由 Windows 引擎独立采集；不在浏览器再录一次同一 mic。
+M8 不允许同时再捕获同一浏览器进程/同输出端点，避免双录。麦克风仍由 Windows 引擎独立采集；不在浏览器再录一次同一 mic。2026-10-04路线与新M4–M6范围见[70](70_M4_M6_LOCAL_ASR_ROADMAP.md)。

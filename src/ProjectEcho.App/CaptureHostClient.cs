@@ -52,15 +52,15 @@ internal sealed class CaptureHostClient : IAsyncDisposable
 
     public Task StopAsync() => SendAsync("stop");
 
-    public Task ControlAsync(string command, string? deviceId = null, string? requestId = null)
+    public Task ControlAsync(string command, string? deviceId = null, string? requestId = null, RecordingAutoStopOptions? automatic = null)
     {
-        if (command is not ("pause" or "resume" or "mic_on" or "mic_off" or "bookmark"))
+        if (command is not ("pause" or "resume" or "mic_on" or "mic_off" or "bookmark" or "auto_stop_settings"))
             throw new ArgumentOutOfRangeException(nameof(command), "未知录音控制。");
-        return SendAsync(command, deviceId: deviceId, requestId: requestId);
+        return SendAsync(command, deviceId: deviceId, requestId: requestId, automatic: automatic);
     }
 
     private async Task SendAsync(string command, CaptureOptions? options = null, RecordingOptions? recording = null,
-        string? deviceId = null, Func<bool>? isCancelled = null, string? requestId = null)
+        string? deviceId = null, Func<bool>? isCancelled = null, string? requestId = null, RecordingAutoStopOptions? automatic = null)
     {
         await sendGate.WaitAsync(lifetime.Token);
         try
@@ -73,7 +73,7 @@ internal sealed class CaptureHostClient : IAsyncDisposable
             }
             if (writer is null) throw new IOException("CaptureHost 尚未连接，未发送控制命令。");
             await writer.WriteLineAsync(JsonSerializer.Serialize(new HostCommand(1, sessionId,
-                requestId ?? Guid.NewGuid().ToString("N"), command, options, recording, deviceId)));
+                requestId ?? Guid.NewGuid().ToString("N"), command, options, recording, deviceId, automatic)));
         }
         finally { sendGate.Release(); }
     }

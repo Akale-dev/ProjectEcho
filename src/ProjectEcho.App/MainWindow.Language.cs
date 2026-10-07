@@ -50,6 +50,11 @@ public partial class MainWindow
         // Reevaluate display-only row labels. User-authored titles/text are never converted.
         RecoveryBox.Items.Refresh(); ReplayRevisionBox.Items.Refresh();
         transcriptionView?.RevisionBox.Items.Refresh();
+        transcriptionView?.SegmentsBox.Items.Refresh(); ReplaySegmentsBox.Items.Refresh();
+        RefreshSpeakerRevision();
+        transcriptionView?.SpeakerRevisionBox.Items.Refresh();
+        transcriptionView?.SpeakerAnalysisBox.Items.Refresh();
+        transcriptionView?.SpeakerSegmentsBox.Items.Refresh();
         if (!persist) return;
         try
         {

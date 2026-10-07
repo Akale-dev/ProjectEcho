@@ -1,0 +1,12 @@
+{
+  "手动输入换人时刻（本录音时间）": "Enter a speaker-change time manually (recording timeline)",
+  "时:分:秒.毫秒": "hh:mm:ss.fff",
+  "人工换人时刻": "Manual speaker-change time",
+  "例如 00:00:27.500，必须位于当前字幕段内；这是人工时间，不是模型词界。": "For example, 00:00:27.500. Must be inside this subtitle segment; this is a user-supplied time, not a model word boundary.",
+  "换人时刻格式须为 时:分:秒.毫秒，例如 00:00:27.500；请填写本录音时间。": "Enter a recording-timeline time in hh:mm:ss.fff format, for example 00:00:27.500.",
+  "先回听，在完整文字中放置分界光标并选左右人物。可选模型候选时刻；模型漏检时，勾选手动输入本录音的准确换人时刻。缺失文字请先回校订页补入并保存，不会自动补写或按字数分配时间。": "Listen first, place the cursor at the text cut, and select the left/right speakers. Choose a model candidate, or enable manual entry when the model missed the turn. Supply the time on this recording's timeline. Add any missing words in the review editor and save first; words are never invented and timing is never divided by text length.",
+  "人工换人时刻必须严格位于本段起止之间，且文字切点两侧非空；不会按字数生成时间。": "The manual time must be strictly inside this segment and both sides of the text cut must be nonempty. Timing is never generated from text length.",
+  "含人工输入的换人时刻：时间及文字切点由用户明确指定，不是模型确认或按字数计算；原稿及父版本保持独立。": "Contains manual speaker-change times: the user supplied both time and text cuts, without model verification or text-length interpolation. The original and parent revisions remain separate.",
+  "人工正文切点缺少有效文字边界、段内明确时间或所要求的模型候选证据。": "The text cut lacks a valid character boundary, an explicit time within the segment, or required model-candidate evidence.",
+  "人工输入的换人时刻必须保留父版本哈希与修订来源。": "Manual speaker-change times must retain the parent revision hash and correction provenance."
+}

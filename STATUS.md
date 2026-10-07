@@ -1,5 +1,150 @@
+2026-10-06 **M5E Pro 与 M3O Lite 已交付**：按本轮明确授权，在实际 M5Dfix 上同步 M3K–M3O，保留 Qwen 定位异常时全文保存/待定位修复及人物功能。包括紧凑 UI、批量文字/时间校订、目录记忆和启动刷新、Whisper 分句、自动结束与实时设置、跳转/快捷键，以及本轮播放图标与当前位置播放修正。M5E 465/0 回归、23/23 最终包 WPF、真实 Qwen CPU/Vulkan 和人物/Whisper、四进程启动、807 文件 ZIP 通过；Lite 378/0、18 WPF、673 文件 ZIP 通过。123 个旧发行归档/校验文件保持，前像和失败证据留存。真实会议/麦克风、目标公司机、物理输入/DPI及 clean Windows 未验；原 M1/M2/M4/M5 质量限制不升级。见 docs/94_M5E_LITE_SYNC_AND_PLAYBACK.md。
+
 # Development status
-Updated: 2026-10-03
+
+2026-10-06 **M3N Lite已交付，待用户验收后一起同步M5 Pro**：修复mic低底噪/DC不断重置无声计时；录音/暂停中可启用、取消自动结束及改时长，Host确认后生效并留证。回听新增−10/−5/+5/+10秒矢量按钮、上下切字幕及左右5秒快捷键，跳转保留暂停/播放和倍速；两栏从头播放改为左竖线+右三角，焦点/按下不裁切。378/0回归、18/18包内WPF、四进程启动及672文件中文ZIP通过。1681个Pro源码/旧包文件不变，32文件增量补丁及同步记录已保存。见[交付与验收记录](lite/docs/92_M3N_MIC_SILENCE_AND_PLAYBACK_CONTROLS.md)、[完整便携包](artifacts/ProjectEcho-win-x64-20261006-M3N-Lite-Final.zip)。真实mic/会议、目标机、物理键鼠/DPI和clean Windows待验；无新采集、下载、上传或关机。下方保留历史记录。
+
+2026-10-06 **M3M Lite已交付，待用户验收后一起同步M5 Pro**：移除手动预检，开始录音自动检查保留；原按钮位置增加自动结束勾选，默认关闭/5分钟，可选1、5、10分钟，所选根进程退出或全部已启用来源无声音到期后正常停止并保存。mic声音重置，暂停不计；缺包不冒充静音，尾包与结束原因持久保留。362/0回归、16项包内WPF覆盖（含剪贴板权限复验）、四进程启动及671文件中文ZIP核验通过。1680个Pro源码/旧包文件hash保持，23文件增量补丁和同步清单已留存。见[交付与验收记录](lite/docs/91_M3M_AUTOMATIC_RECORDING_END.md)、[完整便携包](artifacts/ProjectEcho-win-x64-20261006-M3M-Lite-Final.zip)。真实会议/麦克风/目标机及旧闸门仍待验；本次未新增采集、下载、上传或关机。下方保留历史记录。
+
+2026-10-06 **M3L Lite已交付，Pro不变**：校订页去冗余说明/底部状态区、扩大字幕列表；搜索32DIP单行；时间编辑两位小数且保留未编辑原毫秒；启动自动刷新记忆目录的会议库。343项覆盖（340首过+3同DLL重试）、15包内WPF、四进程启动刷新、670文件中文ZIP通过。见[Lite交付记录](lite/docs/90_M3L_COMPACT_REVIEW_AND_STARTUP_LIBRARY.md)及[M3L便携ZIP](artifacts/ProjectEcho-win-x64-20261006-M3L-Lite-Final.zip)。旧包与原数据保留，目标机/DPI/旧采集闸门不升级；本次验收通过后按已有授权同步Pro。
+
+2026-10-06 **M3K Lite补丁交付**：时间框不加宽、固定分隔符；启动记住所选数据目录，不可用不换默认；录音状态高约25%。时长核查正常，截图格式歧义与旧模型尾端越界不同。343回归、14项包内WPF、四个真实进程目录恢复及669文件核验通过。首次升级需选一次原数据目录。Pro源码保持；本次用户验收后按已有授权迁移。详见[Lite补丁记录](lite/docs/89_M3K_FIXED_TIME_AND_DATA_DIRECTORY.md)与[新修复包](artifacts/ProjectEcho-win-x64-20261006-M3K-Lite-TimeFix-Final.zip)。
+
+2026-10-06 **M3K Lite已交付，待用户验收后同步Pro**。本次名称由用户从M3J更正为M3K。仅`lite/`改进M1–M3：录音/会库紧凑、时间校订、多段一次保存与关闭提醒、Whisper分句边界。330回归、12项包内WPF、668文件ZIP通过；base同文186→196段、字文与标点保全，语义及目标机仍待验。主目录Pro产品代码及旧包保持。用户已授权本次验收后同步，无需二次批准；此前M5D已同步的历史M3I/M3J不回退。
+[Lite交付记录](lite/docs/87_M3K_LITE_EDITING_AND_SEGMENTATION.md) · [分句研究](lite/docs/88_M3K_WHISPER_SEGMENTATION_STUDY.md) · [M3K便携ZIP](artifacts/ProjectEcho-win-x64-20261006-M3K-Lite-Final.zip)
+
+
+2026-10-05 **M5Dfix Pro已交付：Qwen定位异常时保全已识别全文**。同一1.7B录音ASR成功、3窗raw定位反序，旧程序拒绝整场保存；现严格核对完整字文后将坏窗保为untimed，好窗仍定位。用户原会已另存368字/3待定位，49旧文件不改；原生CPU和官方F32也仍拒绝这3窗，定位质量不冒充通过。404回归、最终13项WPF、公开Qwen CPU/Vulkan及人物/Whisper通过，806文件ZIP核验完成，版本标签裁切已补强实测。见[修复记录](docs/86_M5D_QWEN_ALIGNMENT_TEXT_PRESERVATION.md)、[完整便携ZIP](artifacts/ProjectEcho-win-x64-20261005-M5D-QwenFix-Final.zip)。Lite不改，目标Win10/clean Windows等旧缺口保持；下方为历史。
+
+2026-10-05 **M5D Pro已交付，Lite更新同步完成**：在实际M5C前像上迁入M3I/M3J录音大包、逐段ASR异常保全文、校验提速/百分比、诊断显示和三项UI修复；保留Qwen、人物与人工稿。Release零警告，最终包**396回归、13项WPF、真实Qwen CPU/Vulkan及说话人/Whisper链均通过**；同一小时合成轨439.393→32.739秒、WAV hash相同。Lite源码与旧包保持，目标Win10和clean Windows仍待验。交付[完整ZIP](artifacts/ProjectEcho-win-x64-20261005-M5D-Pro-Final.zip)，详细记录见[85](docs/85_M5D_LITE_FIXES_FORWARD_PORT.md)。不启动M6。
+
+下方保留各版当时的交付记录；其中“Pro未同步/等待验收再同步”已由本次用户明确指令与M5D交付更新，未测项目仍保持原状态。
+
+
+**M3J Lite：** [完整便携ZIP](artifacts/ProjectEcho-win-x64-20261005-M3J-Lite-Final.zip)；源码2a7f2e5，ZIP SHA-256 60dc2986a572e128610bbaee835855736dece14440cb7abf27f9b7ac9af22ae2。[详细修复与验证](docs/84_M3J_ASR_EOF_AND_RECORDING_UI_FIX.md)。M5C仍未同步。
+
+2026-10-05 **M3J Lite已交付，待目标机验收**：用户已确认M3I公司机录音故障不再复现及后处理提速；新ASR模型末端914ms越界。M3J按要求覆盖逐段时间异常，并左移标识、显示会议时长、增加录音页录后处理卡。最终包319回归、八项WPF及实际用户整场Vulkan识别通过；恢复旧184段/1待校对，新稿186全定时，推理103.369秒。见[84](docs/84_M3J_ASR_EOF_AND_RECORDING_UI_FIX.md)。M5C仍未同步。
+
+
+**M3I Lite下载：** [完整便携ZIP](artifacts/ProjectEcho-win-x64-20261005-M3I-Lite-Final.zip)；入口同名目录下ProjectEcho.exe。源提交98d3420，ZIP SHA-256 74af54360a02473d6fde2cc5bd0229af3ce6e1bc782395c278dccd896d2788fc。M5C未同步；目标公司电脑验收待完成。
+Updated: 2026-10-05
+
+2026-10-05 **M3I Lite已交付，等待公司电脑验收**：大包、Whisper零时长保全文、正常说明精简、路径校验提速和真实阶段进度。最终包307回归、七项WPF及CPU/Vulkan公开识别通过；同一小时原轨439.393→29.173秒且WAV hash相同。主目录M5C产品代码保持，待用户验收再同步；见[82](docs/82_M3I_LITE_CAPTURE_AND_ASR_FIX.md)、[83](docs/83_M3I_TO_M5C_SYNC_CHECKLIST.md)。
+
+
+## 历史基线：M5C 已知人数全场聚类修复
+
+**根因已证实：**实际TitaNet/人数2/CPU6配置正确，原音→混音→16k未发现声音区别被破坏。用同一34窗/72向量可逐毫秒复现原14个错误区间；旧complete-link在强制2簇时将两组主要人声合并，把短回应声学类别单列。不是GUI错标签，也不是仅换模型即可解决。新原生worker保持音频/模型/窗口/全部有限特征不变，对已知人数采用全场球面K-means（固定16初始化/80迭代，声音目标选优，不读字幕或人工答案）；自动人数明确保留旧方法。见[81](docs/81_M5C_GLOBAL_CLUSTERING_FIX.md)。
+
+**已测：**用户新例十条单人发言声学主组10/10；最终生产字幕在相同CPU6设置下9匹配/0确定错归/1待确认，另一个含B短回应与A后句的复合cue仍待确认。11条/350字完整、6个既有分析/人工稿保持；没有替换用户校对版。复合cue的ASR原稿/token实际无hmm文字，不伪造补字。新原生同样通过旧例7/7、对齐裁片7/7、A-B-A-C-A及20分钟返回5/5；旧覆盖门槛FAIL不升级。
+
+**实现与验证：**新增明确手填录音时刻＋文字光标的人工切点，另存schema2且不冒充模型时码；旧候选API仍严格。Release零警告零错误，355默认回归PASS。新worker原生数值/可重现构建、输入合同和10项故障检查独立执行；最终产品自动/已知模式、取消、坏模型自然返回失败均PASS。早期故意损坏模型测试产生C++异常弹窗/挂起，已保留FAIL及用户弹窗反馈；最终程序有模型预检和进程级无GUI错误处理，不改系统策略。
+
+**三小时：**已知3人真实新算法完整10800秒/172800000帧/361段9025字符通过，推理592611ms、峰948473856B、整个探针672290ms。这是稀疏重复公开真人压力轨。该测试worker为预检增强前2244e877…；最终70587ae8…的聚类/时码代码及正常输出一致，最终托管重读/重映射长结果通过，最终EXE三小时资源未重跑。密集自然长会、自动人数准确率、其它硬件/cleanWindows仍未验，不进入M6。
+
+证据`.local/M5C/production-case-final/report.json`、`independent-worker-01/summary.json`、`three-hour-known-01/summary.json`、`auto-known-cancel-final/summary.json`、`native-faultfix/README.md`、`user-dialog-audit.json`、`regression-final/results.json`。
+
+**最终交付：**`artifacts/ProjectEcho-win-x64-20261004-M5C-Final/ProjectEcho.exe`；ZIP **461857855B**，SHA-256 **`5b64bc38c6463b639cfa4a65c03c974bf0d40509c3020e4535e51421dffccfc6`**。803清单+manifest共804文件中文解压逐项hash通过；manifest SHA **`bfabc129311e118ea60e8436694785438c36e8a385b5741d5742c717ad6acceb`**。自带App/Host、11项WPF、真实公开CPU自动/已知模式、Whisper绑定/应用、切会/取消通过；包内同用户样本CPU6仍9匹配/0确定错归/1单人待确认（另一个复合cue待确认），350字和人工版本不改。最终Core **`2218e9924cbbe4cd874087710234968813b7f7235c4b83a408d2aa8fa112580c`** 与355回归、包内用户例及完整长测重新映射所用相同。
+
+包后证据`.local/M5/m5c-final-zip.json`、`m5c-final-ui/summary.json`、`real-ui-113109904/report.json`、`.local/M5C/bundled-case-final/report.json`、`bundled-long-remap/summary.json`、`final-components.json`、`.local/diagnostics/portable-20261004-192936/portable-smoke.json`。旧M5B/原件/人工稿均保留；切到新包并选原Data，使用新包说话程序、TitaNet与人数2重新分析，不能只套用旧错误分析。手填切点在校订补字后由用户明确确认，不伪造hmm文字或其时间。
+
+## 历史基线：M5B 回听标签、人物正文校订和声音分组复查
+
+**已实现：**回听列表/当前播放字幕显示人物标签；人物版正文可直接编辑并另存schema2，保留时间、人物ID、原稿/父哈希及修改前后文字；同场说话人页明确单击/Enter回听，选中同步不自动播。新增TitaNet-Large/旧ERes2Net/自选预设，保留已有模型选择；修复整段重叠标记污染不相交字幕、词内token误作换人边界和过短自动切段；已知人数退化时明确提示。
+
+**已测：**Windows11 26200.9457/x64，Release零警告零错误，**351默认回归PASS**；三语实际WPF编辑/草稿/跨会/索引/导出/重开、静音点击/重复点击/Enter回听、录音/暂停/保存禁播、新旧模型配置保持通过。原M5及EOF修复仍保留。证据`.local/M5B/regression-final/results.json`、`ui-083959683/report.json`、`.local/M5/ui-084027467/report.json`；最终包内核验另补。
+
+**用户样本检查：**原英语样本已经指定2人，但ERes2Net把20.924s主要声音放一组，另一组仅118ms；2/4线程均复现，属原生误聚类。只换TitaNet、同输入/CPU/已知2人后，两组覆盖11.222/9.820s。用户截图明确的7条，最终生产字幕为**4条自动正确、0条确定错归、3条待确认**；未展示7条不算已验证。完整14条/419字符映为15条，原音频和既有10个分析/人工稿hash保持。没有改写用户正确的人工标签。证据`.local/M5B/production-case-02/report.json`、`quality-case/partial-gold-score.json`。
+
+**限制：**TitaNet自动人数在该例仍4≠2 FAIL；未知/短插话/叠声不是已解决问题。TitaNet公开4人、A-B-A-C-A与20分钟返回分组通过，但旧90%裁片覆盖门槛仍FAIL。TitaNet三小时资源、自然全场质量、跨语言、其他硬件和干净WindowsNOT_RUN，不继承ERes三小时结果。模型CC-BY-4.0与转换/程序许可分别核实随包；用户声音、正文、截图未进Git或包，未启mic/录音/上传/推送/M6。完整说明[80](docs/80_M5B_REPLAY_EDITING_AND_VOICE_QUALITY.md)。
+
+**最终交付：**`artifacts/ProjectEcho-win-x64-20261004-M5B-Final/ProjectEcho.exe`；ZIP **453020470B**，SHA-256 **`8e55724d5268e472a7cb68b41975e9a1aba0a0394f4a1773fe025b7829776dd8`**。782清单+manifest共783文件中文解压逐一hash通过；manifest SHA **`c7d71caccc6f670826c92998618e306ea8c3b1ab023f3b215fdaa1e432ffef68`**。自带App/Host、11项同版WPF、新最终目录M5B回听/编辑/预设实测通过；623个程序/模型文件与已测候选相同。最终Core **`b3646c5e66b3a2b05ef782616ad6b1139bbab022ca57c14bd8f503fbec012c2d`** 与351回归、用户局部参照包内复测相同。
+
+证据`.local/M5/m5b-final-zip-verified.json`、`m5b-final-ui/summary.json`、`.local/M5B/ui-091525394/report.json`、`bundled-case-final/report.json`、`final-components.json`、`.local/diagnostics/portable-20261004-171522/portable-smoke.json`。包内说明为封包前快照，本段/80号及同名`.package.json`补充封包后结果。使用新包选原Data；已有ERes选择不会自动变成TitaNet，本例请主动选TitaNet-Large+已知2人另存分析，正确人工稿继续保留。M5B新增正文稿需用M5B读取。
+
+## 最新：M5 末端说话人区间修复
+
+用户本地73.9308125秒样本的三次原生分析均正常退出，但最后结束时码为73.960秒，超过完整音频毫秒上界29ms。已确认对应锁定pyannote模型的感受野中心网格，不是反序或音频损坏。新增只接受已验证模型/程序/精确帧数可证明的末网格归一化，真正越界/乱序/零长仍拒绝；原始输出、调整明细和可见警告保持。失败Log也显示具体区间原因。说明见[79](docs/79_M5_INTERVAL_EOF_FIX.md)。
+
+**已测：**Release零警告零错误，**339默认回归PASS**。用户样本先独立副本、再原会议另存新分析/人物版，真实CPU均PASS；10音频区间/2声音组，20条原字幕映为23条且全部文字保留，仅末端73960→73931ms；37个原有文件hash保持，三次失败证据仍在。没有录音、mic、播放、上传。证据`.local/M5IntervalFix/regression-01/results.json`、`user-validation-01/report.json`、`user-recovered-01/report.json`。旧M5自动人数/叠声质量FAIL及其它未测不升级，不进入M6。
+
+**修复交付：**`artifacts/ProjectEcho-win-x64-20261004-M5-IntervalFix/ProjectEcho.exe`；ZIP **358381466B**，SHA-256 **`a00467442f877fb0f0d776e24413081514e9b7a5ec457ee8c101b0dad3f9ab47`**。773项清单+manifest共774文件中文解压逐一hash通过，自带App/Host及10项WPF通过；最终包内Core/原生程序对同例再次真实CPU复测PASS（42个已有文件hash保持）。Core SHA **`aba882544aa77eb5b821e5308bcc25f6f2a5fdbb1e6a39a1b879c5c9acb3131e`**与339回归、原会恢复及包内复测相同。证据`.local/M5/interval-fix-zip.json`、`interval-fix-ui/summary.json`、`.local/M5IntervalFix/bundled-case-01/report.json`、`.local/diagnostics/portable-20261004-155744/portable-smoke.json`。
+
+**使用：**新包选择原Data，打开该场最新“同场说话人”版本；无需重新录音或重做ASR。旧M5-Final目录/ZIP及其用户Data原样保留，只在原会议增加了成功的分析、人物版和一次尝试文件，没有覆盖旧稿。包内说明是封包前快照，本段/79号和`.package.json`补充封包后结果。
+
+## 当前：M5 同场说话人实现与便携交付完成；质量闸门部分未通过
+
+**已实现：**会后独立 sherpa-onnx 1.13.8 CPU/ONNX Runtime 1.28.2、pyannote3.0分段+ERes2Net特征、全场聚类与自动/已知人数配置；稳定speakerId和本场显示改名、单段改人、合并/拆出、人工文字切点、独立analysis/revision与可选标签TXT/SRT/VTT导出。Whisper真实token与Qwen已验证原始词界复用，缺可靠文字边界完整待确认；可将已保存声音分析应用到文字新稿，无需重新推理。SQLite仅为可重建正文/显示名索引。模型不进入CaptureHost，开始下一场录音取消后台任务。
+
+**已测试：**同一Windows11 25H2 **26200.9457/x64**、5800X3D，SDK10.0.401/runtime10.0.12。Release零警告零错误，最新 **331默认回归PASS**（`.local/M5/regression-final-02/results.json`）。真实CPU公开/构造A-B-A-C-A、20分钟返回及半音量的自动/已知人数全场匹配；实际WPF改名纠错/索引/导出/切会/取消/三语/便携路径、新旧11秒/28.345秒policy真实模型链、坏ONNX原生进程隔离通过。Qwen既有三小时600句/10433词界、真实Whisper22词界复用通过。全程没有录音或mic采集。
+
+**三小时真实生产链：**10800秒/172800000帧、361个公开真人裁片+静音、361条明确合成字幕/9025字符，完整输入/尾声/版本/导出/SQLite通过。CPU推理 **565365ms**、峰工作集 **1462222848B**，整个探针 **643983ms**；独立原程序实跑530152ms。最终托管代码重读/重映射同一全场raw及361段一致，区别于重新推理。证据 `.local/M5/pipeline-three-hours-01/summary.json`、`final-long-remap-02/summary.json`。这是重复压力轨，实际声音约1724.3秒，不是自然或密集三小时会议质量/资源保证。
+
+**失败和未测：**产品导入/混音后公开4人样本自动分成5组，**FAIL保留**，提示4人是另一项通过；受控叠声拆人1/标签竞争约9.72%失败；预冻结裁片覆盖最低约88.9%未达90%门槛，未降低门槛。最初评分整数重载错误保留，使用独立`scores-corrected.json`。相似音色独立真值、同人跨语言、自然长会/真实电话远场质量、密集三小时更多人物、其他硬件和真正干净Windows仍**NOT_RUN**。因此P5-01/P5-04为**PARTIAL**，不宣称全质量验收完成；P5-02/03功能和守恒结果见验收表。旧M1/M2与M4既有FAIL/NOT_RUN不升级。
+
+**最终交付：**`artifacts/ProjectEcho-win-x64-20261004-M5-Final/ProjectEcho.exe`，ZIP **358372664B**，SHA-256 **`c65abe6b548f5f4d32df5789b538bb799b485afd7cd10da76054fce296a3de92`**。772清单文件+manifest共773项实际中文解压逐文件hash通过；manifest SHA **`c23ecba5f83d657b9ddc41fa04a7e347408fa86dea1a756b7bb5f79b0ee6f2f4`**。附sherpa CPU/两ONNX模型及许可，保留Whisper CPU/Vulkan/base与Qwen程序；Qwen权重仍外置。ZIP无测试音频或Data，不要求用户预装SDK/.NET/Python/Node。
+
+**包内核验：**`artifacts/E75/同场说话人`正常无采集启动、自带Host运行时/IPC、M5十二版本WPF、真实CPU/已知人数/取消/切会/Whisper按钮→保存分析复用通过；自动5≠4失败在最终包再次真实复现，未改为PASS。完整候选同版App十项WPF通过。最终App/Host中6个Core/Capture/Export DLL与331回归对应文件相同，最终Core也真实重读/重映射三小时输出。证据 `.local/M5/final-zip-verification.json`、`final-tested-components.json`、`ui-064933419/report.json`、`real-ui-064939060/report.json`、`.local/diagnostics/portable-20261004-144930/portable-smoke.json`；ZIP内说明为封包前快照，本节及同名`.package.json`补充封包后结果，ZIP哈希不变。
+
+此前M4-AlignFix完整保留。M5使用说明[76](docs/76_M5_USER_GUIDE.md)，实现/边界[75](docs/75_M5_MEETING_SPEAKERS.md)，合同[77](docs/77_M5_DATA_CONTRACT.md)，模型/许可/质量[78](docs/78_M5_NATIVE_EVIDENCE.md)。状态 **M5_IMPLEMENTED / PORTABLE_DELIVERED_WITH_QUALITY_GAPS**，不是P5全面验收通过。仅推进M5，没有启动M6/M7、入会、上传、推送、关机或修改全局设置。
+
+## 历史基线：M4-AlignFix 定位性能与旧 CPU 兼容已交付
+
+**已实现：**AVX2 原生 CPU、独立 Vulkan 定位、16窗有界会话复用、实际后端确认、请求清单锁/哈希及运行清单溯源；官方 Python 显式可选，运行环境/权重外置；兼容旧 CPU 勾选强制通用原生定位，保留原偏好。ASR CPU 已核实为无 AVX2/FMA 的 x64/SSE2 基线。旧设置可读，新写入 schema2 防旧程序忽略新控制。Whisper 默认与旧 M4 Final 交付保留。
+
+**已测试：**Windows11 Pro25H2 **26200.9457/x64**、5800X3D/RX6900XT、驱动32.0.21043.10005、SDK10.0.401/runtime10.0.12/NAudio3.1.0。build-04零警告零错误，regression-03 **311默认回归PASS**；九项同版WPF、真实Vulkan/AVX2/官方Python/通用兼容四种按钮链路及句子点击/重开/导出通过，无模型Base实际WAV/MP3导出通过。Final中文解压后自带App/Host与真实Vulkan/官方Python再次通过。没有录音或mic采集。
+
+**三小时完整实测：**360窗/172800000帧/600句PASS；ASR190548ms，Vulkan定位23批共**120082ms（约2分钟）**，识别适配器318196ms（5分18.196秒），含导入/准备的整个探针401322ms。旧M4定位为6907243ms（115分钟），本次约57.5倍提速；是相同构造语料的真实推理，非自然会议速度保证。本场切片逐字节一致；独立短参考357窗差异仍保留，max1LSB/RMS0.03608767936且所有lag0。独立显存dedicated峰1769328640B/shared611766272B，19次无效counter保留；父进程仅2次晚采样，最后观测OS lifetime峰124731392B，明确NOT_FULL_SAMPLING。
+
+**CPU与Python结论：**AVX2同6线程旧3×30s由60034→16906ms；完整180秒原生8线程两轮20246/20443ms。原版官方Python6线程22624/22066ms；修正无关日语预加载后外置便携版本20272/21625ms、均值20948.5ms，仍未稳定快于原生均值20344.5ms且占更多内存，因此**CPU默认保留原生，官方Python显式可选**。原始预测与官方repair分开；BF16慢而停止、HF未执行，不冒称通过。外置环境 `H:\AI\Qwen\python-aligner-runtime`，原始权重 `H:\AI\Qwen\官方定位0.6B-c7cbfc2`；中文移动目录、隔离PATH、禁socket/DNS下实推理PASS，未改全局环境。
+
+**已知失败/未测：**旧elapsed28.345秒保留17.345秒暂停时，Vulkan对`your`预测22.960→5.520秒反序，严格拒绝，**该样本FAIL保留**；显式AVX2 CPU重试新11秒/旧28.345秒全PASS，CPU词界与旧generic一致，输入和原文相同。根因未证明是模型歧义还是Vulkan数值/端口，不交换/插值时码、不暗中换CPU。旧CPU物理实机、真正干净Windows、其他硬件、自然长会质量、1.7B/HF、三小时Python及原M1/M2缺口仍NOT_RUN；没有交付操作阻塞。无上传、推送、关机或全局策略修改。
+
+**最终包：**`artifacts/ProjectEcho-win-x64-20261004-M4-AlignFix/ProjectEcho.exe`，ZIP **308982020 B**，SHA-256 **`12195f4a4c5b91677d7288d8ff67f1f61f83616a6ee1bf28692d745e4ef4a291`**。749清单文件+manifest共750项逐文件解压hash通过；manifest SHA `30dbd778dd0035fcaf4078d51f91b9ab6230c5c0264fea6f1f0492bf885042db`。617个exe/dll/py与已测Candidate逐字节一致，7个Core/Capture/Export/Host DLL与三小时冻结目录一致；5原生PE/69许可/桥及依赖闭包审计PASS。Qwen权重与Python环境不在软件目录/ZIP；Whisper CPU/Vulkan/base保留。中文验证路径 `artifacts/E74/定位优化`。
+
+本机AlignFix文件夹的可变`Data/settings/qwen-defaults.json`已另行预置外部0.6B/GGUF定位/可选Python路径，识别和原生定位可选Vulkan0；**默认引擎仍Whisper**，原Data不迁移或覆盖。这份机器配置不在ZIP中，已再次核对ZIP SHA未变；证据 `.local/M4Perf/local-defaults.json`。
+
+**证据：**[74](docs/74_M4_ALIGNMENT_PERFORMANCE.md)、[使用说明73](docs/73_M4_QWEN_USER_GUIDE.md)，`.local/M4/perf-real-long-01/final-validation-summary.json`、`.local/M4Perf/final-zip-verification.json`、`real-ui-final/runs.json`、`package-final-dependency-audit-02/summary.json`、`pause-backend-comparison.md`；本地增量集中 `.local/M4Perf`。M4-AlignFix完成，M5/M6/M7未启动。
+
+## 历史基线：M4 中文识别、句子定位与便携交付完成
+
+**已实现：**从 M3Hfix Final 升级的可选 Qwen3-ASR/transcribe.cpp CPU/Vulkan，以及无需 Python/Node 的原生 CPU ForcedAligner；删除上游插值修补，保留真实声学预测与逐句回听。完整均衡帧窗口、只读输入锁、独立原稿/人工稿、对齐证据哈希、取消/重试、每会设置和索引重建均已接入。录音开始取消后台 Qwen，不等待模型；没有模型仍可录音导出。Whisper 与旧会议设置保留；VAD 对照无已证收益，未增加必装 Silero。M5/M6/M7未启动。
+
+**已测试：**Windows11 Pro25H2 **26200.9457/x64**、5800X3D/RX6900XT/驱动32.0.21043.10005，SDK10.0.401/runtime10.0.12/NAudio3.1.0。Release零警告零错误，**304默认回归PASS**；真实CPU/Vulkan0、raw CPU定位、中文程序/模型路径、实际按钮识别/句子点击/切会/重开/导出、九项最终包WPF、SQLite损坏重建及证据篡改拒绝通过。完全不含模型/ASR程序的自包含Base也通过实际WPF WAV/MP3导出。没有实际录音或mic采集。
+
+**三小时全模型实跑PASS：**02:11:23–04:11:11（香港），360窗全部识别及CPU定位，172800000/172800000帧、600句、末窗全文和原件hash保持。GPU ASR189958ms，CPU定位合计6907243ms，适配器7105787ms；这是公开/SAPI片段加静音的重复压力轨，**不代表自然三小时会议准确率/速度**。定位进程峰值工作集2,302,033,920B，调度层最后观察的OS lifetime峰值123,035,648B；独立显存采样dedicated1,441,374,208B/shared611,766,272B，13次无效counter采样保留。360窗与本场完整ASR输入逐字节一致；跨独立短参考357个SHA不同，量化最多1 PCM16 LSB、RMS0.03608768 LSB、每窗±8帧最佳lag均0。原差异报告保留，不冒称独立重采样逐字节相同。
+
+**时间轴与保真：**同一公开原PCM与原QPC/device/frame，新去暂停11秒、旧elapsed28.345秒均实际经过磁盘恢复→混音→16k→Qwen Vulkan→raw CPU定位→SRT/VTT往返。旧17.345秒暂停保留，新时间轴不加回暂停；录音原件和原稿/修订未覆盖。
+
+**最终交付：**`artifacts/ProjectEcho-win-x64-20261004-M4-Final/ProjectEcho.exe`；完整ZIP `artifacts/ProjectEcho-win-x64-20261004-M4-Final.zip`，**284,832,980字节**，SHA-256 **`af11e9006b5d46a7ac772e405e8447ca07f3bcc4591e8e3ef13bccc925554119`**。707清单文件+manifest共708项实际解压hash通过；清单SHA `b2bb83a6182f51a4a9475dece2034e79bea5a6f6fb0ba1779c64d359ad538419`。中文解压目录的自带运行时/Host、九项WPF和最终原生Vulkan中英7句UI/回听再次通过。全部程序与候选实测文件相同，7个Core/Capture/Export/Host DLL与三小时冻结文件逐一一致。旧Whisper CPU/Vulkan/base与M3Hfix清单完全相同。
+
+**模型部署：**0.6B Q8_0及ForcedAligner模型共约1.98GB，独立位于 `H:\AI\Qwen`，软件目录和ZIP不含这些权重；包内仅Qwen CPU/Vulkan/定位程序及完整许可。用户后续可另选兼容1.7B GGUF，但本轮未下载或验收1.7B。本机Final文件夹的可变Data中已预置外部Qwen模型路径，默认引擎仍为Whisper；这份本机配置不在ZIP中，也未修改既有Data。配置见[73](docs/73_M4_QWEN_USER_GUIDE.md)。
+
+**未测/限制：**真正干净Windows、其它GPU/CPU/Windows版本、1.7B/其它量化、自然金融/电话/重叠/自然三小时会议质量及真人听感仍NOT_RUN。原M1/M2真实mic、同步及现场失败/未验不升级。固定质量有“铯→铀”“复核→复合”等实际字词错误；对齐approximate且内部80ms粒度，不等于文字正确或10ms精度。未上传、推送、关机或修改系统策略。
+
+**失败保留：**首个探针缺meeting.json、字幕边界空白断言、开发DLL占用、测试汇总字段/SDK夹具环境问题均保留；日志故障收尾/相对路径/窗口锁问题已修并实测。long01为纳入复审修复主动中断，未记成成功。最终ZIP说明为封包前快照；本段和同名`.package.json`补充封包后结果，不改已验ZIP。
+
+报告 [71](docs/71_M4_QWEN_CHINESE_ASR.md)、[72](docs/72_M4_QUALITY_AND_WINDOW_EVIDENCE.md)；核心证据 `.local/M4/real-long-02/final-validation-summary.json`、`post-long-candidate/summary.json`、`final-zip-verification.json`、`final-ui-01/summary.json`、`final-real-ui/run.json`、`index-probe/run-01/summary.json`。阶段状态 `M4_IMPLEMENTED / TARGET_WINDOWS_VALIDATED / PORTABLE_DELIVERED_WITH_LIMITATIONS`。只有用户再次明确要求才进入M5。
+
+## 下一步：M3Hfix 完成后启动 M4（规划已记录，未实施）
+
+用户于 2026-10-04 确认将本轮规划写入项目，并最终更正为 **M3Hfix 完成后再启动 M4**。路线为 **M4 中文 ASR + 句子定位 → M5 同场说话人分段/聚类/显示改名 → M6 可选双 ASR 深度复核**；无需另配通用文本 LLM，不做重点摘录。原 M4/M5/M6 顺延为 M7/M8/M9，项目分析继续暂缓。主计划见[70](docs/70_M4_M6_LOCAL_ASR_ROADMAP.md)，后续任务入口见[prompts](prompts/README.md)。
+
+**本轮范围：**只更新规划、交接、任务提示和追踪表；没有产品实现、构建/音频测试、模型下载或任务启动。新增 P4/P5/P6 验收条目全部 NOT_RUN；R29–R31 为 NOT_STARTED。文档检查证据单列在 `.local/diagnostics/planning-m4-m6-20261004/`，不计作产品通过。
+
+**文档核验：**现有 `Verify-Planning.ps1` 结构检查通过；139条既有验收记录除6条规划阶段编号顺延外逐字段保持，12条新验收全部NOT_RUN且无执行证据；125个本地Markdown链接、48处提示词文件引用有效。报告 `planning-structure.json`、`documentation-checks.json`；仅文档一致性检查，不运行产品构建或音频测试。
+
+**基线说明：**后续真正开始时读取本文件的 M3Hfix 最终交付及最新未测项；只有用户另行启动才实施 M4。既有平台、真实 mic、干净 Windows 和长时同步等缺口保持原状态，不因规划落盘而升级验收。
+
+## 最新：M3Hfix暂停停止计时与双路采集
+
+**已实现：**用户本轮覆盖旧“暂停填静音”合同。新录音在两路实际Stop边界冻结计时；恢复准备不计时，Start成功后接续；暂停中停止保存有效前缀，8小时上限按有效录音计。raw QPC/device/frame原值保留，每段独立暂停偏移，恢复/混音/导出/转写共用compact录音时间轴。恢复首包按完整帧裁掉前滚，保留RetainedFrameOffset，正负抖动不跨越恢复边界；截止前尾帧保留。旧elapsed录音原样可读，不重写旧音频/字幕。UI M3Hfix三语、迟到消息与暂停禁播/禁预览保持。
+
+**已测试：**Windows11 25H2 26200.9457/x64、SDK10.0.401/runtime10.0.12/NAudio3.1.0；Release零警告，**282自动回归PASS**，实际WPF暂停与既有设置/预览/历史回听回归通过。11秒公开语音插17.345秒合成QPC暂停，磁盘恢复/混音仍11秒，原PCM字节与尾帧保持；实际MP3 EOF/接点/首尾、16k副本、真实Vulkan0转写与SRT/VTT毫秒往返通过。原始音频/时钟hash保持。报告[69](docs/69_M3HFIX_PAUSE_RECORDING_TIMELINE.md)，证据`.local/M3Hfix/`和`.local/TestResults/M3Hfix/default-final/results.json`。首轮类型错误、boundary原因白名单漏同步4FAIL均保留，修复后通过。
+
+**最终交付：**`artifacts/ProjectEcho-win-x64-20261004-M3Hfix-Final.zip`，262628196字节，SHA-256 `09179e69a3ca36152fd3812e81071af51a1481d71b4b17413721725240e3976a`。662项清单+manifest实际解压hash、自带Host IPC/运行时、六项包内WPF及最终包Vulkan全链路均PASS；App/Host内六个Core/Capture/Export DLL与282回归hash一致。最终公开语音实验模拟17.345秒暂停，混音/ASR输入仍11秒，Vulkan4885ms，SRT/VTT最后10500ms且逐cue毫秒往返一致。证据`.local/M3Hfix/zip-verification-final.json`、`bundled-wpf-final.json`、`tested-components-final.json`、`asr-bundled-final/summary.json`。
+
+**未测/边界：**未主动启用真实mic或真实会议；现场驱动、长时双设备同步、设备拔插、旧目标Windows和干净Windows仍未验。模型时码近似，不作10ms声学准确承诺。新合同只用于新录音，既有录音不自动去暂停。没有沿用旧关机或M3H单次推送授权。
 
 ## 目录维护：旧版本与测试数据已清理
 
@@ -244,12 +389,13 @@ Updated: 2026-10-03
 | M3F input validation / replay / single instance | IMPLEMENTED / 235_AUTOMATED_AND_WINDOWS_UI_PASS / TARGET_PENDING | docs/61；按需压缩；超大适配暂缓 |
 | M3G Vulkan / timeline / mic UI | DELIVERED / 241_REGRESSIONS_AND_BUNDLED_VULKAN_WPF_PASS | docs/62；百分秒定位/新mic/659文件完整ZIP通过，声学准确率和旧现场闸门未替代 |
 | M3H meeting ASR / mic images / level preview | DELIVERED / 263_REGRESSIONS_AND_BUNDLED_WPF_VULKAN_PASS | docs/63；本场自动prompt/默认隔离、原生remote及合成mic边界、661文件ZIP；真实mic与旧现场闸门不升级 |
+| M3Hfix pause / recording-time mapping | DELIVERED / 282_REGRESSIONS_BUNDLED_WPF_AND_ASR_CHAIN_PASS | docs/69；raw clocks保留、暂停移除、旧文件兼容；真实mic/长期现场仍未验 |
 | M4 project analysis | NOT_STARTED | none |
 | M5 optional tab extension | OPTIONAL_NOT_STARTED | none |
 | M6 release verification | NOT_STARTED | none |
 
 ## Next task
-使用保留的M3H-Final目录；旧测试会议已清空，现有识别设置保留。提示词自动跟随当前会；保存为默认配置只影响以后新会。由用户主动验证真实mic开启预览、关闭边界和所用目标设备；新录音继续保留原件与完整性警告，长期同步/干净Windows等旧闸门不变。
+关闭旧版，完整解压M3Hfix-Final并选择原Data。用户主动在目标设备检查暂停/恢复计时、远端与mic边界；新录音不保留暂停静音，旧录音时间轴不变。真实长时双设备、设备拔插与干净Windows等旧闸门保持未验；本轮未推送或关机。
 
 ## Per-stage reporting template
 Implemented:

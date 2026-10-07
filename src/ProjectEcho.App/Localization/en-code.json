@@ -102,7 +102,7 @@
   "尚未选择": "Not selected",
   "已创建恢复副本：{0}\n原件未修改；只包含通过检查点和哈希校验的 PCM。未确认尾部不在副本中，恢复不等于录音完整。\n": "Recovery copy created: {0}\nOriginals are unchanged. The copy contains only PCM verified by checkpoints and hashes; any unconfirmed tail is excluded. Recovery does not establish a complete recording.\n",
   "已明确确认": "Explicitly confirmed",
-  "已暂停 · 时间轴继续，不采集": "Paused · Timeline continues; no capture",
+  "已暂停 · 计时停止，两路均不采集": "Paused · Timer stopped; neither source is captured",
   "已有回放未能复用，请检查后点击“生成 / 重试完整混音”：": "The existing playback file could not be reused. Review the issue, then click “Create / retry full mix”: ",
   "已有完整回放通过来源、时间轴和文件校验；未重新生成音频。\n": "Existing complete playback passed source, timeline and file verification. Audio was not regenerated.\n",
   "已确认{0}，生效时间 {1}。": "{0} confirmed; effective at {1}.",

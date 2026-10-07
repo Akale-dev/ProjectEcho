@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ProjectEcho.Core;
 
 /// <summary>Disk-only synthetic fixtures; no device, capture, or playback APIs.</summary>
@@ -21,6 +22,15 @@ internal static class RecordingAuditClockTests
         Require(repeatedErrors.SequenceEqual(["remote:qpc_not_increasing:1"]),
             "Repeated API QPC must independently fail audit despite complete/valid metadata: " + string.Join(",", repeatedErrors));
         Require(originalHashes.SequenceEqual(HashFiles(repeatedDirectory)), "Read-only audit changed its input artifacts.");
+
+        var unsupportedDirectory = CreateFixture(output, "audit-m0-rejects-m1-timeline", false);
+        string unsupportedManifest = Path.Combine(unsupportedDirectory, "capture-result.json");
+        var data = JsonNode.Parse(File.ReadAllText(unsupportedManifest))!;
+        data["result"]!["TimelinePolicy"] = RecordingTimeline.ExcludePaused;
+        File.WriteAllText(unsupportedManifest, data.ToJsonString());
+        var unsupportedErrors = new List<string>(); RecordingAudit.Inspect(unsupportedDirectory, unsupportedErrors, []);
+        Require(unsupportedErrors.SequenceEqual(["m0_unsupported_timeline_policy"]),
+            "M0-only audit silently treated a new timeline as its original elapsed schema: " + string.Join(",", unsupportedErrors));
     }
 
     private static string CreateFixture(string output, string name, bool repeatedQpc)

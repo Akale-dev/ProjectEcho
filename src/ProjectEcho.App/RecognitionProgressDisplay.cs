@@ -39,7 +39,7 @@ internal sealed class RecognitionProgressDisplay : IDisposable
     private void Refresh()
     {
         if (disposed || !isCurrent()) return;
-        bool hasPercent = latest is { Stage: LocalTranscriptionStage.Recognizing, Percent: > 0 and <= 100 };
+        bool hasPercent = latest is { Stage: LocalTranscriptionStage.Recognizing or LocalTranscriptionStage.Aligning, Percent: > 0 and <= 100 };
         view.RecognitionProgressBar.IsIndeterminate = !hasPercent;
         if (hasPercent) view.RecognitionProgressBar.Value = latest!.Percent!.Value;
         // Never advance a percentage using elapsed time. Keep visible activity even
@@ -50,6 +50,7 @@ internal sealed class RecognitionProgressDisplay : IDisposable
             null => UiText.T("正在准备识别音频…"),
             LocalTranscriptionStage.Validating => UiText.T("正在校验本地文件…"),
             LocalTranscriptionStage.LoadingModel => UiText.T("正在加载模型并准备识别…"),
+            LocalTranscriptionStage.Aligning => UiText.F($"正在定位句子 {latest.Percent ?? 0}%（独立声学对齐）"),
             LocalTranscriptionStage.Saving => UiText.T("识别运算已结束，正在校验并保存文字…"),
             _ => hasPercent ? UiText.F($"本地识别 {latest!.Percent!.Value}%（引擎按音频窗口回报）")
                 : UiText.T("正在识别，等待首个进度回报…")

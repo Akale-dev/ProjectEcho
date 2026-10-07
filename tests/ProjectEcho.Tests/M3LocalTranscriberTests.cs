@@ -22,7 +22,8 @@ internal static class M3LocalTranscriberTests
             capability.InputBitsPerSample == 16 && capability.CanCancel && capability.CanAutoDetectLanguage && capability.CanSelectLanguage &&
             !capability.CanIdentifySpeakers && capability.TimestampQuality == "approximate" && capability.TimestampGranularity == "segment",
             "当前适配器能力错误或把字幕近似时间称作说话人/逐字对齐。");
-        Need(LocalTranscriptionBackends.Qwen3Asr.State == "NotImplemented", "Qwen准备项被冒充可运行后端。");
+        Need(LocalTranscriptionBackends.Qwen3Asr.Descriptor.Id == "qwen3-asr" &&
+            !LocalTranscriptionBackends.Qwen3Asr.Inspect(null).Ready, "M4 Qwen 必须独立配置，不能无模型自动启动。");
         var legacy = new WhisperConfiguration("local.exe", "local.bin", "zh", 3, "fixture", new string('a', 64), true);
         var converted = LocalTranscriptionConfiguration.FromWhisper(legacy);
         Need(converted.BackendId == "whisper.cpp" && converted.ExecutablePath == legacy.ExecutablePath && converted.ModelPath == legacy.ModelPath &&

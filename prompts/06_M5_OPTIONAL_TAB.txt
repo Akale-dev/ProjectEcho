@@ -1,1 +1,4 @@
-本轮仅在用户已允许安装扩展且基础版可用的前提下，实施M5可选精确单标签页录音。先读docs/05，验证当前Chrome tabCapture/MV3 API。必须用户点击触发、最小权限、捕获音回接保证继续听会；安全本机桥接仅loopback且认证Origin/token，处理clock映射/队列背压/断连。不能同时再录同一浏览器进程导致双录，不能读普通浏览历史、禁用sandbox或绕开组织策略。未获安装授权时只准备方案/可验证源码，不自动安装。此模块失败不得破坏无扩展版。
+历史入口已迁移（2026-10-04），本文件不再启动任务。
+旧M5可选单标签页已顺延为M8，未来模板见prompts/09_M8_OPTIONAL_TAB.txt。
+当前M5是同场说话人分段与聚类，入口为prompts/06_M5_SPEAKER_DIARIZATION.txt。
+先读prompts/README.md及docs/70_M4_M6_LOCAL_ASR_ROADMAP.md，不按旧文件名安装扩展或执行采集。

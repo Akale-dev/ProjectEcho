@@ -124,7 +124,7 @@ public static class MeetingLogStore
         var history = Read(meeting);
         if (history.Error is not null) throw new IOException(history.Error);
         var redactor = new MeetingLogRedactor(meeting, sensitiveValues);
-        var text = new StringBuilder("ProjectEcho Ver. M3F — meeting diagnostic Log\n");
+        var text = new StringBuilder("ProjectEcho — meeting diagnostic Log\n");
         text.Append("UTC timestamps; schema=1; exportedUtc=").Append(DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)).Append('\n');
         text.Append("仅包含操作诊断。路径、账号、URL及会议题名已脱敏；未经选择的本机详情省略。\n");
         text.Append("不含音频、转写正文、提示词或会议文件附件。\n");

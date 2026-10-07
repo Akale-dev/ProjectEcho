@@ -90,6 +90,7 @@ public partial class MainWindow
     {
         try
         {
+            EnsureDataRootAvailable();
             string root = ValidateLocalDataRoot(dataRoot);
             Directory.CreateDirectory(root);
             RejectReparseAncestors(root);
@@ -103,6 +104,7 @@ public partial class MainWindow
         if (!SessionRules.CanStart(state) || recoveryBusy || WindowCloseRequested) return;
         try
         {
+            EnsureDataRootAvailable();
             var index = new MeetingLibraryIndex(dataRoot);
             index.Refresh();
             var dialog = new LibraryFilterWindow(libraryQuery, index.Projects()) { Owner = this };

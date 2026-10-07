@@ -1,3 +1,7 @@
+# 2026-10-06 M5E 存储增量
+
+M3K–M3O 的数据目录偏好、字幕批量草稿、自动结束选项/原因、采集线程确认的实时设置事件现已迁入 Pro。原始录音选择与后续设置变化分别留存；缺包不被自动结束标成完整。用户手动字幕时码保留原稿和音频证据，不冒充模型定位。人物批量修订扩展见 [M5 数据合同](77_M5_DATA_CONTRACT.md)，交付与完整边界见 [M5E](94_M5E_LITE_SYNC_AND_PLAYBACK.md)。以下为历史存储合同。
+
 # 11｜存储、版本与数据契约
 
 2026-09-29 M1已实现的开发版采用`m1-recording-1`清单和本文的capture-index扩展；实际合同、验证及局限见 [35_M1_IMPLEMENTATION_REPORT.md](35_M1_IMPLEMENTATION_REPORT.md)。早期v2示例仍为设计示例，不对旧录音原地迁移。
@@ -84,6 +88,15 @@ M0 2026-09-28 修复补充：packet 可含 `devicePositionValid`，并新增质�
 examples全部synthetic；其中音频路径仅为例子而不是已存在的录音。文件hash为null时表示尚未产生/仅示例，正式导出Complete不允许缺hash或byteLength。
 
 ## 时间映射
+
+2026-10-03 M3Hfix 用户明确更改新录音的暂停行为：暂停同时停止采集及录音计时，恢复接续，不再给暂停插入静音。这覆盖本文下方的历史完整经过时间约定，只作用于新版新录音；旧录音不修改、不删除原有暂停静音。
+
+- 保留 `m1-recording-1` 外层版本，以 `session.timelinePolicy` 与 `meeting.json.timelinePolicy` 明确区分 `elapsed-v1` / `pause-excluded-v1`。缺字段只能解释为旧 `elapsed-v1`，未知值拒绝；manifest 与 journal 必须一致。
+- 新策略的每段必须有十进制字符串 `segment.excludedPause100ns`，旧段缺字段为零；旧策略不允许非零偏移。它是该段共享录音时钟累计扣除的暂停及恢复设备准备时间，remote/mic 使用同一恢复边界。原始 packet API QPC、设备帧、flags、保留区间及 PCM 均不改。映射为 `(rawQpc100ns - epochQpc100ns - excludedPause100ns) + retainedFrames / sampleRate`，包/边界 session 时间据此校验。每段 chunk 摘要和恢复的 `CapturedTrack.ExcludedPause100ns` 保留相同值。
+- `AddSegment` 先创建并刷新空 WAV 作为 writer 就绪屏障。恢复准备完成、native Start 之前，writer FIFO 接受一次 `SetSegmentTimelineOffset`；只允许尚未写入 segment 锚点/PCM 的段。最终 offset 与首个真实 packet 的 segment 锚点一同持久化；无包段在实际边界/收尾持久化。准备中崩溃只恢复此前已确认 checkpoint，不能凭一个预建空 WAV 假造新采集。
+- duration、事件、ACK/health 与 checkpoint `observedSessionUs` 均为录音时间；暂停期间保持不变。独立恢复只依赖磁盘 policy/segment offset/原始包与边界，原始 QPC 截止校验仍然生效。真实无 callback 缺口及不同来源起止差异继续保留，不借暂停规则消除。
+- 设备恢复的首个原包可包含 native Start 边界之前的前滚。仅保留边界之后的完整帧，`retainedFrameOffset` 记录舍弃前缀，原始 QPC/device/rawFrameCount 不改。允许 raw QPC 在映射后的零点之前，但必须证明加上保留偏移后的有效起点非负；原始 QPC 仍不得早于会话 epoch。混音按同一原包及保留区间映射，不产生与暂停前一段尾帧的重复 PCM。
+- 新策略混音元数据使用 `pause_excluded_qpc_packet_mapping`；旧策略仍为 `complete_elapsed_qpc_packet_mapping`。保存混音加载时须匹配原件恢复策略，导出分片的 `sessionStartMs/sessionEndMs` 及后续字幕都沿用相应录音时间轴；不是按两个来源的 WAV 顺序拼接。
 export.parts[].spans 给出 `fileStartMs/fileEndMs`→`sessionStartMs/sessionEndMs` 的线性区间。M2 完整混音保留真实经过时间，暂停/缺口填静音，完整文件与各分片一般各一段映射。删除暂停/范围剪辑为后续能力，若实现须多段 spans。gaps 保留原因，设备失联不包装成用户沉默。
 编码后decode probe验证时长和首尾延迟，再保存映射。压缩时间戳误差不要伪装精确；JSON中保留timestampQuality。
 
