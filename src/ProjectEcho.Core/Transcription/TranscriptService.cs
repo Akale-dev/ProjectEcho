@@ -79,6 +79,32 @@ public static class TranscriptService
         Save(meeting, "reviewed", revision, null, null, null, cancellationToken); return revision;
     }
 
+    /// <summary>Save one explicit batch of text/time corrections while keeping provenance immutable.</summary>
+    public static TranscriptRevision CreateEditedRevision(string meetingDirectory, string parentRevisionId,
+        IReadOnlyList<TranscriptSegment> segments, string reviewNote = "", CancellationToken cancellationToken = default)
+    {
+        string meeting = TranscriptFiles.Meeting(meetingDirectory);
+        var parent = Load(meeting, parentRevisionId, cancellationToken);
+        if (reviewNote is null || reviewNote.Length > 10000) throw new InvalidDataException("修订备注超过一万字符。");
+        TranscriptFiles.ValidateSegments(segments, parent.MeetingDurationMs);
+        if (segments.Count != parent.Segments.Count) throw new InvalidDataException("修订不能增删字幕段。");
+        for (int index = 0; index < segments.Count; index++)
+        {
+            var segment = segments[index]; var original = parent.Segments[index];
+            if (segment with { Text = original.Text, StartMs = original.StartMs, EndMs = original.EndMs,
+                    TimestampQuality = original.TimestampQuality } != original)
+                throw new InvalidDataException("修订只修改文字和起止时间，段标识、来源与说话人保持原样。");
+            string quality = segment.StartMs is null ? "untimed" :
+                segment.StartMs == original.StartMs && segment.EndMs == original.EndMs ? original.TimestampQuality : "approximate";
+            if (segment.TimestampQuality != quality) throw new InvalidDataException("人工修改时间仍需结合原录音核对，不能自动标记为已验证。");
+        }
+        if (segments.SequenceEqual(parent.Segments)) throw new InvalidDataException("没有尚未保存的字幕修改。");
+        var revision = parent with { RevisionId = Guid.NewGuid().ToString("N"), ParentRevisionId = parent.RevisionId,
+            ImportedAt = DateTimeOffset.UtcNow, ReviewNote = reviewNote, Segments = segments.ToArray() };
+        Save(meeting, "reviewed", revision, null, null, null, cancellationToken);
+        return revision;
+    }
+
     public static TranscriptRevision Load(string meetingDirectory, string revisionId, CancellationToken cancellationToken = default)
     {
         string meeting = TranscriptFiles.Meeting(meetingDirectory);

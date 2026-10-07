@@ -1,0 +1,9 @@
+{
+  "回退{0}秒": "Back {0} seconds",
+  "前进{0}秒": "Forward {0} seconds",
+  "自动结束设置": "automatic end settings",
+  " 录音中可启用或取消；启用或修改时长后重新计时，等待保存时不可更改。": " You can enable or disable this during recording. Enabling it or changing the interval starts a new timer. Changes are locked during saving.",
+  "这条字幕没有可用时间，无法定位回听。": "This subtitle has no usable timestamp for playback.",
+  "↑/↓选择字幕；播放中会从新选中字幕开始。←/→跳转5秒并保持播放或暂停状态。": "Up/Down selects subtitles and plays the new selection during playback. Left/Right jumps 5 seconds and preserves playing or paused state.",
+  " 麦克风的微弱底噪不再重置计时，原始音频不变。": " Low microphone noise no longer resets the timer. Original audio is unchanged."
+}

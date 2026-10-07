@@ -9,7 +9,7 @@ namespace ProjectEcho.Core.Transcription;
 /// </summary>
 internal static class WhisperSentenceSegmenter
 {
-    internal const string Policy = "sentence-punctuation-token-boundaries-v1";
+    internal const string Policy = "sentence-punctuation-preferred-phrase-boundaries-v2";
     private static readonly HashSet<string> Abbreviations = new(StringComparer.OrdinalIgnoreCase)
         { "Mr", "Mrs", "Ms", "Dr", "Prof", "Sr", "Jr", "St", "vs", "etc", "e.g", "i.e" };
 
@@ -54,7 +54,7 @@ internal static class WhisperSentenceSegmenter
             }
             var recoveryWarnings = new List<string>(); int zeroCount = 0;
             var overrunWarnings = new List<string>();
-            var result = new List<TranscriptSegment>(); int splitCount = 0, unchangedCount = 0;
+            var result = new List<WhisperPhraseFragment>(); int splitCount = 0, unchangedCount = 0;
             for (int index = 0; index < original.Count; index++)
             {
                 token.ThrowIfCancellationRequested();
@@ -69,7 +69,7 @@ internal static class WhisperSentenceSegmenter
                     }
                     else
                     {
-                        result.Add(fallback[index]);
+                        result.Add(new(fallback[index]));
                         WhisperOverrunTimestamp.AddDiagnostic(overrunWarnings, WhisperOverrunTimestamp.Diagnostic(source, durationMs));
                         continue;
                     }
@@ -85,44 +85,33 @@ internal static class WhisperSentenceSegmenter
                     }
                     else
                     {
-                        result.Add(fallback[index]);
+                        result.Add(new(fallback[index]));
                         WhisperZeroDurationTimestamp.AddDiagnostic(recoveryWarnings, $"Whisper 零时长片段 {source.SegmentId}：原始 {source.StartMs}–{source.EndMs} ms；没有可核对的有效词时间，" +
                             "全部文字与顺序保留，标为无时间待校对；未猜测回听区间。");
                         continue;
                     }
                 }
-                List<TranscriptSegment> cues = Split(source, text, entry, endOfTextToken);
+                List<WhisperPhraseFragment> cues = Split(source, text, entry, endOfTextToken);
                 // Preserve the old small final-cue clipping policy, but do not let splitting
                 // create earlier out-of-range subcues or a final subcue beginning beyond EOF.
                 if (WhisperOverrunTimestamp.IsLegacyFinalCue(source, index, original.Count, durationMs) &&
-                    (cues.Take(cues.Count - 1).Any(cue => cue.EndMs > durationMs) || cues[^1].StartMs >= durationMs))
-                    cues = [source];
+                    (cues.Take(cues.Count - 1).Any(cue => cue.Cue.EndMs > durationMs) || cues[^1].Cue.StartMs >= durationMs))
+                    cues = [new(source)];
                 result.AddRange(cues);
-                if (cues.Count > 1) splitCount += cues.Count - 1;
+                if (cues.Count > 1) splitCount += cues.Count(cue => cue.Boundary == WhisperPhraseBoundary.Sentence);
                 else if (SentenceEnds(text).Any(position => position < text.TrimEnd().Length)) unchangedCount++;
-                if (result.Count > TranscriptFiles.MaximumSegments) throw new InvalidDataException("分句后超过五万段。");
             }
-            // Whisper can divide an unfinished sentence at a decode-window boundary. Merge only nearby,
-            // non-overlapping fragments; do not bridge long pauses or make an unbounded subtitle.
-            var merged = new List<TranscriptSegment>(); int merges = 0;
-            foreach (TranscriptSegment cue in result)
-            {
-                if (merged.Count > 0 && CanJoin(merged[^1], cue))
-                {
-                    TranscriptSegment left = merged[^1];
-                    bool space = char.IsAsciiLetterOrDigit(cue.Text[0]) &&
-                        (char.IsAsciiLetterOrDigit(left.Text[^1]) || left.Text[^1] is ',' or ';' or ':' or '"' or '\'' or ')' or ']');
-                    merged[^1] = left with { EndMs = cue.EndMs, Text = left.Text + (space ? " " : "") + cue.Text };
-                    merges++;
-                }
-                else merged.Add(cue);
-            }
+            // A length limit is a display guard, not a sentence boundary. Prefer an already
+            // emitted clause mark or a verified token gap at a word boundary before the guard.
+            var merged = WhisperPhraseReflow.Merge(result, EndsSentence, token, out int merges, out int preferredCuts);
+            if (merged.Count > TranscriptFiles.MaximumSegments) throw new InvalidDataException("分句后超过五万段。");
             for (int i = 0; i < merged.Count; i++) merged[i] = merged[i] with { SegmentId = $"segment-{i + 1:D6}" };
             WhisperZeroDurationTimestamp.AddDiagnosticSummary(recoveryWarnings, zeroCount);
             WhisperOverrunTimestamp.AddDiagnosticSummary(overrunWarnings, overrunCount);
             warnings.AddRange(recoveryWarnings);
             warnings.AddRange(overrunWarnings);
             warnings.Add($"字幕按句末标点分句（拆分 {splitCount} 处、合并相邻未完句 {merges} 处）；边界只取模型 token/原段时间，仍为 approximate，不是强制对齐。");
+            if (preferredCuts > 0) warnings.Add($"{preferredCuts} 处长度保护边界优先采用原有分句标点或词间 token 停顿；未补写标点，也不保证是语义句末。");
             if (unchangedCount > 0) warnings.Add($"{unchangedCount} 个原段含句末标点但没有可用的 token 分句边界，保留原段时间，未按字数猜测。");
             return merged;
         }
@@ -135,44 +124,52 @@ internal static class WhisperSentenceSegmenter
         }
     }
 
-    private static List<TranscriptSegment> Split(TranscriptSegment source, string text, JsonElement entry, int endOfTextToken)
+    private static List<WhisperPhraseFragment> Split(TranscriptSegment source, string text, JsonElement entry, int endOfTextToken)
     {
-        if (!entry.TryGetProperty("tokens", out var array) || array.ValueKind != JsonValueKind.Array) return [source];
+        if (!entry.TryGetProperty("tokens", out var array) || array.ValueKind != JsonValueKind.Array) return [new(source)];
         var tokens = new List<(int End, long From, long To)>(); var joined = new StringBuilder(); long lastEnd = source.StartMs!.Value;
         foreach (JsonElement item in array.EnumerateArray())
         {
-            if (!item.TryGetProperty("id", out var id) || !id.TryGetInt32(out int tokenId) || tokenId < 0) return [source];
+            if (!item.TryGetProperty("id", out var id) || !id.TryGetInt32(out int tokenId) || tokenId < 0) return [new(source)];
             if (tokenId >= endOfTextToken) continue; // Whisper control/timestamp tokens are not transcript words.
-            if (!item.TryGetProperty("text", out var value) || value.ValueKind != JsonValueKind.String) return [source];
+            if (!item.TryGetProperty("text", out var value) || value.ValueKind != JsonValueKind.String) return [new(source)];
             string part = value.GetString()!;
-            if (!TryOffsets(item, out long from, out long to) || from < lastEnd || to < from || to > source.EndMs) return [source];
+            if (!TryOffsets(item, out long from, out long to) || from < lastEnd || to < from || to > source.EndMs) return [new(source)];
             joined.Append(part); tokens.Add((joined.Length, from, to)); lastEnd = to;
-            if (joined.Length > TranscriptFiles.MaximumSegmentCharacters) return [source];
+            if (joined.Length > TranscriptFiles.MaximumSegmentCharacters) return [new(source)];
         }
-        if (joined.ToString() != text) return [source];
-        var result = new List<TranscriptSegment>(); int startCharacter = 0, tokenIndex = 0; long startTime = source.StartMs.Value;
-        foreach (int endCharacter in SentenceEnds(text))
+        if (joined.ToString() != text) return [new(source)];
+        var sentenceEnds = SentenceEnds(text).ToHashSet();
+        int trimmedLength = text.TrimEnd().Length;
+        var result = new List<WhisperPhraseFragment>(); int startCharacter = 0; long startTime = source.StartMs.Value;
+        for (int tokenIndex = 0; tokenIndex < tokens.Count - 1; tokenIndex++)
         {
-            if (endCharacter >= text.TrimEnd().Length) break;
-            while (tokenIndex < tokens.Count && tokens[tokenIndex].End < endCharacter) tokenIndex++;
-            if (tokenIndex >= tokens.Count - 1 || tokens[tokenIndex].End != endCharacter) continue;
+            int endCharacter = tokens[tokenIndex].End;
+            if (endCharacter >= trimmedLength) break;
             long endTime = tokens[tokenIndex].To, nextTime = tokens[tokenIndex + 1].From;
             if (endTime <= startTime || nextTime < endTime || nextTime >= source.EndMs) continue;
+            var boundary = sentenceEnds.Contains(endCharacter) ? WhisperPhraseBoundary.Sentence :
+                WhisperPhraseReflow.PreferredBoundary(text, endCharacter, nextTime - endTime);
+            if (boundary == WhisperPhraseBoundary.Raw) continue;
             string sentence = text[startCharacter..endCharacter].Trim();
             if (sentence.Length == 0) continue;
-            result.Add(source with { StartMs = startTime, EndMs = endTime, Text = sentence });
+            result.Add(new(source with { StartMs = startTime, EndMs = endTime, Text = sentence }, boundary,
+                SeparatorBefore(text, startCharacter)));
             startCharacter = endCharacter; startTime = nextTime;
         }
         string tail = text[startCharacter..].Trim();
-        if (tail.Length > 0) result.Add(source with { StartMs = startTime, Text = tail });
-        return result.Count == 0 ? [source] : result;
+        if (tail.Length > 0) result.Add(new(source with { StartMs = startTime, Text = tail },
+            SeparatorBefore: SeparatorBefore(text, startCharacter)));
+        return result.Count == 0 ? [new(source)] : result;
     }
 
-    private static bool CanJoin(TranscriptSegment left, TranscriptSegment right) =>
-        left.StartMs is not null && left.EndMs is not null && right.StartMs is not null && right.EndMs is not null &&
-        !EndsSentence(left.Text) && left.EndMs <= right.StartMs && right.StartMs - left.EndMs <= 1000 &&
-        right.EndMs - left.StartMs <= 30000 && left.Text.Length + right.Text.Length < 240 &&
-        left.SourceKind == right.SourceKind && left.SpeakerLabel == right.SpeakerLabel;
+    private static string? SeparatorBefore(string text, int position)
+    {
+        if (position == 0) return null;
+        int end = position;
+        while (end < text.Length && char.IsWhiteSpace(text[end])) end++;
+        return text[position..end];
+    }
 
     private static bool EndsSentence(string text) => SentenceEnds(text).LastOrDefault() == text.TrimEnd().Length;
 

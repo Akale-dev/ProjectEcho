@@ -87,6 +87,7 @@ try
                     recording = new RecordingSession();
                     recording.HealthChanged += value => Volatile.Write(ref health, value);
                     recording.Acknowledged += value => controlEvents.Enqueue(new(1, sessionId, value.RequestId, "ack", Ack: value));
+                    recording.AutoStopping += value => controlEvents.Enqueue(new(1, sessionId, "auto-stop", "finalizing", AutoStop: value));
                     startup = recording.StartAsync(command.Recording);
                 }
             }
@@ -97,10 +98,10 @@ try
                 else if (capture is not null) _ = capture.StopAsync();
                 else break;
             }
-            else if (command.Command is "pause" or "resume" or "mic_on" or "mic_off" or "bookmark")
+            else if (command.Command is "pause" or "resume" or "mic_on" or "mic_off" or "bookmark" or "auto_stop_settings")
             {
                 if (recording is null) throw new InvalidOperationException("普通录音尚未开始。");
-                var pending = recording.ControlAsync(command.RequestId, command.Command, command.DeviceId);
+                var pending = recording.ControlAsync(command.RequestId, command.Command, command.DeviceId, command.AutoStopSettings);
                 _ = pending.ContinueWith(task =>
                 {
                     if (task.IsFaulted)

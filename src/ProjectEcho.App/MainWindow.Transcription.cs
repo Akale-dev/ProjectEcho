@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -22,7 +23,7 @@ public partial class MainWindow
     private CancellationTokenSource? transcriptCancellation;
     private TranscriptRevision? visibleRevision;
     private TranscriptRow? visibleSegment;
-    private readonly Dictionary<(string Directory, string Revision, string Segment), string> transcriptDrafts = new();
+    private readonly Dictionary<(string Directory, string Revision), TranscriptRevisionDraft> transcriptDrafts = new();
     private readonly Dictionary<string, string> reviewSelections = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<(string Directory, string Revision), string> segmentSelections = new();
     private (string Path, long Milliseconds)? pendingTranscriptSeek;
@@ -31,10 +32,25 @@ public partial class MainWindow
     {
         public string Label => $"{Revision.ModelName ?? Revision.Provider} · {Revision.ImportedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss.fff} · {(Revision.ParentRevisionId is null ? UiText.T("原稿") : UiText.T("修订"))} · {Revision.RevisionId[..Math.Min(8, Revision.RevisionId.Length)]}";
     }
-    private sealed record TranscriptRow(string Directory, TranscriptRevision Revision, TranscriptSegment Segment, string Title)
+    // WPF's selector indexes rows by hash. Mutable PropertyChanged subscriptions
+    // must not change equality/hash as record-generated event-field equality would.
+    private sealed class TranscriptRow(string directory, TranscriptRevision revision, TranscriptSegment segment, string title,
+        TranscriptRevisionDraft? draft = null) : INotifyPropertyChanged
     {
-        public string TimeLabel => Segment.StartMs is { } ms ? TimelineTimestamp.FromMilliseconds(ms) : UiText.T("无时间");
-        public string Label => $"{Title} · {TimeLabel} · {Segment.Text}";
+        public string Directory { get; } = directory;
+        public TranscriptRevision Revision { get; } = revision;
+        public TranscriptSegment Segment { get; } = segment;
+        public string Title { get; } = title;
+        public TranscriptRevisionDraft? Draft { get; } = draft;
+        private TranscriptSegment DisplaySegment => Draft?.TryGetSegment(Segment, out var updated, out _) == true ? updated : Segment;
+        public string TimeLabel => DisplaySegment.StartMs is { } ms ? TimelineTimestamp.FromMilliseconds(ms) : UiText.T("无时间");
+        public string Label => $"{Title} · {TimeLabel} · {Draft?.InputFor(Segment).Text ?? Segment.Text}";
+        public event PropertyChangedEventHandler? PropertyChanged;
+        public void RefreshDraftLabel()
+        {
+            PropertyChanged?.Invoke(this, new(nameof(Label)));
+            PropertyChanged?.Invoke(this, new(nameof(TimeLabel)));
+        }
     }
 
     private void InitializeTranscription()
@@ -45,7 +61,7 @@ public partial class MainWindow
         view.MappingFileButton.Click += (_, _) => PickMappingFile();
         view.ClearMappingButton.Click += (_, _) => { mappingFile = null; view.PartBox.Clear(); view.MappingFileText.Text = UiText.T("未使用分片映射：字幕按完整会议时间导入。"); };
         view.ImportButton.Click += (_, _) => StartTranscriptWork(ImportTranscriptAsync, "edit");
-        view.RefreshButton.Click += (_, _) => StartTranscriptWork(() => LoadTranscriptVersionsAsync());
+        view.RefreshButton.Click += (_, _) => StartTranscriptWork(() => LoadTranscriptVersionsAsync(), reportReviewErrors: true);
         view.WorkspaceTabs.SelectionChanged += (_, e) =>
         {
             if (ReferenceEquals(e.Source, view.WorkspaceTabs)) EnsureTranscriptVersions();
@@ -59,8 +75,11 @@ public partial class MainWindow
         view.SegmentInvoked += (_, _) => SeekTranscript();
         view.CopySegmentRequested += (_, _) => CopyTranscriptSegment();
         view.CopySegmentButton.Click += (_, _) => CopyTranscriptSegment();
-        view.SearchButton.Click += (_, _) => StartTranscriptWork(SearchTranscriptsAsync);
+        view.SearchButton.Click += (_, _) => StartTranscriptWork(SearchTranscriptsAsync, reportReviewErrors: true);
         view.SaveRevisionButton.Click += (_, _) => StartTranscriptWork(SaveTranscriptRevisionAsync, "edit", visibleSegment?.Directory);
+        view.EditBox.TextChanged += (_, _) => TranscriptDraftInputChanged();
+        view.StartTimestampBox.TextChanged += (_, _) => TranscriptDraftInputChanged();
+        view.EndTimestampBox.TextChanged += (_, _) => TranscriptDraftInputChanged();
         view.ExportSubtitlesButton.Click += (_, _) => PickTranscriptExport();
         view.ExportTextButton.Click += (_, _) => PickTranscriptTextExport();
         view.SeekButton.Click += (_, _) => SeekTranscript();
@@ -134,6 +153,7 @@ public partial class MainWindow
                 ResetTranscriptPlayback();
                 transcriptionView!.StatusText.Text = UiText.T("回听未启动：") + ex.Message;
                 LogMeeting(meetingDirectory, "diagnostic", transcriptionView.StatusText.Text, "error");
+                ReportReviewError(transcriptionView.StatusText.Text);
             }
         };
         ownedPlayer.MediaFailed += (_, e) =>
@@ -175,6 +195,7 @@ public partial class MainWindow
         StatusBox.Text = message;
         LogMeeting(meetingDirectory, "diagnostic", message, "error");
         transcriptionView!.StatusText.Text = UiText.T("回听失败，可重新单击字幕重试：") + error.Message;
+        ReportReviewError(transcriptionView.StatusText.Text);
     }
 
     private void ReplaceTranscriptPlayer(string? meetingDirectory = null)
@@ -206,7 +227,7 @@ public partial class MainWindow
         SwitchMeetingWhisperConfiguration(selectedMeetingDirectory);
         if (string.IsNullOrEmpty(whisperExecutable)) view.WhisperExeText.Text = UiText.T("未配置程序");
         if (string.IsNullOrEmpty(whisperModel)) view.WhisperModelText.Text = UiText.T("未配置模型");
-        bool open = !WindowCloseRequested && !deletingMeeting, selected = selectedMeetingDirectory is not null;
+        bool open = !WindowCloseRequested && !deletingMeeting && DataRootAvailable, selected = selectedMeetingDirectory is not null;
         if ((!open || !SessionRules.CanPlayback(state)) && (pendingTranscriptSeek is not null || transcriptOwnsPlayer))
             ResetTranscriptPlayback();
         if (!string.Equals(transcriptMeeting, selectedMeetingDirectory, StringComparison.OrdinalIgnoreCase))
@@ -215,7 +236,8 @@ public partial class MainWindow
             transcriptMeeting = selectedMeetingDirectory;
             transcriptAutoLoadMeeting = null;
             visibleRevision = null; visibleSegment = null;
-            view.RevisionBox.ItemsSource = null; view.SegmentsBox.ItemsSource = null; view.EditBox.Clear();
+            view.RevisionBox.ItemsSource = null; view.SegmentsBox.ItemsSource = null; ClearTranscriptEditor();
+            PruneCleanTranscriptDrafts();
             mappingFile = null; view.PartBox.Clear();
             view.MappingFileText.Text = UiText.T("未使用分片映射：字幕按完整会议时间导入。");
         }
@@ -226,15 +248,18 @@ public partial class MainWindow
         view.RefreshButton.IsEnabled = open && !transcriptBusy && selected;
         view.SearchButton.IsEnabled = open && !transcriptBusy;
         view.RevisionBox.IsEnabled = open && !transcriptBusy;
-        view.SaveRevisionButton.IsEnabled = open && !transcriptBusy && visibleSegment is not null;
+        view.SaveRevisionButton.IsEnabled = open && !transcriptBusy && (visibleSegment is not null || visibleRevision is not null);
         var exportRevision = visibleSegment?.Revision ?? visibleRevision;
-        view.ExportSubtitlesButton.IsEnabled = open && !transcriptBusy && exportRevision is { Segments.Count: > 0 }
+        bool dirty = CurrentTranscriptDraft?.HasChanges == true;
+        view.ExportSubtitlesButton.IsEnabled = open && !transcriptBusy && !dirty && exportRevision is { Segments.Count: > 0 }
             && exportRevision.Segments.All(segment => segment.StartMs is not null && segment.EndMs is not null);
-        view.ExportTextButton.IsEnabled = open && !transcriptBusy && exportRevision is { Segments.Count: > 0 };
+        view.ExportTextButton.IsEnabled = open && !transcriptBusy && !dirty && exportRevision is { Segments.Count: > 0 };
         view.CopySegmentButton.IsEnabled = open && visibleSegment is not null;
-        view.SeekButton.IsEnabled = open && !transcriptBusy && SessionRules.CanPlayback(state) && visibleSegment?.Segment.StartMs is not null;
+        view.SeekButton.IsEnabled = open && !transcriptBusy && SessionRules.CanPlayback(state) && TryGetSelectedDraftSegment(out var selectedSegment, out _) && selectedSegment.StartMs is not null;
         view.StopListeningButton.IsEnabled = open && SessionRules.CanPlayback(state);
         view.EditBox.IsEnabled = open && !transcriptBusy && visibleSegment is not null;
+        view.StartTimestampBox.IsEnabled = view.EndTimestampBox.IsEnabled = view.EditBox.IsEnabled;
+        UpdateTranscriptDraftStatus();
         // Leave validation reachable: a missing meeting/mix gets an actionable field outline.
         view.RunWhisperButton.IsEnabled = open && !transcriptBusy;
         view.AudioReadinessText.Visibility = currentMix is null ? Visibility.Visible : Visibility.Collapsed;
@@ -265,10 +290,10 @@ public partial class MainWindow
         mappingFile = picker.FileName; transcriptionView!.MappingFileText.Text = mappingFile;
     }
 
-    private void StartTranscriptWork(Func<Task> operation, string? logCategory = null, string? logDirectory = null)
+    private void StartTranscriptWork(Func<Task> operation, string? logCategory = null, string? logDirectory = null, bool reportReviewErrors = false)
     {
-        if (WindowCloseRequested || deletingMeeting || transcriptBusy) return;
-        transcriptWork = RunTranscriptWorkAsync(operation, logCategory, logDirectory ?? selectedMeetingDirectory);
+        if (WindowCloseRequested || deletingMeeting || transcriptBusy || !DataRootAvailable) return;
+        transcriptWork = RunTranscriptWorkAsync(operation, logCategory, logDirectory ?? selectedMeetingDirectory, reportReviewErrors);
     }
 
     private void EnsureTranscriptVersions()
@@ -282,12 +307,12 @@ public partial class MainWindow
         StartTranscriptWork(() => LoadTranscriptVersionsAsync());
     }
 
-    private async Task RunTranscriptWorkAsync(Func<Task> operation, string? logCategory = null, string? logDirectory = null)
+    private async Task RunTranscriptWorkAsync(Func<Task> operation, string? logCategory = null, string? logDirectory = null, bool reportReviewErrors = false)
     {
         transcriptBusy = true;
         using var cancellation = new CancellationTokenSource(); transcriptCancellation = cancellation;
         UpdateControls();
-        if (logCategory is not null) LogMeeting(logDirectory, logCategory, "文字任务已开始。Ver. M3J Lite");
+        if (logCategory is not null) LogMeeting(logDirectory, logCategory, "文字任务已开始。Ver. M3O Lite");
         try { await operation(); }
         catch (OperationCanceledException)
         {
@@ -300,6 +325,7 @@ public partial class MainWindow
             if (string.Equals(selectedMeetingDirectory, logDirectory, StringComparison.OrdinalIgnoreCase))
                 transcriptionView!.StatusText.Text = UiText.T("文字任务未完成，可修正后重试：") + ex.Message;
             LogMeeting(logDirectory, logCategory ?? "diagnostic", "文字任务失败：" + ex.Message, "error");
+            if (reportReviewErrors || logCategory is "edit" or "export") ReportReviewError(ex.Message);
         }
         finally
         {
@@ -363,7 +389,7 @@ public partial class MainWindow
             view.RevisionBox.ItemsSource = rows;
             view.RevisionBox.SelectedItem = rows.FirstOrDefault(r => r.Revision.RevisionId == reviewPreference) ?? rows.FirstOrDefault();
             if (view.RevisionBox.SelectedItem is RevisionRow row) DisplayRevision(directory, row.Revision);
-            else { view.SegmentsBox.ItemsSource = null; visibleRevision = null; visibleSegment = null; }
+            else { RememberTranscriptDraft(); visibleRevision = null; visibleSegment = null; view.SegmentsBox.ItemsSource = null; ClearTranscriptEditor(); }
             view.StatusText.Text = UiText.F($"已读取 {rows.Length} 个独立版本；选择一条文字进行校订。");
         }
         finally { updatingRevisions = false; }
@@ -375,8 +401,10 @@ public partial class MainWindow
         visibleRevision = revision; visibleSegment = null;
         reviewSelections[directory] = revision.RevisionId;
         var view = transcriptionView!;
-        view.SegmentsBox.ItemsSource = revision.Segments.Select(s => new TranscriptRow(directory, revision, s, UiText.T("本场"))).ToArray();
-        view.EditBox.Clear();
+        PruneCleanTranscriptDrafts();
+        var draft = DraftFor(directory, revision);
+        view.SegmentsBox.ItemsSource = revision.Segments.Select(s => new TranscriptRow(directory, revision, s, UiText.T("本场"), draft)).ToArray();
+        ClearTranscriptEditor();
         if (segmentSelections.TryGetValue((directory, revision.RevisionId), out string? segmentId))
             view.SegmentsBox.SelectedItem = view.SegmentsBox.Items.Cast<TranscriptRow>().FirstOrDefault(row => row.Segment.SegmentId == segmentId);
         view.StatusText.Text = UiText.F($"{revision.ModelName ?? revision.Provider} · {revision.Segments.Count} 段 · {revision.ImportedAt.ToLocalTime():g}\n") + string.Join("\n", revision.Warnings);
@@ -391,37 +419,49 @@ public partial class MainWindow
         if (visibleSegment is { } row)
         {
             segmentSelections[(row.Directory, row.Revision.RevisionId)] = row.Segment.SegmentId;
-            view.EditBox.Text = transcriptDrafts.GetValueOrDefault((row.Directory, row.Revision.RevisionId, row.Segment.SegmentId), row.Segment.Text);
+            var input = DraftFor(row.Directory, row.Revision).InputFor(row.Segment);
+            loadingTranscriptEditor = true;
+            try { view.EditBox.Text = input.Text; view.StartTimestampBox.Text = input.Start; view.EndTimestampBox.Text = input.End; }
+            finally { loadingTranscriptEditor = false; }
         }
-        else view.EditBox.Clear();
-        view.SegmentTimeText.Text = visibleSegment is { Segment: var segment }
-            ? $"{(segment.StartMs is { } start ? TimelineTimestamp.FromMilliseconds(start) : UiText.T("无时间戳"))} · {segment.TimestampQuality} · {segment.SpeakerLabel ?? UiText.T("未标说话人")}"
-            : UiText.T("单击带时间的字幕可立即回听；纯文字可选择校订。");
+        else ClearTranscriptEditor();
         UpdateTranscriptionControls();
     }
 
     private void RememberTranscriptDraft()
     {
-        if (visibleSegment is not { } row || transcriptionView is not { } view) return;
-        var key = (row.Directory, row.Revision.RevisionId, row.Segment.SegmentId);
-        if (view.EditBox.Text != row.Segment.Text) transcriptDrafts[key] = view.EditBox.Text;
-        else transcriptDrafts.Remove(key);
+        if (loadingTranscriptEditor || visibleSegment is not { } row || transcriptionView is not { } view) return;
+        DraftFor(row.Directory, row.Revision).Set(row.Segment, view.EditBox.Text, view.StartTimestampBox.Text, view.EndTimestampBox.Text);
     }
 
     private async Task SaveTranscriptRevisionAsync()
     {
-        var row = visibleSegment ?? throw new InvalidOperationException(UiText.T("先选择文字段落。"));
+        RememberTranscriptDraft();
+        var draft = CurrentTranscriptDraft ?? throw new InvalidOperationException(UiText.T("先选择文字段落。"));
         var view = transcriptionView!;
-        string directory = ValidateRecordingDirectory(row.Directory);
-        string revisedText = view.EditBox.Text;
-        var segments = row.Revision.Segments.Select(s => s.SegmentId == row.Segment.SegmentId ? s with { Text = revisedText } : s).ToArray();
-        var revision = await Task.Run(() => TranscriptService.CreateRevision(directory, row.Revision.RevisionId, segments, UiText.T("用户校订文字"), transcriptCancellation!.Token));
+        string directory = ValidateRecordingDirectory(visibleSegment?.Directory ?? transcriptMeeting!);
+        string? meetingAtSave = selectedMeetingDirectory;
+        if (!draft.HasChanges) { view.StatusText.Text = UiText.T("没有尚未保存的字幕修改。"); return; }
+        var segments = draft.BuildSegments();
+        ValidateDraftAudioRange(directory, segments);
+        var revision = await Task.Run(() => TranscriptService.CreateEditedRevision(directory, draft.Parent.RevisionId, segments,
+            UiText.T("用户批量校订文字和时间"), transcriptCancellation?.Token ?? CancellationToken.None));
         LogMeeting(directory, "edit", "文字修订已保存；父版本、原稿和原始音频保留。", eventId: "legacy-reviewed-" + revision.RevisionId, timestamp: revision.ImportedAt);
-        // A saved edit now belongs to its new immutable revision; the parent stays untouched.
-        if (visibleSegment == row) { view.EditBox.Text = row.Segment.Text; }
-        transcriptDrafts.Remove((row.Directory, row.Revision.RevisionId, row.Segment.SegmentId));
+        // Drop only this successfully written batch. Other meetings/versions retain their drafts.
+        transcriptDrafts.Remove((directory, draft.Parent.RevisionId));
+        if (visibleSegment is { } selected && selected.Directory == directory && selected.Revision.RevisionId == draft.Parent.RevisionId)
+        {
+            segmentSelections[(directory, revision.RevisionId)] = selected.Segment.SegmentId;
+            visibleSegment = null; ClearTranscriptEditor();
+            // Global search may be editing a different meeting. Follow the saved revision
+            // so its old search rows cannot retain a detached draft while editing the parent.
+            // Preserve navigation made by the user while the write was in progress.
+            if (!WindowCloseRequested && string.Equals(selectedMeetingDirectory, meetingAtSave, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(selectedMeetingDirectory, directory, StringComparison.OrdinalIgnoreCase))
+                SelectMeeting(directory);
+        }
         if (selectedMeetingDirectory == directory) await LoadTranscriptVersionsAsync(revision.RevisionId);
-        view.StatusText.Text = UiText.F($"已为 {row.Title}（{Path.GetFileName(directory)}）保存新修订；父版本、原稿和原始音频均保留。");
+        view.StatusText.Text = UiText.T("本版本的全部字幕修改已保存为一个新修订；父版本、原稿和原始音频均保留。");
     }
 
     private void PickTranscriptExport()
@@ -467,7 +507,15 @@ public partial class MainWindow
     private void CopyTranscriptSegment()
     {
         if (!WindowCloseRequested && transcriptionView?.SegmentsBox.SelectedItem is TranscriptRow row)
-            CopySegmentText(row, message => transcriptionView.StatusText.Text = message);
+        {
+            string text = DraftFor(row.Directory, row.Revision).InputFor(row.Segment).Text;
+            CopySegmentText(new(row.Directory, row.Revision, row.Segment with { Text = text }, row.Title, row.Draft), message =>
+            {
+                transcriptionView.StatusText.Text = message;
+                transcriptionView.CopySegmentButton.ToolTip = message;
+                if (message == UiText.T("剪贴板正被其他程序使用，请重试复制。")) ReportReviewError(message);
+            });
+        }
     }
 
     private static void CopySegmentText(TranscriptRow row, Action<string> setStatus)
@@ -511,14 +559,19 @@ public partial class MainWindow
             return (Rows: rows, Skipped: skipped);
         }, token);
         if (selectedMeetingDirectory != selected || RecordingsRoot != root || WindowCloseRequested) return;
-        view.SegmentsBox.ItemsSource = result.Rows; visibleSegment = null; view.EditBox.Clear();
+        RememberTranscriptDraft(); visibleSegment = null;
+        PruneCleanTranscriptDrafts();
+        view.SegmentsBox.ItemsSource = result.Rows.Select(row => new TranscriptRow(row.Directory, row.Revision, row.Segment, row.Title, DraftFor(row.Directory, row.Revision))).ToArray(); ClearTranscriptEditor();
         view.StatusText.Text = UiText.F($"找到 {result.Rows.Count} 条（最多 2000 条、500 场）；{result.Skipped} 场无法读取。搜索保留版本信息，不合并或删除重复发言。");
     }
 
     private void SeekTranscript()
     {
-        if (WindowCloseRequested || deletingMeeting || transcriptBusy || !SessionRules.CanPlayback(state) || visibleSegment is not { Segment.StartMs: { } milliseconds } row) return;
-        SeekTranscriptRow(row);
+        if (WindowCloseRequested || deletingMeeting || transcriptBusy || !SessionRules.CanPlayback(state) || visibleSegment is not { } row) return;
+        RememberTranscriptDraft();
+        if (!TryGetSelectedDraftSegment(out var segment, out string? error))
+        { transcriptionView!.StatusText.Text = UiText.T(error ?? "时间无效。"); return; }
+        if (segment.StartMs is not null) SeekTranscriptRow(new(row.Directory, row.Revision, segment, row.Title, row.Draft));
     }
 
     private void SeekTranscriptRow(TranscriptRow row)
@@ -690,6 +743,7 @@ public partial class MainWindow
     {
         try
         {
+            EnsureDataRootAvailable();
             if (!TryValidateWhisperConfiguration(requireAudio: false, out var config)) return;
             string? recoveryNotice = EnsureMeetingWhisperBaseline(recoverUnreadableDefaults: true);
             FlushMeetingWhisperPrompt();

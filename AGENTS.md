@@ -1,3 +1,15 @@
+2026-10-06 M3O Lite delivered; immediate M5E Pro synchronization completed under this user request. Playback digits centered, green triangle resumes current position, pause keeps double bars and toggles resume. 378/0 regressions, 18 final WPF entries, four startup processes and 673 ZIP files passed. M3K-M3O no longer await a further synchronization approval: APPLIED to actual M5Dfix as M5E with Qwen full-text fix preserved. See docs/93_M3O_PLAYBACK_BUTTON_POLISH.md and ../docs/94_M5E_LITE_SYNC_AND_PLAYBACK.md. Real capture/mic, physical input/DPI, target machine and clean Windows remain untested. No new recording, upload, downloads or shutdown authorization.
+
+2026-10-06 M3N Lite delivered: microphone DC/low-noise-aware inactivity, live enable/disable/interval changes acknowledged by CaptureHost, replay -10/-5/+5/+10 second vector buttons, Up/Down subtitle navigation and Left/Right five-second seeking preserving playback state, distinct restart icons and non-clipping focus/pressed transport styles. See docs/92_M3N_MIC_SILENCE_AND_PLAYBACK_CONTROLS.md. 378/0 regressions, 18/18 bundled WPF, four startup processes, 672 ZIP files and 1681 preserved Pro/old-release files verified. 32-file M3M-to-M3N patch retained. Wait for user acceptance, then forward-port together with pending Lite changes to M5 Pro under existing authorization, without asking again. Real microphone/meeting, physical input/DPI and clean Windows remain untested. No new capture, mic, upload, download or shutdown authorization.
+
+2026-10-06 M3M Lite delivered: removed manual preflight entry; Start still validates automatically. Opt-in automatic end defaults off/5 minutes, choices 1/5/10; pinned selected root process exit or combined enabled-source inactivity triggers normal stop/drain/save. No-packet evidence never upgrades completeness. See docs/91_M3M_AUTOMATIC_RECORDING_END.md; 362/0 final regressions, 16 bundled WPF checks covered (clipboard permission retry retained), four startup processes and 671 ZIP files verified. M3L-to-M3M 23-file patch and pending M3K/M3L/M3M Pro migration inventory retained. Pro source and old releases unchanged; forward-port to M5 Pro after user acceptance under existing authorization, without asking again. No new capture, mic, upload, download or shutdown authorization.
+
+2026-10-06 M3L已交付：精简校订页、32DIP单行搜索、118DIP两位小数时间框（未编辑原毫秒保留）、启动自动刷新会议库。见docs/90。343项覆盖含3项文件访问失败后的同DLL重试，15项包内WPF及670文件核验通过。M3L及之前Lite变更仍待用户本次验收后按已有授权同步Pro，旧未验项保留。
+
+2026-10-06 追加M3K补丁见docs/89：固定118DIP时间栏分隔符、数据目录持久记忆与不可用守卫、录音状态约+25%。343回归/14包内WPF/真实进程恢复/669文件通过；仍待本次用户验收后同步Pro。旧M3K、原数据与失败候选保留。
+
+# M3K维护决定（2026-10-06）
+本次新版名称由用户更正为M3K Lite。紧凑录音页、字幕时间编辑/批量保存/关闭提醒与Whisper分句修复见docs/87、88；测试证据沿用更名前.local/M3J-20261006。仅本次M3K仍待用户验收后同步到Pro，用户已授权验收后同步，无需二次确认。M5D已同步过的历史M3I/M3J修复不受此门槛回退。保留旧包/Pro产品代码，未新增录音、mic、下载、上传或关机授权。
 # Lite工作树维护入口
 
 本工作树只维护M3 Lite。当前M3I修复见docs/82与83；不得在这里实现M4/M5/M6或用Lite文件覆盖主目录Pro。M4以后文档仅供关系参考。共享开发缓存/SDK在父项目，可用父项目scripts/Dotnet.ps1传本工作树项目绝对路径。最终包放父项目artifacts；测试证据留各自.local。

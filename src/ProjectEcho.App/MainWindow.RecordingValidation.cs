@@ -40,6 +40,7 @@ public partial class MainWindow
     private async Task<bool> ValidateRecordingBeforeStartAsync(CaptureOptions options, bool trial)
     {
         if (preflighting || WindowCloseRequested) return false;
+        if (!DataRootAvailable) { ShowDataRootState(); return false; }
         ClearValidationIssues(RecordingValidationFields);
         RefreshRecordingValidationMessage();
         var errors = new List<string>();

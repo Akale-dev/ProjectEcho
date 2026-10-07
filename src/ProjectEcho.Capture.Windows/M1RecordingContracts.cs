@@ -3,14 +3,15 @@ using ProjectEcho.Core;
 namespace ProjectEcho.Capture.Windows;
 
 public sealed record RecordingOptions(CaptureOptions Selection, int MaximumSeconds = 28800, int ExpectedMinutes = 120,
-    bool EnableMultimediaScheduling = true);
+    bool EnableMultimediaScheduling = true, RecordingAutoStopOptions? AutoStop = null);
 public sealed record RecordingAck(string RequestId, string Operation, bool Paused, bool MicrophoneEnabled,
-    long EffectiveSessionUs, string? Message = null);
+    long EffectiveSessionUs, string? Message = null, RecordingAutoStopOptions? AutoStopSettings = null);
 public sealed record RecordingHealth(long ElapsedUs, bool Paused, bool MicrophoneEnabled,
     float RemotePeak, float MicPeak, long RemoteFrames, long MicFrames, string RemoteStatus, string MicStatus,
     long LastCheckpointUs, long AvailableBytes);
 public sealed record RecordingResult(string SessionDirectory, string ManifestPath, bool StorageComplete,
-    long DurationUs, IReadOnlyList<string> Warnings, RecordingDiagnostics? Diagnostics = null);
+    long DurationUs, IReadOnlyList<string> Warnings, RecordingDiagnostics? Diagnostics = null,
+    RecordingAutoStopInfo? AutoStop = null);
 
 /// <summary>Service timings are diagnostics only, never substitutes for packet QPC/frame counts.</summary>
 public sealed record RecordingSourceDiagnostics(int? BufferFrames, long? StreamLatency100ns, int ScratchCapacityBytes,
@@ -41,6 +42,7 @@ internal interface IRecordingAudioSource : IDisposable
 
 internal interface IRecordingSourceFactory
 {
+    IRecordingProcessLifetime? WatchProcess(CaptureOptions options) => null;
     void Preflight(RecordingOptions options);
     IRecordingAudioSource OpenRemote(CaptureOptions options);
     IRecordingAudioSource OpenMicrophone(string deviceId);

@@ -169,11 +169,12 @@ public sealed class M1Storage : IDisposable
         if (segment.Active is { } chunk) { FinalizeChunk(chunk); segment.Active = null; }
     }
 
-    public void WriteEvent(string operation, string requestId, long sessionUs, string? microphoneDeviceId = null)
+    public void WriteEvent(string operation, string requestId, long sessionUs, string? microphoneDeviceId = null,
+        RecordingAutoStopInfo? autoStop = null, RecordingAutoStopOptions? autoStopSettings = null)
     {
         EnsureOpen();
         if (sessionUs < 0 || string.IsNullOrWhiteSpace(operation) || string.IsNullOrWhiteSpace(requestId)) throw new ArgumentException("无效事件。");
-        WriteLine(events, eventSequence++, new { type = "event", operation, requestId, sessionUs, microphoneDeviceId }, synthetic);
+        WriteLine(events, eventSequence++, new { type = "event", operation, requestId, sessionUs, microphoneDeviceId, autoStop, autoStopSettings }, synthetic);
         events.Flush(true);
     }
 

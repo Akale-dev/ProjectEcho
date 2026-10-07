@@ -72,7 +72,7 @@ public partial class MainWindow
             useDarkTheme = dark; ApplyVisualTheme(); NavigateTo(0); UpdateControls();
             await RenderAsync();
             string label = language + (dark ? "-dark" : "-light");
-            Need(ApplicationVersionText.Text == "Ver. M3J Lite", "The UI version does not identify M3H.");
+            Need(ApplicationVersionText.Text == "Ver. M3O Lite", "The UI version does not identify M3H.");
             Need(ReferenceEquals(RefreshButton.Style, FindResource("PrimaryButton")) &&
                 ReferenceEquals(RefreshButton.Style, StartButton.Style),
                 "Refresh sources and Start recording do not use the same primary button style.");

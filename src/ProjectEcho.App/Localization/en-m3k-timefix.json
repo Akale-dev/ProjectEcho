@@ -1,0 +1,13 @@
+{
+  "时 : 分 : 秒 . 毫秒；分隔符固定，只填写数字。点 × 可清空整行时间。": "Hours : minutes : seconds . milliseconds; separators are fixed. Enter digits only. × clears the entire time.",
+  "时间格式须为 时:分:秒.毫秒 或 分:秒.毫秒，小数用点号；无时间字幕请同时留空。": "Use hours:minutes:seconds.milliseconds or minutes:seconds.milliseconds. Leave both times blank for untimed text.",
+  "开始时间超过本字幕版本的录音时长；请核对解析结果，三段冒号时间的第一段是小时。": "Start exceeds this transcript's recording duration. Check the interpreted time: the first of three colon-separated components is hours.",
+  "结束时间超过本字幕版本的录音时长；请核对解析结果，三段冒号时间的第一段是小时。": "End exceeds this transcript's recording duration. Check the interpreted time: the first of three colon-separated components is hours.",
+  "结束时间必须晚于开始时间。": "End time must be later than start time.",
+  "未填完整": "Incomplete",
+  "未填写": "Not set",
+  "{0}时 {1}分 {2}.{3:000}秒": "{0} h {1} min {2}.{3:000} s",
+  "本版本时长：{0}": "Transcript duration: {0}",
+  "；已校验音频：{0}": "; verified audio: {0}",
+  "当前输入：{0} → {1}": "Interpreted input: {0} → {1}"
+}

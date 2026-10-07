@@ -37,6 +37,7 @@ public partial class MainWindow
     // Shared by the user action and the real WPF integration test; no synthetic meeting metadata.
     private async Task<ImportedAudioMeeting> ImportAudioFileAsync(string sourcePath, CancellationToken token = default)
     {
+        EnsureDataRootAvailable();
         if (!SessionRules.CanStart(state) || WindowCloseRequested || exportBusy || transcriptBusy || recoveryBusy)
             throw new InvalidOperationException(UiText.T("请等待当前录音保存或文件任务结束后再导入。"));
         exportBusy = true;

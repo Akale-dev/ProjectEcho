@@ -8,6 +8,8 @@ namespace ProjectEcho.Capture.Windows;
 
 internal sealed class RecordingSourceFactory : IRecordingSourceFactory
 {
+    public IRecordingProcessLifetime? WatchProcess(CaptureOptions options) => options.Mode == SourceMode.ProcessTree
+        ? new RecordingProcessLifetime(options.ProcessSource!.Root) : null;
     public void Preflight(RecordingOptions options)
     {
         if (options.MaximumSeconds is < 1 or > 28800 || options.ExpectedMinutes is < 1 or > 480)

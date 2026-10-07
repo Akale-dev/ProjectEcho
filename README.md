@@ -1,4 +1,10 @@
+当前交付：[M3O Lite 完整便携 ZIP](../artifacts/ProjectEcho-win-x64-20261006-M3O-Lite-Final.zip)，[修正与验证](docs/93_M3O_PLAYBACK_BUTTON_POLISH.md)。M3K–M3O 已按用户明确请求同步为 M5E Pro，保留 M5Dfix Qwen 修复。下方为历史说明。
+
 # ProjectEcho｜项目会议记录器
+
+2026-10-06 **M3N Lite已交付，待用户验收后一起同步M5 Pro**：修复mic低底噪/DC不断重置无声计时；录音/暂停中可启用、取消自动结束及改时长，Host确认后生效并留证。回听新增−10/−5/+5/+10秒矢量按钮、上下切字幕及左右5秒快捷键，跳转保留暂停/播放和倍速；两栏从头播放改为左竖线+右三角，焦点/按下不裁切。378/0回归、18/18包内WPF、四进程启动及672文件中文ZIP通过。1681个Pro源码/旧包文件不变，32文件增量补丁及同步记录已保存。见[交付与验收记录](docs/92_M3N_MIC_SILENCE_AND_PLAYBACK_CONTROLS.md)、[完整便携包](../artifacts/ProjectEcho-win-x64-20261006-M3N-Lite-Final.zip)。真实mic/会议、目标机、物理键鼠/DPI和clean Windows待验；无新采集、下载、上传或关机。下方保留历史记录。
+
+2026-10-06 **M3M Lite已交付，待用户验收后一起同步M5 Pro**：移除手动预检，开始录音自动检查保留；原按钮位置增加自动结束勾选，默认关闭/5分钟，可选1、5、10分钟，所选根进程退出或全部已启用来源无声音到期后正常停止并保存。mic声音重置，暂停不计；缺包不冒充静音，尾包与结束原因持久保留。362/0回归、16项包内WPF覆盖（含剪贴板权限复验）、四进程启动及671文件中文ZIP核验通过。1680个Pro源码/旧包文件hash保持，23文件增量补丁和同步清单已留存。见[交付与验收记录](docs/91_M3M_AUTOMATIC_RECORDING_END.md)、[完整便携包](../artifacts/ProjectEcho-win-x64-20261006-M3M-Lite-Final.zip)。真实会议/麦克风/目标机及旧闸门仍待验；本次未新增采集、下载、上传或关机。下方保留历史记录。
 
 **M3J Lite：** [完整便携ZIP](../artifacts/ProjectEcho-win-x64-20261005-M3J-Lite-Final.zip)；源码2a7f2e5，ZIP SHA-256 60dc2986a572e128610bbaee835855736dece14440cb7abf27f9b7ac9af22ae2。[详细修复与验证](docs/84_M3J_ASR_EOF_AND_RECORDING_UI_FIX.md)。M5C仍未同步。
 

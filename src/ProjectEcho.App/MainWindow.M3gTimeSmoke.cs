@@ -61,7 +61,7 @@ public partial class MainWindow
                 seeks.Add(new { RequestedMs = sample.Milliseconds, NativePositionMs = actual, Display = ReplayTimeText.Text, ExpectedCue = sample.Cue });
             }
             NavigateTo(3); DisplayRevision(directory, revision); view.SegmentsBox.SelectedIndex = 1;
-            Need(view.SegmentTimeText.Text.StartsWith("00:00:01.38", StringComparison.Ordinal), "Review cue detail still shows whole seconds.");
+            Need(view.StartTimestampBox.CentisecondsBox.Text == "38", "Review cue detail still shows whole seconds.");
             view.PlaybackPositionSlider.Value = 1.39;
             await Task.Delay(150, token); UpdatePlaybackPosition();
             Need(Math.Abs(player.Position.TotalMilliseconds - 1390) < 1 && ReplayTimeText.Text.StartsWith("00:00:01.39", StringComparison.Ordinal),

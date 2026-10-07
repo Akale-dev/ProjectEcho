@@ -33,6 +33,10 @@ public sealed class RecordingSession : IAsyncDisposable
     private RecordingTimeClock? recordingClock;
     private long available;
     private RecordingOptions options = null!;
+    private RecordingAutoStopMonitor? autoStopMonitor;
+    private IRecordingProcessLifetime? selectedProcess;
+    private RecordingAutoStopInfo? autoStopInfo;
+    private RecordingAutoStopOptions autoStopSettings = new();
     private string? fixedMicrophoneDeviceId;
     private string remoteFault = "", micFault = "";
     private MicrophonePreparation? microphonePreparation;
@@ -41,6 +45,7 @@ public sealed class RecordingSession : IAsyncDisposable
     public Task<RecordingResult> Completion => completed.Task;
     public event Action<RecordingHealth>? HealthChanged;
     public event Action<RecordingAck>? Acknowledged;
+    public event Action<RecordingAutoStopInfo>? AutoStopping;
 
     public RecordingSession() : this(new RecordingSourceFactory(), Now100ns,
         path => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path))!).AvailableFreeSpace, synthetic: false) { }
@@ -52,8 +57,10 @@ public sealed class RecordingSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(selection);
         ArgumentNullException.ThrowIfNull(selection.Selection);
         ArgumentException.ThrowIfNullOrWhiteSpace(selection.Selection.SessionDirectory);
+        selection.AutoStop?.Validate();
         if (Interlocked.Exchange(ref startOnce, 1) != 0) throw new InvalidOperationException("录音会话不可复用。");
         options = selection;
+        autoStopSettings = selection.AutoStop ?? new();
         fixedMicrophoneDeviceId = selection.Selection.MicrophoneDeviceId;
         var thread = new Thread(Main) { IsBackground = true, Name = "ProjectEcho M1 capture" };
         thread.SetApartmentState(ApartmentState.MTA);
@@ -67,16 +74,17 @@ public sealed class RecordingSession : IAsyncDisposable
         wake.Set();
         return completed.Task;
     }
-    public Task<RecordingAck> ControlAsync(string requestId, string operation, string? deviceId = null)
+    public Task<RecordingAck> ControlAsync(string requestId, string operation, string? deviceId = null,
+        RecordingAutoStopOptions? automatic = null)
     {
         lock (controlGate)
         {
             if (submittedControls.TryGetValue(requestId, out var prior))
-                return prior.Operation == operation && prior.DeviceId == deviceId ? prior.Done.Task
+                return prior.Operation == operation && prior.DeviceId == deviceId && prior.Automatic == automatic ? prior.Done.Task
                     : Task.FromException<RecordingAck>(new InvalidOperationException("同一请求ID不能用于不同操作。"));
             if (Volatile.Read(ref startOnce) == 0 || Volatile.Read(ref stopping) != 0 || completed.Task.IsCompleted || submittedControls.Count >= 4096)
                 return Task.FromException<RecordingAck>(new InvalidOperationException("会话已停止或控制次数达到限额。"));
-            var control = new Control(requestId, operation, deviceId);
+            var control = new Control(requestId, operation, deviceId, automatic);
             submittedControls.Add(requestId, control);
             controls.Enqueue(control); wake.Set();
             return control.Done.Task;
@@ -100,6 +108,13 @@ public sealed class RecordingSession : IAsyncDisposable
             directory = Path.GetFullPath(directory);
             factory.Preflight(options);
             ValidateDirectory(directory);
+            if (options.AutoStop is { Enabled: true } automatic)
+            {
+                autoStopMonitor = new(automatic);
+                if (options.Selection.Mode == SourceMode.ProcessTree)
+                    selectedProcess = factory.WatchProcess(options.Selection)
+                        ?? throw new InvalidOperationException("无法监测所选应用进程，尚未开始录音。");
+            }
             epoch = now(); lastIteration = epoch;
             recordingClock = new(epoch);
             micEnabled = options.Selection.MicrophoneEnabled;
@@ -143,6 +158,7 @@ public sealed class RecordingSession : IAsyncDisposable
                 lastIteration = current;
                 while (controls.TryDequeue(out var control)) Execute(control);
                 if (Volatile.Read(ref stopping) != 0) break;
+                if (selectedProcess?.HasExited == true) { RequestAutomaticStop("source_process_exited"); break; }
                 CompletePendingMicrophone();
                 if (validation.TryTake(out var validationResult))
                 {
@@ -153,13 +169,20 @@ public sealed class RecordingSession : IAsyncDisposable
                     long bytesPerSecond = sources.Sum(x => (long)x.Source.Format.SampleRate * x.Source.Format.BlockAlign);
                     if (available < 64L * 1024 * 1024 + bytesPerSecond * 2) throw new IOException("磁盘余量低于安全预留，停止并保存已有原轨。");
                     var validatedSource = sources.FirstOrDefault(x => x.SegmentId == validationResult.RemoteSegmentId);
-                    if (validatedSource is not null && validationResult.RemoteError is { } sourceError) FailSource(validatedSource, sourceError);
+                    if (validatedSource is not null && validationResult.RemoteError is { } sourceError)
+                    {
+                        if (selectedProcess?.HasExited == true) { RequestAutomaticStop("source_process_exited"); break; }
+                        FailSource(validatedSource, sourceError);
+                    }
                 }
                 if (validation.HasTimedOut(TimeSpan.FromSeconds(2)))
                     throw new IOException("来源身份/磁盘检查超过2秒未返回；为保持明确采集范围，停止并保存已有原轨。");
                 if (current >= checkAt && validation.TryRequest(paused ? null : sources.FirstOrDefault(x => x.Source.Id == "remote")?.SegmentId))
                     checkAt = current + 5_000_000;
                 ServiceStartedSources();
+                // Drain first: a brief sound within the last service interval must reset the timer.
+                if (autoStopMonitor?.IsDue(now(), paused, pendingMicrophoneControl is not null) == true)
+                { RequestAutomaticStop("no_audio_activity"); break; }
                 if (current >= healthAt) { ulong sampled = now(); RaiseHealth(sampled); healthAt = sampled + 2_000_000; }
                 WaitForSourceOrControl();
             }
@@ -178,6 +201,7 @@ public sealed class RecordingSession : IAsyncDisposable
             end = now();
             try { end = CloseSources(sources.ToArray(), "stop", stopId); }
             catch (Exception ex) { captureFault = true; warnings.Enqueue("停采收尾异常：" + ex.Message); }
+            selectedProcess?.Dispose(); selectedProcess = null;
             try { scheduling?.Dispose(); }
             catch (Exception ex) { warnings.Enqueue("录音线程调度收尾失败：" + ex.GetType().Name); }
             if (scheduling?.Diagnostic is { Registered: true, Released: false, ReleaseErrorCode: { } releaseError })
@@ -206,7 +230,7 @@ public sealed class RecordingSession : IAsyncDisposable
                 warnings.Concat(stored?.Warnings ?? []).Distinct().ToArray(),
                 new(scheduling?.Diagnostic, maximumLoopInterval, GC.GetAllocatedBytesForCurrentThread() - allocatedAtStart,
                     GC.CollectionCount(0) - gen0AtStart, GC.CollectionCount(1) - gen1AtStart, GC.CollectionCount(2) - gen2AtStart,
-                    (GC.GetTotalPauseDuration() - gcPauseAtStart).TotalMilliseconds, sourceDiagnostics.ToArray()));
+                    (GC.GetTotalPauseDuration() - gcPauseAtStart).TotalMilliseconds, sourceDiagnostics.ToArray()), autoStopInfo);
             // A writer validation failure may prevent meeting.json from being written.
             // Keep the technical failure separately so the library can explain why the
             // preserved partial originals need inspection after the Host has exited.
@@ -233,7 +257,9 @@ public sealed class RecordingSession : IAsyncDisposable
                 renderEndpointId = options.Selection.Mode == SourceMode.EndpointLoopback ? options.Selection.RenderDeviceId : null,
                 endpointScopeConfirmed = options.Selection.Mode == SourceMode.EndpointLoopback && options.Selection.EndpointScopeConfirmed,
                 initialMicrophoneEnabled = options.Selection.MicrophoneEnabled,
-                selectedMicrophoneDeviceId = options.Selection.MicrophoneDeviceId, reusableSelection = false
+                selectedMicrophoneDeviceId = options.Selection.MicrophoneDeviceId, reusableSelection = false,
+                autoStop = options.AutoStop ?? new RecordingAutoStopOptions(),
+                autoStopMicrophoneActivity = new { version = "m3n", method = "per-channel-dc-removed-10ms-rms", thresholdDbfs = -50 }
             });
             ready.TrySetResult();
             DateTimeOffset? lastCheckpoint = null;
@@ -310,6 +336,7 @@ public sealed class RecordingSession : IAsyncDisposable
                     foreach (var prepared in preparedSources) SetSegmentOffset(prepared, excluded);
                 }
             }
+            autoStopMonitor?.Reset(now()); // Preparation and paused time never consume the new interval.
         }
         catch
         {
@@ -438,6 +465,19 @@ public sealed class RecordingSession : IAsyncDisposable
             ulong? boundaryAt = null;
             switch (control.Operation)
             {
+                case "auto_stop_settings":
+                    var automatic = control.Automatic ?? throw new InvalidOperationException("缺少自动结束设置。");
+                    automatic.Validate();
+                    IRecordingProcessLifetime? newProcess = null;
+                    if (automatic.Enabled && selectedProcess is null && options.Selection.Mode == SourceMode.ProcessTree)
+                        newProcess = factory.WatchProcess(options.Selection) ?? throw new InvalidOperationException("无法监测所选应用进程，自动结束设置未改变。");
+                    if (!automatic.Enabled) { selectedProcess?.Dispose(); selectedProcess = null; }
+                    else selectedProcess ??= newProcess;
+                    autoStopSettings = automatic;
+                    autoStopMonitor = automatic.Enabled ? new(automatic) : null;
+                    autoStopMonitor?.Reset(now());
+                    foreach (var live in sources) { live.MicrophoneActivity = null; live.ActivityBlock = null; live.ActivityFrames = 0; }
+                    break;
                 case "pause":
                     CancelPendingMicrophone("已暂停，等待中的麦克风未启动。");
                     if (!paused) { boundaryAt = CloseSources(sources.ToArray(), "pause", control.Id); paused = true; }
@@ -479,6 +519,7 @@ public sealed class RecordingSession : IAsyncDisposable
 
     private void AcknowledgeControl(Control control, ulong? boundaryAt = null, string? message = null)
     {
+        if (control.Operation is "mic_on" or "mic_off") autoStopMonitor?.Reset(now());
         long effective = Us(boundaryAt ?? now());
         ObserveRecordingTime(now());
         if (control.Operation == "mic_on")
@@ -486,8 +527,14 @@ public sealed class RecordingSession : IAsyncDisposable
             string? confirmedDevice = fixedMicrophoneDeviceId;
             Enqueue(new(store => store.WriteEvent(control.Operation, control.Id, effective, confirmedDevice)));
         }
+        else if (control.Operation == "auto_stop_settings")
+        {
+            var confirmed = autoStopSettings;
+            Enqueue(new(store => store.WriteEvent(control.Operation, control.Id, effective, autoStopSettings: confirmed)));
+        }
         else Event(control.Operation, control.Id, effective);
-        var ack = new RecordingAck(control.Id, control.Operation, paused, micEnabled, effective, message);
+        var ack = new RecordingAck(control.Id, control.Operation, paused, micEnabled, effective, message,
+            control.Operation == "auto_stop_settings" ? autoStopSettings : null);
         control.Done.TrySetResult(ack);
         NotifyAck(ack);
         RaiseHealth(now());
@@ -591,8 +638,13 @@ public sealed class RecordingSession : IAsyncDisposable
             if (!final && keep < block.FrameCount)
             {
                 if (block.QpcPosition100ns > cutoff + 2_000_000) throw new IOException("API包时间超前超过200ms，拒绝不明边界。");
+                // The packet can straddle the inactivity deadline. Observe only its already
+                // elapsed prefix; waiting for the whole packet would miss a last-moment voice.
+                if (keep > 0 && autoStopMonitor is not null)
+                    ObserveAutomaticEndActivity(source, block, keep);
                 return; // Do not persist a frame until its end is known to precede this capture-thread instant.
             }
+            if (keep > 0 && autoStopMonitor is not null) ObserveAutomaticEndActivity(source, block, keep);
             source.Pending.Dequeue();
             byte[] pcm = block.Pcm;
             if (keep != block.FrameCount)
@@ -611,6 +663,28 @@ public sealed class RecordingSession : IAsyncDisposable
             if (source.Source.Id == "remote") Interlocked.Add(ref remoteFrames, keep);
             else Interlocked.Add(ref micFrames, keep);
         }
+    }
+
+    private static ulong PacketEnd(Live source, RecordingBlock block, int frames) => checked(block.QpcPosition100ns +
+        (ulong)((UInt128)(uint)(block.RetainedFrameOffset + frames) * 10_000_000 / (uint)source.Source.Format.SampleRate));
+
+    private void ObserveAutomaticEndActivity(Live source, RecordingBlock block, int keep)
+    {
+        if (source.Source.Id != "mic")
+        {
+            autoStopMonitor!.Observe(PacketEnd(source, block, keep), Peak(block.Pcm, source.Source.Format, keep));
+            return;
+        }
+        // A pending packet may be revisited many times before publication. Analyze each
+        // elapsed frame once; repeated peeks must not manufacture microphone activity.
+        if (!ReferenceEquals(source.ActivityBlock, block)) { source.ActivityBlock = block; source.ActivityFrames = 0; }
+        int previous = source.ActivityFrames;
+        if (keep <= previous) return;
+        int align = source.Source.Format.BlockAlign;
+        var activity = source.MicrophoneActivity ??= new(source.Source.Format);
+        int activeEnd = activity.Observe(block.Pcm.AsSpan(previous * align, (keep - previous) * align), PacketEnd(source, block, previous));
+        source.ActivityFrames = keep;
+        if (activeEnd > 0) autoStopMonitor!.Observe(PacketEnd(source, block, previous + activeEnd), 1);
     }
 
     private ulong CloseSources(IReadOnlyList<Live> selected, string operation, string requestId)
@@ -689,6 +763,24 @@ public sealed class RecordingSession : IAsyncDisposable
         CloseSources([source], "stop", "source-fault");
         Event("source_fault", "source-fault", Us(now()));
     }
+    private void RequestAutomaticStop(string reason)
+    {
+        lock (controlGate)
+        {
+            if (Volatile.Read(ref stopping) != 0) return; // Manual Stop wins an already accepted request.
+            ulong current = now();
+            bool Missing(string id) => sources.FirstOrDefault(source => source.Source.Id == id) is not { SeenPacket: true } live
+                || PacketHealthTimedOut(current, live.LastPacketAt);
+            autoStopInfo = new(reason, autoStopSettings.SilenceMinutes, Us(current),
+                !paused && Missing("remote"), !paused && micEnabled && Missing("mic"));
+            stopId = "auto-stop-" + reason;
+            Volatile.Write(ref stopping, 1);
+        }
+        // Persist the decision before the ordinary stop/boundary items. Never report Saved here.
+        var info = autoStopInfo;
+        Enqueue(new(store => store.WriteEvent("auto_stop", stopId, info.TriggeredSessionUs, autoStop: info)));
+        try { AutoStopping?.Invoke(info); } catch { }
+    }
     private void Event(string operation, string requestId, long us) => Enqueue(new(store => store.WriteEvent(operation, requestId, us)));
     private void Enqueue(Write item)
     {
@@ -739,10 +831,11 @@ public sealed class RecordingSession : IAsyncDisposable
             if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("录音路径含重解析点。");
         if (Directory.Exists(directory) && Directory.EnumerateFileSystemEntries(directory).Any()) throw new IOException("拒绝覆盖已有会话目录。");
     }
-    private static float Peak(byte[] pcm, PcmFormat format)
+    private static float Peak(byte[] pcm, PcmFormat format, int? frames = null)
     {
         float peak = 0; int width = format.BitsPerSample / 8;
-        for (int i = 0; i < pcm.Length; i += width)
+        int bytes = frames.HasValue ? checked(frames.Value * format.BlockAlign) : pcm.Length;
+        for (int i = 0; i < bytes; i += width)
         {
             float value = format.IsFloat ? BitConverter.ToSingle(pcm, i) : width switch
             { 2 => BitConverter.ToInt16(pcm, i) / 32768f, 3 => ((pcm[i] | pcm[i + 1] << 8 | pcm[i + 2] << 16) << 8 >> 8) / 8388608f,
@@ -757,10 +850,13 @@ public sealed class RecordingSession : IAsyncDisposable
         wake.Dispose(); writes.Dispose();
     }
     private sealed record Write(Action<M1Storage> Action, byte[]? Pcm = null);
-    private sealed record Control(string Id, string Operation, string? DeviceId)
+    private sealed record Control(string Id, string Operation, string? DeviceId, RecordingAutoStopOptions? Automatic)
     { public TaskCompletionSource<RecordingAck> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously); }
     private sealed class Live(IRecordingAudioSource source, string segmentId)
     {
+        public MicrophoneSoundActivity? MicrophoneActivity;
+        public RecordingBlock? ActivityBlock;
+        public int ActivityFrames;
         public IRecordingAudioSource Source { get; } = source;
         public string SegmentId { get; } = segmentId;
         public Queue<RecordingBlock> Pending { get; } = new();

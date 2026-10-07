@@ -34,6 +34,7 @@ public partial class MainWindow
 
     private WhisperConfiguration? ReadDefaultWhisperConfiguration()
     {
+        EnsureDataRootAvailable();
         var config = PortableWhisperConfiguration.Load(WhisperConfigurationPath, AppContext.BaseDirectory);
         return config is null ? null : config with { InitialPrompt = null };
     }

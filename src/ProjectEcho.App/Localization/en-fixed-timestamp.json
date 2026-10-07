@@ -1,0 +1,11 @@
+{
+  "小时（0–999）": "Hours (0–999)",
+  "分钟（0–59）": "Minutes (0–59)",
+  "秒（0–59）": "Seconds (0–59)",
+  "毫秒（0–999，1 表示 001 毫秒）": "Milliseconds (0–999; 1 means 001 ms)",
+  "清空此时间（Ctrl+Delete）；开始和结束同时清空表示无时间。": "Clear this time (Ctrl+Delete); clear both start and end for an untimed subtitle.",
+  "清空此时间": "Clear this time",
+  "依次填写小时、分钟、秒、毫秒，只输入数字。冒号和小数点固定；点击 × 或按 Ctrl+Delete 清空此时间。": "Enter hours, minutes, seconds and milliseconds using digits only. Colons and the decimal point are fixed; click × or press Ctrl+Delete to clear this time.",
+  "未完成的时间草稿，请清空后重新填写各数字栏。": "Unfinished time draft; clear it and enter the numeric fields again.",
+  "只输入数字；不接受带冒号、小数点或空格的粘贴内容。": "Digits only; pasted text containing colons, decimal points or spaces is rejected."
+}

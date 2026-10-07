@@ -91,3 +91,17 @@ export.parts[].spans 给出 `fileStartMs/fileEndMs`→`sessionStartMs/sessionEnd
 原始转写永不覆盖；reviewed版本有parentRevisionId。analysis evidence明确引用revisionId。重跑ASR不冲掉人工修改；项目结论变更新建版本而不是直接抹除旧决策。
 
 M3实际规范化转写使用schemaVersion=2，结构见 `schemas/transcript-v2.schema.json`，v1保持作为兼容导入。原稿存 `transcripts/original/<revisionId>/`，校订存 `transcripts/reviewed/<revisionId>/`；只在完整写入临时目录后rename发布。失败/取消的pending目录不会被当作完成版本。详细文件/时间映射合同见45。
+
+## M3M Lite：可选自动结束记录（2026-10-06）
+
+`selection.json` 的可选 `autoStop` 保存本场 `Enabled` 和 `SilenceMinutes`，后者只允许 1、5、10；未传入选项的旧调用默认关闭。选项与实际录音来源绑定，不持久复用 PID。
+
+`journal/events.jsonl` 可增加 `operation=auto_stop`，其 `autoStop` 对象含 `Reason`、`SilenceMinutes`、`TriggeredSessionUs`、`RemotePacketMissing`、`MicrophonePacketMissing`；正常手动事件该值为 null。只追加一次决策，之后仍保留普通 stop 和原来源边界。文件仍使用原序号/哈希和 flush 流程，不更改 packet/index 的时钟合同。
+
+`recording-result.json.AutoStop` 保存同一结果。原因 `source_process_exited` / `no_audio_activity` 分别代表选定根进程退出 / 无声音到期，均不证明静音或完整性。未收到音频包也可能导致用户选择的无声音到期，但缺包/故障和不完整状态不得被清除。时间是去暂停后的录音时间，不修改 WAV 或原始 QPC。见 [M3M 记录](91_M3M_AUTOMATIC_RECORDING_END.md)。
+
+## M3N Lite：录音中自动结束设置
+
+启动时 selection.json 的 autoStop 保持原始选择；autoStopMicrophoneActivity 保存 m3n、per-channel-dc-removed-10ms-rms 和 thresholdDbfs=-50。原始 PCM、index、QPC/设备时钟和完整性合同不变。
+
+用户录音中启用/取消或改时长，经过 HostCommand.AutoStopSettings 发送 auto_stop_settings，在采集线程验证后写 journal 的 autoStopSettings 并通过 RecordingAck.AutoStopSettings 回执。界面只接受匹配请求 ID 的回执；无效/冲突设置不改变原政策。新开启和改时长重置无声间隔，暂停不累计；进入保存后拒绝迟到变更。最终 recording-result.json.AutoStop 的分钟数来自生效设置。旧可选字段缺失保持兼容。见 [M3N交付记录](92_M3N_MIC_SILENCE_AND_PLAYBACK_CONTROLS.md)。

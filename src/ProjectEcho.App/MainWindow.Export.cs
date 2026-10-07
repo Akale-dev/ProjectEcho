@@ -34,7 +34,7 @@ public partial class MainWindow
     private void UpdateExportControls()
     {
         bool idle = SessionRules.CanStart(state) && !WindowCloseRequested && !deletingMeeting;
-        ImportAudioButton.IsEnabled = idle && !exportBusy && !transcriptBusy && !recoveryBusy && pendingMixes.Count == 0;
+        ImportAudioButton.IsEnabled = idle && DataRootAvailable && !exportBusy && !transcriptBusy && !recoveryBusy && pendingMixes.Count == 0;
         DataRootButton.IsEnabled = idle && !exportBusy && !transcriptBusy && pendingMixes.Count == 0 && !recoveryBusy && !refreshing;
         RetryMixButton.IsEnabled = idle && !exportBusy && selectedMeetingDirectory is not null;
         ExportButton.IsEnabled = !WindowCloseRequested && !deletingMeeting && !exportBusy && currentMix is not null;
@@ -50,33 +50,7 @@ public partial class MainWindow
         if (picker.ShowDialog(this) != true) return;
         try
         {
-            var chosen = ValidateLocalDataRoot(picker.FolderName);
-            Directory.CreateDirectory(chosen);
-            // Probe only a uniquely owned file; never modify existing user files.
-            var probe = Path.Combine(chosen, ".projectecho-write-" + Guid.NewGuid().ToString("N"));
-            using (var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None,
-                       1, FileOptions.DeleteOnClose)) stream.WriteByte(0);
-            ResetTranscriptPlayback();
-            ClearSavedMixPlaybackRequest();
-            savedMixCancellation?.Cancel();
-            ClearReplaySubtitles();
-            RememberFilingDraft();
-            selectedFilingBaseline = null;
-            FlushMeetingWhisperPrompt();
-            dataRoot = chosen;
-            ClearRecordingProcessing();
-            libraryQuery = new();
-            LoadWhisperConfiguration();
-            DataRootText.Text = chosen;
-            selectedMeetingDirectory = null; currentMix = null; mixedPath = null; lastExportDirectory = null;
-            RefreshSelectedExportStatus();
-            RefreshMeetingLog();
-            RecoveryBox.ItemsSource = null;
-            libraryRead = false; MeetingCountText.Text = UiText.T("点击会议库读取历史");
-            SelectedMeetingText.Text = UiText.T("数据目录已更改；原有文件保留在原位置。");
-            SetStatus(UiText.T("后续录音写入所选数据目录；没有移动或删除历史原件。"));
-            ClearValidationIssues(DataRootButton, SelectionPanel);
-            RefreshRecordingValidationMessage();
+            ApplySelectedDataRoot(picker.FolderName);
         }
         catch (Exception ex) { SetStatus(UiText.T("数据目录不可用：") + ex.Message); }
         UpdateControls();
@@ -370,6 +344,7 @@ public partial class MainWindow
 
     private void CancelBackgroundForClose()
     {
+        CancelStartupLibraryRefresh();
         ClearSavedMixPlaybackRequest();
         transcriptCancellation?.Cancel();
         savedMixCancellation?.Cancel();

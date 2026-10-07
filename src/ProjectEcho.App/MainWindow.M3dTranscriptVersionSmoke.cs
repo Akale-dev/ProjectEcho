@@ -151,8 +151,8 @@ public partial class MainWindow
             SaveLayoutImage(folder, "m3d-model-versions-review-minimum-top.png", 1, images);
             view.ReviewBodyScroller.ScrollToEnd(); await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
             M3dVersionNeed(VisibleInside(view.SaveRevisionButton, view.ReviewBodyScroller) && VisibleInside(view.ExportTextButton, view.ReviewBodyScroller) &&
-                VisibleInside(view.PlaybackPositionSlider, view) && VisibleInside(view.StatusText, view) && view.EditBox.Text == draftA,
-                "最小窗口滚动后无法操作校订/导出，固定播放器/状态被裁切，或草稿丢失。");
+                VisibleInside(view.PlaybackPositionSlider, view) && !view.TranscriptStatusPanel.IsVisible && view.EditBox.Text == draftA,
+                "最小窗口滚动后无法操作校订/导出，播放器被裁切，已删除的状态栏复现，或草稿丢失。");
             SaveLayoutImage(folder, "m3d-model-versions-review-minimum-bottom.png", 1, images);
             NavigateTo(5); await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render);
             M3dVersionNeed(VisibleInside(ReplayRevisionBox, this) && VisibleInside(ReplayPlayerBar, this), "最小窗口回听版本选择器或播放器超出窗口。");

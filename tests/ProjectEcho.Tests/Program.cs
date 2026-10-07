@@ -6,6 +6,8 @@ using ProjectEcho.Capture.Windows;
 using ProjectEcho.Core;
 using ProjectEcho.Export;
 
+if (args.Length == 1 && args[0] == "--m3m-lifetime-child") { _ = Console.ReadLine(); return 0; }
+
 if (args.Length > 0 && args[0] == "-m" && args.Contains("-osrt"))
     return await M3WhisperTests.RunFixtureAsync(args);
 
@@ -122,6 +124,8 @@ Run("M0-SYNTH probe signal and isolation fixtures", () => ProbeSignalChecks.RunS
 Run("M0-SYNTH probe consent scope and started handshake", () => ProbeSafetyTests.Run(output));
 Run("M1-SYNTH real microphone probe range assertions", M1MicrophoneProbe.RunSyntheticChecks);
 Run("T54-SYNTH health snapshot ordering never underflows", RecordingHealthTests.Run);
+M3mAutoStopTests.Register(Run, output);
+M3mAutoStopTests.RegisterM3n(Run, output);
 Run("M1-SYNTH microphone reported/client rate policy", MicrophoneFormatPolicyTests.Run);
 MicrophoneFormatPolicyTests.RegisterTimelineTests(Run, output);
 M3bMicrophoneClockTests.Register(Run, output);
@@ -144,7 +148,11 @@ M3AudioPreparationTests.Register(Run, output);
 M3AudioImportTests.Register(Run, output);
 M3SubtitleExportTests.Register(Run, output);
 M3SentenceSegmentationTests.Register(Run, output);
+M3jSentenceBoundaryTests.Register(Run, output);
 M3TranscriptTests.Register(Run, output);
+M3jTranscriptDraftTests.Register(Run, output);
+M3kTimestampInputTests.Register(Run, output);
+M3kDataRootPreferenceTests.Register(Run, output);
 M3cSqliteTests.Register(Run, output);
 M3cTranscriptTests.Register(Run, output);
 M3WhisperTests.Register(Run, output);

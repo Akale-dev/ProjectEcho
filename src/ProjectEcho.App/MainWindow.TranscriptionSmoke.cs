@@ -92,6 +92,7 @@ public partial class MainWindow
         Closed += (_, _) => closed.TrySetResult();
         try
         {
+            PrepareTranscriptDraftSmokeShutdown(); // This synthetic fixture intentionally leaves an unsaved draft.
             Close(); await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
             if (!IsVisible || transcriptWork.IsCompleted || closeApproved) throw new InvalidDataException("窗口未等文字任务清理就关闭。");
             release.TrySetResult();
