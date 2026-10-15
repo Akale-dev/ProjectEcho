@@ -240,7 +240,7 @@ public partial class MainWindow : Window
         FlushMeetingWhisperPrompt();
         recordingLogDirectory = trial ? null : options.SessionDirectory;
         pendingRecordingLog.Clear();
-        LogRecordingStatus($"Ver. M3O Lite · Windows {Environment.OSVersion.Version} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · NAudio 3.1.0\n录音请求：{options.Mode}；MicEnabled={options.MicrophoneEnabled}。");
+        LogRecordingStatus($"Ver. M3P Lite · Windows {Environment.OSVersion.Version} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · NAudio 3.1.0\n录音请求：{options.Mode}；MicEnabled={options.MicrophoneEnabled}。");
         isTrial = trial;
         fixedMicrophoneId = options.MicrophoneDeviceId;
         fixedMicrophoneName = options.MicrophoneEnabled ? (MicBox.SelectedItem as AudioDevice)?.Name : null;

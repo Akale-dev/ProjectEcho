@@ -35,7 +35,7 @@ public partial class MainWindow
         Need(view.SegmentsBox.Items.Count==3,"Mixed-time UI lost text rows.");
         view.SegmentsBox.SelectedIndex=1; SelectTranscriptSegment();
         Need(view.SegmentsBox.SelectedItem is TranscriptRow { Segment.StartMs:null } row && row.TimeLabel==UiText.T("无时间"),"Unsupported time not visible.");
-        Need(!view.SeekButton.IsEnabled && !view.ExportSubtitlesButton.IsEnabled && view.ExportTextButton.IsEnabled && view.SaveRevisionButton.IsEnabled,"Untimed UI actions are unsafe.");
+        Need(!view.SeekButton.IsEnabled && view.ExportSubtitlesButton.IsEnabled && view.ExportTextButton.IsEnabled && view.SaveRevisionButton.IsEnabled,"Untimed UI actions are unsafe.");
         SeekTranscript(); Need(player.Source is null,"Untimed row started playback.");
         string text=Path.Combine(evidence,"m3i-complete.txt");
         TranscriptSubtitleExporter.ExportText(meeting,revision.RevisionId,text,token);

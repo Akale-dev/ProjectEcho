@@ -58,7 +58,7 @@ public partial class MainWindow
             Need(!view.SeekButton.IsEnabled && HasValidationIssue(view.EndTimestampBox), "Out-of-audio timestamp was accepted.");
             view.EndTimestampBox.Text = "00:00:01.870";
             view.SegmentsBox.SelectedIndex = 0;
-            Need(view.SeekButton.IsEnabled && !view.ExportSubtitlesButton.IsEnabled && !view.ExportTextButton.IsEnabled,
+            Need(view.SeekButton.IsEnabled && view.ExportSubtitlesButton.IsEnabled && !view.ExportTextButton.IsEnabled,
                 "Valid draft seek or save-before-export state is wrong.");
 
             // Call the real corrected-time seek handler, then pause generated audio at the requested position.

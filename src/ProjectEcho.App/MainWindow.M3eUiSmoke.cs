@@ -56,7 +56,7 @@ public partial class MainWindow
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render, token);
             Need(TitleBox.Text == titleDraft && EndpointScopeNotice.IsVisible && !string.IsNullOrWhiteSpace(EndpointScopeNotice.Text),
                 "Changing language lost the title draft or hid the endpoint scope notice.");
-            Need(ApplicationVersionText.Text == "Ver. M3O Lite" && ApplicationVersionText.IsVisible &&
+            Need(ApplicationVersionText.Text == "Ver. M3P Lite" && ApplicationVersionText.IsVisible &&
                 ApplicationVersionText.FontSize < 21, "The M3E version label is absent or not secondary text.");
             Need(LanguageButton.Parent is StackPanel footer && ReferenceEquals(footer.Children[^1], LanguageButton),
                 "The language button is not the last footer item.");

@@ -87,7 +87,7 @@ public partial class MainWindow
                 double logoLeft = BrandLogo.TranslatePoint(new Point(), rootGrid).X;
                 Need(rootGrid.ColumnDefinitions[0].Width.Value == 246 && Math.Abs(rootGrid.ColumnDefinitions[0].ActualWidth - 246) < 0.1 &&
                     BrandHeaderPanel.Margin.Left == -9 && logoLeft >= 0 && logoLeft <= 6 && versionRight <= 245 &&
-                    BrandNameText.FontSize == 19 && ApplicationVersionText.FontSize == 10 && ApplicationVersionText.Text == "Ver. M3O Lite",
+                    BrandNameText.FontSize == 19 && ApplicationVersionText.FontSize == 10 && ApplicationVersionText.Text == "Ver. M3P Lite",
                     "Brand group did not move left intact, or changed sidebar width/font size to hide clipping.");
                 Need(ApplicationVersionText.ActualWidth > 0 && BrandHeaderPanel.IsVisible && RecordingProcessingCard.IsVisible &&
                     RecordingProcessingHeading.Text == UiText.T("录后处理"), "Version or localized recording card is absent.");
@@ -136,7 +136,7 @@ public partial class MainWindow
                 "Finishing old B after starting C contaminated C's card or enabled playback.");
             foreach (var original in originals) Need(CloseFixtureHash(original.Key) == original.Value, "The UI changed original audio or clock metadata.");
             Need(host is null && !microphoneEnabled && player.Source is null, "The display smoke started audio collection or playback.");
-            return new { Status = "PASS", Version = "M3O Lite", SyntheticOnly = true,
+            return new { Status = "PASS", Version = "M3P Lite", SyntheticOnly = true,
                 CaptureStarted = false, MicrophoneCollected = false, PlaybackStarted = false,
                 Layouts = layouts, Durations = durations, Images = images, RecordingRequestOwnerIndependentOfSelection = true,
                 BeginApplyEndAndRestoredReceiptVisible = true, SuccessFailureCancelAndNextRecording = true,

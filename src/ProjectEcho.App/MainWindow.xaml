@@ -44,7 +44,7 @@
               </DrawingGroup></DrawingImage.Drawing></DrawingImage></Image.Source>
             </Image>
             <TextBlock x:Name="BrandNameText" Text="ProjectEcho" Foreground="{DynamicResource SidebarTextBrush}" FontWeight="SemiBold" FontSize="19" VerticalAlignment="Center"/>
-            <TextBlock x:Name="ApplicationVersionText" Text="Ver. M3O Lite" Foreground="{DynamicResource SidebarTextBrush}" FontSize="10" Margin="6,0,0,4" VerticalAlignment="Bottom"/>
+            <TextBlock x:Name="ApplicationVersionText" Text="Ver. M3P Lite" Foreground="{DynamicResource SidebarTextBrush}" FontSize="10" Margin="6,0,0,4" VerticalAlignment="Bottom"/>
           </StackPanel>
           <TextBlock Text="{DynamicResource Loc635D0DE93BFCA011}" Foreground="{DynamicResource SidebarTextBrush}" FontSize="11" Margin="0,6,0,0"/>
         </StackPanel>
