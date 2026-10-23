@@ -25,6 +25,35 @@ public sealed class TranscriptRevisionDraft(TranscriptRevision parent)
     public bool TryGetSegment(TranscriptSegment segment, out TranscriptSegment updated, out string? error)
         => TryApply(segment, InputFor(segment), out updated, out error);
 
+    /// <summary>Timing only: untimed text is safe to save, but needs correction before subtitle export.</summary>
+    public string? TimingErrorFor(TranscriptSegment segment, long? verifiedAudioDurationMs = null)
+    {
+        long? start = segment.StartMs, end = segment.EndMs;
+        if (edits.TryGetValue(segment.SegmentId, out var input) &&
+            !TryReadTimes(input, out start, out end, out string? error)) return error;
+        if (start is null || end is null) return "字幕缺少开始或结束时间，请填写有效的起止时间。";
+        if (start < 0 || end <= start) return "结束时间必须晚于开始时间，且开始时间不能为负。";
+        if (end > Parent.MeetingDurationMs) return "字幕时间超过本字幕版本的录音时长。";
+        if (verifiedAudioDurationMs is { } duration && end > duration)
+            return "字幕时间不能超过已校验的完整回听音频时长。";
+        return null;
+    }
+
+    /// <summary>Scan in subtitle order, wrapping once after the selected cue; null starts at the first cue.</summary>
+    public TranscriptSegment? FindTimingError(string? afterSegmentId = null, long? verifiedAudioDurationMs = null)
+    {
+        int start = 0;
+        if (afterSegmentId is not null)
+            for (int i = 0; i < Parent.Segments.Count; i++)
+                if (Parent.Segments[i].SegmentId == afterSegmentId) { start = i + 1; break; }
+        for (int offset = 0; offset < Parent.Segments.Count; offset++)
+        {
+            var segment = Parent.Segments[(start + offset) % Parent.Segments.Count];
+            if (TimingErrorFor(segment, verifiedAudioDurationMs) is not null) return segment;
+        }
+        return null;
+    }
+
     public IReadOnlyList<TranscriptSegment> BuildSegments()
     {
         var result = new List<TranscriptSegment>(Parent.Segments.Count);
@@ -43,7 +72,17 @@ public sealed class TranscriptRevisionDraft(TranscriptRevision parent)
         updated = segment; error = null;
         if (string.IsNullOrWhiteSpace(input.Text) || input.Text.Length > TranscriptFiles.MaximumSegmentCharacters || input.Text.Contains('\0'))
         { error = "字幕文字不能为空、包含空字符或超过十万字符。"; return false; }
-        if (!TryParseTimestamp(input.Start, out long? start) || !TryParseTimestamp(input.End, out long? end))
+        if (!TryReadTimes(input, out long? start, out long? end, out error)) return false;
+        string quality = start is null ? "untimed" : start == segment.StartMs && end == segment.EndMs
+            ? segment.TimestampQuality : "approximate";
+        updated = segment with { Text = input.Text, StartMs = start, EndMs = end, TimestampQuality = quality };
+        return true;
+    }
+
+    private bool TryReadTimes(TranscriptSegmentEdit input, out long? start, out long? end, out string? error)
+    {
+        start = end = null; error = null;
+        if (!TryParseTimestamp(input.Start, out start) || !TryParseTimestamp(input.End, out end))
         { error = "时间格式须为 时:分:秒.毫秒 或 分:秒.毫秒，小数用点号；无时间字幕请同时留空。"; return false; }
         if ((start is null) != (end is null))
         { error = "开始和结束时间必须同时填写或同时留空。"; return false; }
@@ -53,9 +92,6 @@ public sealed class TranscriptRevisionDraft(TranscriptRevision parent)
         { error = "结束时间超过本字幕版本的录音时长；请核对解析结果，三段冒号时间的第一段是小时。"; return false; }
         if (start is not null && end <= start)
         { error = "结束时间必须晚于开始时间。"; return false; }
-        string quality = start is null ? "untimed" : start == segment.StartMs && end == segment.EndMs
-            ? segment.TimestampQuality : "approximate";
-        updated = segment with { Text = input.Text, StartMs = start, EndMs = end, TimestampQuality = quality };
         return true;
     }
 

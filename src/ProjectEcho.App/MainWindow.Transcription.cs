@@ -38,7 +38,7 @@ public partial class MainWindow
     // WPF's selector indexes rows by hash. Mutable PropertyChanged subscriptions
     // must not change equality/hash as record-generated event-field equality would.
     private sealed class TranscriptRow(string directory, TranscriptRevision revision, TranscriptSegment segment, string title,
-        TranscriptRevisionDraft? draft = null) : INotifyPropertyChanged
+        TranscriptRevisionDraft? draft = null, Func<long?>? audioDuration = null) : INotifyPropertyChanged
     {
         public string Directory { get; } = directory;
         public TranscriptRevision Revision { get; } = revision;
@@ -50,11 +50,15 @@ public partial class MainWindow
         private string Body => Draft?.InputFor(Segment).Text ?? Segment.Text;
         public string DisplayText => string.IsNullOrEmpty(Segment.SpeakerLabel) ? Body : $"[{Segment.SpeakerLabel}] {Body}";
         public string Label => $"{Title} · {TimeLabel} · {DisplayText}";
+        public string? TimingIssue => (Draft ?? new(Revision)).TimingErrorFor(Segment, audioDuration?.Invoke()) is { } issue ? UiText.T(issue) : null;
+        public bool HasTimingIssue => TimingIssue is not null;
         public event PropertyChangedEventHandler? PropertyChanged;
         public void RefreshDraftLabel()
         {
             PropertyChanged?.Invoke(this, new(nameof(Label)));
             PropertyChanged?.Invoke(this, new(nameof(TimeLabel)));
+            PropertyChanged?.Invoke(this, new(nameof(TimingIssue)));
+            PropertyChanged?.Invoke(this, new(nameof(HasTimingIssue)));
         }
     }
 
@@ -86,6 +90,7 @@ public partial class MainWindow
         view.StartTimestampBox.TextChanged += (_, _) => TranscriptDraftInputChanged();
         view.EndTimestampBox.TextChanged += (_, _) => TranscriptDraftInputChanged();
         view.ExportSubtitlesButton.Click += (_, _) => PickTranscriptExport();
+        view.FindTimingErrorButton.Click += (_, _) => StartTranscriptWork(FindNextTranscriptTimingErrorAsync, reportReviewErrors: true);
         view.ExportTextButton.Click += (_, _) => PickTranscriptTextExport();
         view.SeekButton.Click += (_, _) => SeekTranscript();
         view.PlayListeningButton.Click += Playback_Click;
@@ -261,8 +266,8 @@ public partial class MainWindow
         view.ReviewAlignmentNotice.Text = pendingAlignmentNotice;
         view.ReviewAlignmentNotice.Visibility = pendingAlignmentNotice.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         bool dirty = CurrentTranscriptDraft?.HasChanges == true;
-        view.ExportSubtitlesButton.IsEnabled = open && !transcriptBusy && !dirty && exportRevision is { Segments.Count: > 0 }
-            && exportRevision.Segments.All(segment => segment.StartMs is not null && segment.EndMs is not null);
+        view.ExportSubtitlesButton.IsEnabled = open && !transcriptBusy && exportRevision is { Segments.Count: > 0 };
+        view.FindTimingErrorButton.IsEnabled = view.ExportSubtitlesButton.IsEnabled;
         view.ExportTextButton.IsEnabled = open && !transcriptBusy && !dirty && exportRevision is { Segments.Count: > 0 };
         view.CopySegmentButton.IsEnabled = open && visibleSegment is not null;
         view.SeekButton.IsEnabled = open && !transcriptBusy && SessionRules.CanPlayback(state) && TryGetSelectedDraftSegment(out var selectedSegment, out _) && selectedSegment.StartMs is not null;
@@ -270,6 +275,7 @@ public partial class MainWindow
         view.EditBox.IsEnabled = open && !transcriptBusy && visibleSegment is not null;
         view.StartTimestampBox.IsEnabled = view.EndTimestampBox.IsEnabled = view.EditBox.IsEnabled;
         UpdateTranscriptDraftStatus();
+        RefreshTranscriptTimingBounds();
         // Leave validation reachable: a missing meeting/mix gets an actionable field outline.
         view.RunWhisperButton.IsEnabled = open && !transcriptBusy;
         view.AudioReadinessText.Visibility = currentMix is null ? Visibility.Visible : Visibility.Collapsed;
@@ -324,7 +330,7 @@ public partial class MainWindow
         transcriptBusy = true;
         using var cancellation = new CancellationTokenSource(); transcriptCancellation = cancellation;
         UpdateControls();
-        if (logCategory is not null) LogMeeting(logDirectory, logCategory, "文字任务已开始。M5E Pro");
+        if (logCategory is not null) LogMeeting(logDirectory, logCategory, "文字任务已开始。M5F Pro");
         try { await operation(); }
         catch (OperationCanceledException)
         {
@@ -418,7 +424,8 @@ public partial class MainWindow
         var view = transcriptionView!;
         PruneCleanTranscriptDrafts();
         var draft = DraftFor(directory, revision);
-        view.SegmentsBox.ItemsSource = revision.Segments.Select(s => new TranscriptRow(directory, revision, s, UiText.T("本场"), draft)).ToArray();
+        view.SegmentsBox.ItemsSource = revision.Segments.Select(s => new TranscriptRow(directory, revision, s, UiText.T("本场"), draft,
+            () => VerifiedTranscriptDurationMs(directory))).ToArray();
         ClearTranscriptEditor();
         if (segmentSelections.TryGetValue((directory, revision.RevisionId), out string? segmentId))
             view.SegmentsBox.SelectedItem = view.SegmentsBox.Items.Cast<TranscriptRow>().FirstOrDefault(row => row.Segment.SegmentId == segmentId);
@@ -490,12 +497,31 @@ public partial class MainWindow
     private void PickTranscriptExport()
     {
         if (WindowCloseRequested || transcriptBusy || !transcriptionView!.ExportSubtitlesButton.IsEnabled) return;
+        StartTranscriptWork(PickValidatedTranscriptExportAsync, reportReviewErrors: true);
+    }
+
+    private async Task PickValidatedTranscriptExportAsync()
+    {
+        RememberTranscriptDraft();
+        var draft = CurrentTranscriptDraft!;
+        string directory = visibleSegment?.Directory ?? transcriptMeeting!;
+        if (draft.FindTimingError(verifiedAudioDurationMs: VerifiedTranscriptDurationMs(directory)) is { } error)
+        {
+            await SelectTranscriptTimingErrorAsync(directory, draft.Parent, error);
+            ReportReviewError(UiText.T("字幕时间戳有问题，暂不能导出。已选中第一条异常字幕，请纠正浅红色字幕的起止时间，保存修订后再导出。"));
+            return;
+        }
+        if (draft.HasChanges)
+        {
+            ReportReviewError(UiText.T("字幕修改尚未保存，请先点击“保存修订”，再导出字幕。"));
+            return;
+        }
         var picker = new SaveFileDialog
         {
             Title = UiText.T("保存完整会议时间轴字幕"), Filter = UiText.T("SubRip 字幕|*.srt|WebVTT 字幕|*.vtt"),
             FileName = UiText.T("会议字幕.srt"), DefaultExt = ".srt", AddExtension = true, OverwritePrompt = true
         };
-        if (picker.ShowDialog(this) == true) StartTranscriptWork(() => ExportTranscriptSubtitlesAsync(picker.FileName), "export", visibleSegment?.Directory ?? transcriptMeeting);
+        if (picker.ShowDialog(this) == true) await ExportTranscriptSubtitlesAsync(picker.FileName);
     }
 
     private async Task ExportTranscriptSubtitlesAsync(string destinationPath)
@@ -599,7 +625,8 @@ public partial class MainWindow
         if (selectedMeetingDirectory != selected || RecordingsRoot != root || WindowCloseRequested) return;
         RememberTranscriptDraft(); visibleSegment = null;
         PruneCleanTranscriptDrafts();
-        view.SegmentsBox.ItemsSource = result.Rows.Select(row => new TranscriptRow(row.Directory, row.Revision, row.Segment, row.Title, DraftFor(row.Directory, row.Revision))).ToArray(); ClearTranscriptEditor();
+        view.SegmentsBox.ItemsSource = result.Rows.Select(row => new TranscriptRow(row.Directory, row.Revision, row.Segment, row.Title,
+            DraftFor(row.Directory, row.Revision), () => VerifiedTranscriptDurationMs(row.Directory))).ToArray(); ClearTranscriptEditor();
         view.StatusText.Text = UiText.F($"找到 {result.Rows.Count} 条（最多 2000 条、500 场）；{result.Skipped} 场无法读取。搜索保留版本信息，不合并或删除重复发言。");
     }
 

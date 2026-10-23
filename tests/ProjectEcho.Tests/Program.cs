@@ -184,6 +184,8 @@ M3SentenceSegmentationTests.Register(Run, output);
 M3jSentenceBoundaryTests.Register(Run, output);
 M3TranscriptTests.Register(Run, output);
 M3jTranscriptDraftTests.Register(Run, output);
+M3pTranscriptTimingTests.Register(Run, output);
+M5fSpeakerTimingTests.Register(Run, output);
 M3kTimestampInputTests.Register(Run, output);
 M3kDataRootPreferenceTests.Register(Run, output);
 M3cSqliteTests.Register(Run, output);

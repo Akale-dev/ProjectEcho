@@ -1,10 +1,12 @@
+2026-10-23 **已同步为 M5F Pro，M3P_SYNC_APPLIED**。用户本轮明确要求同步，验收后同步门槛已解除。普通/人物/Qwen字幕适配、实际结果和本地便携包见 [M5F交付记录](96_M5F_M3P_TIMING_SYNC.md)。下文保留原迁移清单与2026-10-15发布时的历史状态。
+
 # M3P Lite 验收与后续 M5 同步记录
 
 2026-10-15，用户要求从 M3O 升级到 M3P，并保留相关记录供验收后同步 M5。此次实现范围仅 Lite；M5 产品代码和既有发行包保持。
 
 - Lite 基线：`d91c26a511e8e03e5a3b76263b4e2efefd0336ec`（M3O），工作分支 `codex/m3p-lite`。
 - Pro 基线：`a3fb9b79945a42d880db681a0862d45e81790b6b`（M5E）。历史 M3K–M3O 同步已经完成，此处等待验收只针对 M3P 新增修改。
-- 状态：`USER_ACCEPTANCE_PENDING / PRO_NOT_APPLIED`。用户验收通过后按既有同步授权实施，无需重复索要同步批准。
+- 历史状态（2026-10-15）：`USER_ACCEPTANCE_PENDING / PRO_NOT_APPLIED`。用户验收通过后按既有同步授权实施，无需重复索要同步批准。
 - 交付与操作说明：[Lite M3P 记录](https://github.com/Akale-dev/ProjectEcho/blob/codex/m3p-lite/docs/94_M3P_SUBTITLE_TIMING_ERRORS.md)。证据与前像：`lite/.local/M3P/`。
 
 ## 迁移范围

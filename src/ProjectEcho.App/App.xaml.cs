@@ -77,6 +77,8 @@ public partial class App : Application
         bool m3lUiSmoke = e.Args.Contains("--m3l-ui-smoke");
         bool m3mUiSmoke = e.Args.Contains("--m3m-auto-stop-smoke");
         bool m3nUiSmoke = e.Args.Contains("--m3n-playback-smoke");
+        bool m3pUiSmoke = e.Args.Contains("--m3p-timing-smoke");
+        bool m5fUiSmoke = e.Args.Contains("--m5f-timing-smoke");
         bool m3lStartupProbe = e.Args.Length >= 2 && e.Args[0] == "--m3l-startup-library-probe";
         bool m3kDataProbe = e.Args.Length >= 2 && (e.Args[0] == "--m3k-data-root-probe" || m3lStartupProbe);
         try
@@ -92,7 +94,7 @@ public partial class App : Application
                 || transcriptionSmoke || m3ReplaySmoke || realWhisperSmoke || whisperProgressSmoke
                 || m3cTranscriptSmoke || m3cLibrarySmoke || m3dVersionSmoke || m3dNavigationSmoke || m3dSettingsSmoke
                 || m3fUiSmoke || m3fRecordingSmoke || m3fReplaySmoke || m3gUiSmoke || m3gTimeSmoke || m3hUiSmoke || m3hAsrSmoke || m3hPreviewSmoke || m3hFixPauseSmoke || e.Args.Contains("--smoke-test")
-                || e.Args.Contains("--m3e-ui-smoke") || e.Args.Contains("--m3e-log-smoke") || m4QwenSmoke || m4RealQwenSmoke || m4WithoutModelsSmoke || m5SpeakerSmoke || m5RealSpeakerSmoke || m5bUiSmoke || m5dUiSmoke || m3jCompactSmoke || m3jEditingSmoke || m3kTimeSmoke || m3kDataSmoke || m3kDataProbe || m3lUiSmoke || m3mUiSmoke || m3nUiSmoke;
+                || e.Args.Contains("--m3e-ui-smoke") || e.Args.Contains("--m3e-log-smoke") || m4QwenSmoke || m4RealQwenSmoke || m4WithoutModelsSmoke || m5SpeakerSmoke || m5RealSpeakerSmoke || m5bUiSmoke || m5dUiSmoke || m3jCompactSmoke || m3jEditingSmoke || m3kTimeSmoke || m3kDataSmoke || m3kDataProbe || m3lUiSmoke || m3mUiSmoke || m3nUiSmoke || m3pUiSmoke || m5fUiSmoke;
             isolatedSmokeSession = isolatedSmoke;
             if (!isolatedSmoke)
             {
@@ -119,15 +121,17 @@ public partial class App : Application
                     new JsonSerializerOptions { WriteIndented = true }));
                 ShutdownForStartup(0); return;
             }
-            if (m3kTimeSmoke || m3kDataSmoke || m3lUiSmoke || m3mUiSmoke || m3nUiSmoke)
+            if (m3kTimeSmoke || m3kDataSmoke || m3lUiSmoke || m3mUiSmoke || m3nUiSmoke || m3pUiSmoke || m5fUiSmoke)
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
-                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", m3nUiSmoke ? "M3O" : m3mUiSmoke ? "M3M" : m3lUiSmoke ? "M3L" : "M3K-TimeFix", "ui-" + DateTime.UtcNow.ToString("HHmmssfff"));
+                string folder = Path.Combine(Directory.GetCurrentDirectory(), ".local", m3pUiSmoke || m5fUiSmoke ? "M5F" : m3nUiSmoke ? "M3O" : m3mUiSmoke ? "M3M" : m3lUiSmoke ? "M3L" : "M3K-TimeFix", "ui-" + DateTime.UtcNow.ToString("HHmmssfff"));
                 Directory.CreateDirectory(folder);
                 using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
                 var testWindow = new MainWindow(enumerateSourcesOnLoad: false);
                 MainWindow = testWindow; testWindow.Show();
-                var result = m3nUiSmoke ? await testWindow.M3nPlaybackSmokeAsync(folder, deadline.Token)
+                var result = m5fUiSmoke ? await testWindow.M5fTimingSmokeAsync(folder, deadline.Token)
+                    : m3pUiSmoke ? await testWindow.M3pTimingSmokeAsync(folder, deadline.Token)
+                    : m3nUiSmoke ? await testWindow.M3nPlaybackSmokeAsync(folder, deadline.Token)
                     : m3mUiSmoke ? await testWindow.M3mAutoStopSmokeAsync(folder, deadline.Token)
                     : m3lUiSmoke ? await testWindow.M3lUiSmokeAsync(folder, deadline.Token)
                     : m3kDataSmoke ? await testWindow.M3kDataRootSmokeAsync(folder, deadline.Token)
@@ -476,7 +480,7 @@ public partial class App : Application
                 Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());
                 Shutdown(1); return;
             }
-            if (m4QwenSmoke || m4RealQwenSmoke || m4WithoutModelsSmoke || m3jCompactSmoke || m3jEditingSmoke || m3kTimeSmoke || m3kDataSmoke || m3kDataProbe || m3lUiSmoke || m3mUiSmoke || m3nUiSmoke)
+            if (m4QwenSmoke || m4RealQwenSmoke || m4WithoutModelsSmoke || m3jCompactSmoke || m3jEditingSmoke || m3kTimeSmoke || m3kDataSmoke || m3kDataProbe || m3lUiSmoke || m3mUiSmoke || m3nUiSmoke || m3pUiSmoke || m5fUiSmoke)
             {
                 string failure = Path.Combine(Directory.GetCurrentDirectory(), ".local", "M4", "failure-" + DateTime.UtcNow.ToString("HHmmssfff") + ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(failure)!); File.WriteAllText(failure, ex.ToString());

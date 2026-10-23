@@ -88,7 +88,7 @@ public partial class MainWindow
                 double logoLeft = BrandLogo.TranslatePoint(new Point(), rootGrid).X;
                 Need(rootGrid.ColumnDefinitions[0].Width.Value == 246 && Math.Abs(rootGrid.ColumnDefinitions[0].ActualWidth - 246) < 0.1 &&
                     BrandHeaderPanel.Margin.Left == -9 && logoLeft >= 0 && logoLeft <= 6 && versionRight <= 245 &&
-                    BrandNameText.FontSize == 19 && ApplicationVersionText.FontSize == 10 && ApplicationVersionText.Text == "M5E Pro",
+                    BrandNameText.FontSize == 19 && ApplicationVersionText.FontSize == 10 && ApplicationVersionText.Text == "M5F Pro",
                     "Brand group did not move left intact, or changed sidebar width/font size to hide clipping.");
                 var versionMeasure = MeasureBrandVersionForSmoke();
                 Need(versionMeasure.Fits, "The full version text does not fit: " + JsonSerializer.Serialize(versionMeasure));
@@ -111,14 +111,14 @@ public partial class MainWindow
             await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render, token);
             var rejectedLongLabel = MeasureBrandVersionForSmoke();
             Need(!rejectedLongLabel.Fits, "The layout guard failed to reject the previously clipped longer label: " + JsonSerializer.Serialize(rejectedLongLabel));
-            ApplicationVersionText.Text = "M5E Pro";
+            ApplicationVersionText.Text = "M5F Pro";
             Width = 1280; Height = 930;
             foreach (string language in new[] { "zh-CN", "zh-Hant", "en" })
             {
                 ChangeLanguage(language, persist: false); NavigateTo(0);
                 await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Render, token);
                 var measured = MeasureBrandVersionForSmoke();
-                Need(measured.Fits && ApplicationVersionText.Text == "M5E Pro" &&
+                Need(measured.Fits && ApplicationVersionText.Text == "M5F Pro" &&
                     BrandNameText.FontSize == 19 && ApplicationVersionText.FontSize == 10 &&
                     ((Grid)Content).ColumnDefinitions[0].ActualWidth == 246,
                     "The standard window clipped the version text or changed brand typography/sidebar width: " + JsonSerializer.Serialize(measured));
@@ -162,7 +162,7 @@ public partial class MainWindow
                 "Finishing old B after starting C contaminated C's card or enabled playback.");
             foreach (var original in originals) Need(CloseFixtureHash(original.Key) == original.Value, "The UI changed original audio or clock metadata.");
             Need(host is null && !microphoneEnabled && player.Source is null, "The display smoke started audio collection or playback.");
-            return new { Status = "PASS", Version = "M5E Pro", SyntheticOnly = true,
+            return new { Status = "PASS", Version = "M5F Pro", SyntheticOnly = true,
                 CaptureStarted = false, MicrophoneCollected = false, PlaybackStarted = false,
                 Layouts = layouts, Durations = durations, Images = images, RecordingRequestOwnerIndependentOfSelection = true,
                 FullVersionTextFits = true, PreviousClippedLabelRejected = true, RejectedLongLabelMeasurement = rejectedLongLabel,
@@ -176,7 +176,7 @@ public partial class MainWindow
             if (!backgroundWork.IsCompleted) await backgroundWork.WaitAsync(TimeSpan.FromSeconds(20));
             foreach (var gate in gates) gate.Dispose();
             renderProgressOperation = previousRenderer; state = SessionState.Idle;
-            ApplicationVersionText.Text = "M5E Pro";
+            ApplicationVersionText.Text = "M5F Pro";
             ClearRecordingProcessing(); Width = widthBefore; Height = heightBefore;
             ChangeLanguage(languageBefore, persist: false); UpdateControls();
         }

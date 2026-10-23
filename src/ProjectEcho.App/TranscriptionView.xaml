@@ -71,7 +71,15 @@
      </StackPanel>
      <ListBox x:Name="SegmentsBox" Height="160" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" PreviewKeyDown="Segments_KeyDown">
       <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><EventSetter Event="PreviewMouseLeftButtonUp" Handler="Segment_MouseLeftButtonUp"/></Style></ListBox.ItemContainerStyle>
-      <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" Margin="6"/></DataTemplate></ListBox.ItemTemplate>
+      <ListBox.ItemTemplate><DataTemplate>
+       <Border x:Name="TimingHighlight" Background="Transparent" CornerRadius="3" ToolTip="{Binding TimingIssue}">
+        <TextBlock x:Name="SubtitleLabel" Text="{Binding Label}" TextWrapping="Wrap" Margin="6"/>
+       </Border>
+       <DataTemplate.Triggers><DataTrigger Binding="{Binding HasTimingIssue}" Value="True">
+        <Setter TargetName="TimingHighlight" Property="Background" Value="#FFFFE1E1"/>
+        <Setter TargetName="SubtitleLabel" Property="Foreground" Value="#FF742727"/>
+       </DataTrigger></DataTemplate.Triggers>
+      </DataTemplate></ListBox.ItemTemplate>
      </ListBox>
      <StackPanel x:Name="ReviewEditorPanel">
       <Grid x:Name="SubtitleEditorGrid" Margin="0,6,0,0">
@@ -86,7 +94,7 @@
        </Grid>
        <TextBox x:Name="EditBox" Grid.Column="1" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="65" Height="65" VerticalScrollBarVisibility="Auto" MaxLength="100000"/>
       </Grid>
-      <WrapPanel Margin="0,6,0,0"><Button x:Name="SaveRevisionButton" Content="{DynamicResource Loc001160AB52A7C2D1}"/><Button x:Name="CopySegmentButton" Content="{DynamicResource Loc63D90D977348AB1F}" ToolTip="{DynamicResource LocFB0C048039205276}"/><Button x:Name="SeekButton" Content="{DynamicResource Loc03C50FD4658C3D91}"/><Button x:Name="ExportSubtitlesButton" Content="{DynamicResource LocB6F9CDCE098B05BC}"/><Button x:Name="ExportTextButton" Content="{DynamicResource LocC427FACC1C43327F}"/></WrapPanel>
+      <WrapPanel Margin="0,6,0,0"><Button x:Name="SaveRevisionButton" Content="{DynamicResource Loc001160AB52A7C2D1}"/><Button x:Name="CopySegmentButton" Content="{DynamicResource Loc63D90D977348AB1F}" ToolTip="{DynamicResource LocFB0C048039205276}"/><Button x:Name="SeekButton" Content="{DynamicResource Loc03C50FD4658C3D91}"/><StackPanel Orientation="Horizontal"><Button x:Name="FindTimingErrorButton"/><Button x:Name="ExportSubtitlesButton" Content="{DynamicResource LocB6F9CDCE098B05BC}"/></StackPanel><Button x:Name="ExportTextButton" Content="{DynamicResource LocC427FACC1C43327F}"/></WrapPanel>
       <WrapPanel><Button x:Name="OpenSpeakersButton" Content="同场说话人"/><CheckBox x:Name="IncludeSpeakerLabelsBox" Content="导出包含说话人标签" IsChecked="True" VerticalAlignment="Center" Margin="8,0"/></WrapPanel>
      </StackPanel>
       </StackPanel>

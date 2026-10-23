@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <InformationalVersion>M5E-Pro-20261006</InformationalVersion>
+    <InformationalVersion>M5F-Pro-20261023</InformationalVersion>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>

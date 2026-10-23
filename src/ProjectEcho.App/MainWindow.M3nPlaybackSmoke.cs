@@ -176,7 +176,7 @@ public partial class MainWindow
         }
         state = SessionState.Idle; ResetTranscriptPlayback(); UpdateControls();
         Need(buttons.All(button => !button.IsEnabled), "Unopened media allows an invalid skip.");
-        return new { Status = "PASS", Version = "M5E Pro", Jumps = jumps, PlayingSpeedPreserved = true, SubtitleFollows = true,
+        return new { Status = "PASS", Version = "M5F Pro", Jumps = jumps, PlayingSpeedPreserved = true, SubtitleFollows = true,
             BothPlayButtonsResume = resumeChecks, PauseIconsStayDoubleBar = true, SkipDigitInkCentered = true,
             NormalFocusPressedNoClipping = true, ThreeLanguagesTwoSizes = true, ArrowShortcuts = true,
             Images = images, AudioPlayback = "muted generated silence", PhysicalKeyboardMouse = "NOT_RUN", CaptureStarted = false, MicrophoneCollected = false };

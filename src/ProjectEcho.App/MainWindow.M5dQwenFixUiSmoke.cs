@@ -1,5 +1,7 @@
 using System.IO;
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using ProjectEcho.Core;
 using ProjectEcho.Core.Diagnostics;
@@ -51,8 +53,20 @@ public partial class MainWindow
             view.SegmentsBox.SelectedIndex = 1; SelectTranscriptSegment(); UpdateControls();
             Need(view.ReviewAlignmentNotice.IsVisible && view.ReviewAlignmentNotice.Text.Contains("文字已保存，有 1 段待定位"),
                 "Compact review hid the Qwen pending-alignment notice.");
-            Need(!view.SeekButton.IsEnabled && !view.ExportSubtitlesButton.IsEnabled && view.ExportTextButton.IsEnabled,
+            Need(!view.SeekButton.IsEnabled && view.ExportSubtitlesButton.IsEnabled && view.ExportTextButton.IsEnabled && visibleSegment!.HasTimingIssue,
                 "Untimed Qwen actions either invented seek/subtitle time or blocked full text.");
+            string? prompt = null; var previousReporter = reviewErrorForSmoke;
+            try
+            {
+                reviewErrorForSmoke = message => prompt = message;
+                view.SegmentsBox.SelectedIndex = 2;
+                view.ExportSubtitlesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await transcriptWork.WaitAsync(token);
+                Need(view.SegmentsBox.SelectedIndex == 1 && prompt?.Contains("第一条") == true &&
+                    view.EditBox.Text == segments[1].Text, "Qwen export did not select intact pending text for correction.");
+                view.FindTimingErrorButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await transcriptWork.WaitAsync(token);
+                Need(view.SegmentsBox.SelectedIndex == 1 && visibleSegment!.HasTimingIssue, "Qwen single-error navigation did not wrap.");
+            }
+            finally { reviewErrorForSmoke = previousReporter; }
             SeekTranscript(); Need(player.Source is null && pendingTranscriptSeek is null, "Untimed Qwen text started playback.");
             string txt = Path.Combine(evidence, "qwen-partial-full-text.txt");
             TranscriptSubtitleExporter.ExportText(first, mixed.RevisionId, txt, token);

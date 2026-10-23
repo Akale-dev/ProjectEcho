@@ -72,7 +72,7 @@ public partial class MainWindow
         Need(DescribeAutomaticStop(info).Contains(UiText.T(" 结束时部分来源未收到音频包，不等于已证实的静音；完整性以保存结果为准。"), StringComparison.Ordinal),
             "No-packet evidence was mislabeled silence.");
         state = SessionState.Idle; UpdateControls();
-        return new { Status = "PASS", Version = "M5E Pro", ManualPreflightRemoved = true, StartStillValidates = true,
+        return new { Status = "PASS", Version = "M5F Pro", ManualPreflightRemoved = true, StartStillValidates = true,
             DefaultUncheckedFiveMinutes = true, Intervals = new[] { 1, 5, 10 }, LivePolicyChangesAllowed = true, SavingPolicyLocked = true,
             FinalizingWaitsForSave = true, Languages = 3, Images = images, CaptureStarted = false, MicrophoneCollected = false };
     }

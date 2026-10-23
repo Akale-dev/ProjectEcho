@@ -79,6 +79,9 @@ public partial class MainWindow
     private void UpdateTranscriptDraftStatus()
     {
         if (transcriptionView is not { } view) return;
+        view.FindTimingErrorButton.Content = UiText.T("寻找错误");
+        view.FindTimingErrorButton.ToolTip = UiText.T("选中当前版本的下一条时间戳异常字幕；到末尾后从头寻找。");
+        AutomationProperties.SetName(view.FindTimingErrorButton, UiText.T("寻找错误"));
         view.StartTimestampLabel.Text = UiText.T("开始"); view.EndTimestampLabel.Text = UiText.T("结束");
         string hint = UiText.T("时:分:秒.百分秒（两位小数）；分隔符固定。× 清空此时间。");
         if (CurrentTranscriptDraft is { } draft)
