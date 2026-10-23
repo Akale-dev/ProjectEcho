@@ -49,10 +49,16 @@
 
 状态：**IMPLEMENTED / WINDOWS_LOCAL_VALIDATED_WITH_RETAINED_LIMITATIONS / M3P_SYNC_APPLIED**。包内说明是封包前快照；本文件及同名 `.package.json` 补记最终结果，不重写已核验 ZIP。
 
-M5E 前像、最终源码、逐文件差异与增量补丁保存在 `.local/M5F/`，同步记录见 `sync-inventory.json`。M3P 的 Lite 源码和已发布 ZIP 保持；后续维护不得再次把 M3P 当作尚未迁移功能。GitHub 中的历史 M3P 发布回执不改写，本次没有远端发布。
+M5E 前像、最终源码、逐文件差异与增量补丁保存在 `.local/M5F/`，同步记录见 `sync-inventory.json`。M3P 的 Lite 源码和已发布 ZIP 保持；后续维护不得再次把 M3P 当作尚未迁移功能。GitHub 中的历史 M3P 发布回执不改写。本地交付完成后的公开发布授权及入口见下节。
 
 ## 使用与边界
 
 完整解压新包并运行 `ProjectEcho.exe`，首次在新目录选择原数据目录。打开原会议和所需字幕版本，使用“寻找错误”，人工修正后保存为新修订再导出。旧包、旧稿、音频及现有模型配置保留。
 
-真实会议/麦克风、目标公司机、干净 Windows、物理输入/DPI及原有 M1/M2/M4/M5 质量缺口仍单列。本次是本地 M5 功能同步；2026-10-15 的公开发布授权限定 M3P 与 M5 交接文档，不自动扩大为新 M5 产品包的远端发布。未推送或上传本次 M5F，也未下载模型、启动 M6 或关机。
+真实会议/麦克风、目标公司机、干净 Windows、物理输入/DPI及原有 M1/M2/M4/M5 质量缺口仍单列。本次先完成本地 M5 功能同步，随后用户单独明确授权 M5F 公开发布。没有采集、私有数据上传、模型下载、M6 或关机授权。
+
+## GitHub 公开发布（2026-10-23）
+
+用户明确要求把 M5F 推送到公开仓库 Akale-dev/ProjectEcho，并将便携包与校验文件上传 Release、保留旧版本。源码见 [codex/m5f-pro](https://github.com/Akale-dev/ProjectEcho/tree/codex/m5f-pro)，独立发行入口为 [M5F Pro Release](https://github.com/Akale-dev/ProjectEcho/releases/tag/m5f-pro-20261023)。
+
+产品实现提交为 `9040bd6`；发布提交仅补记授权和发布入口，不改变已测试程序或 ZIP。上传后以 GitHub 返回的字节数与 SHA-256 核验，旧分支/标签/Release 及资产单独比对。回执保存在 `.local/M5F/publish/`。私人数据、模型提示词和本地原始测试日志不发布。
